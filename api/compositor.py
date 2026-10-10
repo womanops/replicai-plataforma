@@ -122,7 +122,10 @@ class CompositorSimples:
             "safe": s,
             "saida": f"{formato_id}.png",
             "via": "regra-simples",
-            "fundo": {"tipo": "imagem", "src": str(base), "fit": "cover"},
+            # só o nome: o `src` da peça é relativo à pasta do job, e o motor
+            # o resolve a partir dela. Caminho absoluto aqui prenderia a peça
+            # à máquina que a compôs.
+            "fundo": {"tipo": "imagem", "src": Path(base).name, "fit": "cover"},
             "fontes": [],
             "elementos": elementos,
         }

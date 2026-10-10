@@ -118,7 +118,10 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
                      brief: str) -> None:
     for fid in formatos:
         try:
-            peca = compositor.compor(Path(copia.name), fid, brief)
+            # caminho completo, não o nome: o compositor do modelo precisa
+            # abrir o arquivo para mandar a arte junto. Com o nome curto ele
+            # compunha às cegas, só pelo brief, e nada denunciava isso.
+            peca = compositor.compor(copia, fid, brief)
         except ComposicaoImpossivel as e:
             r.falhas[fid] = str(e)
             continue
