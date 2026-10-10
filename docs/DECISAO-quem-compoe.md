@@ -1,6 +1,6 @@
 # Quem compõe a peça?
 
-**Status:** aberto. Bloqueia o desenho da Fase 1.
+**Status:** o caminho A foi provado em 10/10/2026 — ver *A prova*, no fim.
 **Levantado em:** 10/10/2026
 
 ## O buraco
@@ -76,3 +76,67 @@ Upload, fila, worker, storage, download, e o motor executando `prep`/`extend`/
 `render`/`validate`. Isso pode ser construído já, com a composição atrás de uma
 interface — `compositor(arte, formato, brief) -> peça JSON` — que hoje aceita um
 JSON pronto e amanhã chama o que for decidido.
+
+
+---
+
+# A prova (10/10/2026)
+
+## Como foi feito
+
+Não dá para chamar a API da Anthropic daqui: exige chave, e credencial não passa
+por mim. Então o experimento foi outro, e mede a mesma coisa: **compor em uma
+passada só**, sem ver a referência e sem iterar — que é o que uma chamada de API
+faz.
+
+- **Peça:** Save the Date do Energiza 2027.
+- **Formato:** `gdn-728x90`, escolhido por ser o mais duro. Numa faixa 8:1 um
+  compositor ruim produz lixo e um bom precisa escolher o que sacrificar.
+- **Entradas:** a arte sem o texto informativo (`fundo-limpo.png`, saída de um
+  passo mecânico), o brief e a ficha do formato. Nada mais.
+- **Saída:** recortes de marca + peça JSON, de uma vez.
+
+A referência do agente só foi aberta **depois**.
+
+## Resultado
+
+As duas peças saíram com **a mesma estrutura**: marca à esquerda, frase no
+centro, botão à direita. As decisões de sacrifício bateram: ambas largaram o
+parágrafo e o local, e fundiram lettering e data numa frase só.
+
+Onde a passada única errou:
+
+| | uma passada | o agente |
+|---|---|---|
+| Recorte da marca | 450x185 — **cortou a assinatura no meio** | 450x216 (inteira) ou 450x146 (sem assinatura) |
+| Hierarquia | tudo branco, data separada por um ponto | data em ciano, destacada |
+| Acabamento | sem divisor | divisor vertical entre marca e frase |
+| CTA | "Inscreva-se" (11 caracteres, dentro do limite) | "Preencher formulário" (20, **acima dos 12 do catálogo**) |
+
+O recorte revela o padrão: **a coordenada horizontal saiu exata** (450 px, mesma
+borda esquerda), e a vertical caiu entre as duas opções válidas. Não é falta de
+julgamento, é falta de precisão de pixel.
+
+## O que isso conclui
+
+**A composição se divide em duas naturezas, e só uma precisa de modelo.**
+
+- **Estrutura, copy e hierarquia** — o que entra, o que sai, onde fica, como se
+  encurta. Transferiu inteiro para uma passada. É julgamento, e é caro de
+  automatizar de outro jeito.
+- **Coordenada exata** — onde começa e termina a marca na arte. É onde a passada
+  única erra, e é trabalho determinístico: com PSD, as camadas dão o bbox de
+  graça; com base achatada, precisa de detecção ou de confirmação humana.
+
+Separar as duas corta o custo e o risco: o modelo responde a estrutura, a
+máquina acha as coordenadas, e o render executa.
+
+## Dois achados de quebra
+
+**O limite de CTA do catálogo está apertado demais.** `gdn-728x90` declara
+`cta_max: 12`, e o agente usou 20 caracteres porque "Preencher formulário" diz o
+que "Inscreva-se" não diz. Ou o limite sobe, ou o compositor automático vai
+entregar CTA pior que o humano por obediência. **Decidir antes de automatizar.**
+
+**A passada única obedeceu o limite e o agente não.** Modelo seguindo regra ao pé
+da letra produz peça pior. O prompt precisa dizer quando a regra cede.
