@@ -1,5 +1,9 @@
 [tool.pytest.ini_options]
 testpaths = ["testes"]
-# -q porque a saída longa esconde a falha; --strict-markers porque marcador
-# escrito errado passava despercebido e o teste não rodava.
-addopts = "-q --strict-markers"
+# Por padrão os lentos ficam de fora: a suíte rápida roda em 2 segundos e por
+# isso é rodada. Os lentos abrem o Chrome e levam mais de um minuto — rodam na
+# esteira, a cada push, e na mão com `pytest -m lento`.
+addopts = "-q --strict-markers -m 'not lento'"
+markers = [
+  "lento: abre o navegador de verdade; roda na esteira, não a cada salvamento",
+]

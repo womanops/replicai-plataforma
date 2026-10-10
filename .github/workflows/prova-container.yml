@@ -22,10 +22,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
+      - name: instalar o Chromium, que o render usa
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends chromium-browser || sudo apt-get install -y --no-install-recommends chromium
       - name: instalar dependências
         run: pip install -r requirements.txt -r requirements-dev.txt
       - name: rodar os testes
-        run: pytest --cov=motor --cov-report=term-missing
+        # -m '' desliga o filtro padrão: na esteira os lentos também rodam,
+        # com Chromium instalado no passo acima
+        run: pytest -m '' --cov=motor --cov=api --cov-report=term-missing
 
   renderizar:
     runs-on: ubuntu-latest

@@ -112,8 +112,21 @@ Sabotagens já conferidas, todas pegas: ignorar a região protegida, centralizar
 corte em vez de seguir o protegido, trocar a estratégia padrão para `cover`,
 parar de ler `CHROME_FLAGS`, e inverter largura com altura no PSD.
 
-Comece pelos testes do motor ou pela API, não pelo front-end: o que decide se o
-produto existe é o caminho upload → peça pronta.
+### Feito até agora (10/10/2026)
+
+- `api/compositor.py` — a interface `Compositor` e duas implementações:
+  `CompositorArquivo` (lê peça que alguém já escreveu) e `CompositorSimples`
+  (regra determinística: arte vira fundo, texto na área segura). A composição
+  automática continua em aberto — ver `docs/DECISAO-quem-compoe.md`.
+- `api/pipeline.py` — `desdobrar(arte, formatos, compositor, pasta)`. Compõe,
+  renderiza e grava `resultado.json`. Formato que falha não derruba os outros.
+- 247 testes. Rápidos por padrão (2 s); os que abrem navegador ficam atrás do
+  marcador `lento` e rodam na esteira.
+
+Falta: fila (Redis + RQ), `api/main.py` com upload/status/download, e front-end.
+
+Comece pela API ou pela fila, não pelo front-end: o que decide se o produto
+existe é o caminho upload → peça pronta.
 
 **Já existe um Studio funcionando** em
 `~/Desktop/OPERAÇÃO CLAUDE CODE/ReplicAI/studio/` — servidor em Python puro com
