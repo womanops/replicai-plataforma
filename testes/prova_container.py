@@ -18,6 +18,10 @@ from motor import replica  # noqa: E402
 
 
 def main() -> int:
+    versoes = Path("/app-versoes.json")
+    if versoes.exists():
+        print(f"0. desenhando com: {versoes.read_text().strip()}")
+
     print("1. o motor acha um navegador?")
     chrome = replica.find_chrome()
     if not chrome:

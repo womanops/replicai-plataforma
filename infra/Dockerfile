@@ -5,19 +5,45 @@
 # ReplicAI roda igual — Mac, Windows, Linux, qualquer servidor ou nuvem.
 # O cliente final nunca instala nada: ele usa o navegador.
 
-FROM python:3.14-slim
+# Imagem base presa por digest: `3.14-slim` é uma etiqueta móvel e um rebuild
+# amanhã traria outro sistema por baixo. Para atualizar, troque o digest de
+# propósito e deixe a esteira renderizar a peça de prova antes de confiar.
+FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 
 # --- dependências de sistema -------------------------------------------------
 # chromium  → renderiza assets/template.html e tira o screenshot da peça
 # ffmpeg    → export de peça animada / trilha
 # fontes    → sem elas o Chromium renderiza texto como caixas vazias
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      chromium \
-      ffmpeg \
-      curl \
-      fonts-dejavu-core \
-      fontconfig \
-    && rm -rf /var/lib/apt/lists/*
+# O Chromium vai preso na versão. Ele não é só um detalhe de infraestrutura:
+# é quem mede o texto. O motor descobre o corpo da fonte por busca binária
+# perguntando ao navegador se a frase cabe na caixa — uma mudança de métrica
+# muda o tamanho do texto em toda peça, caladamente, sem erro nenhum.
+#
+# Quando o Debian publicar outra versão, o build falha aqui. É de propósito:
+# atualizar é decisão, não acidente. Para subir, troque o número abaixo e deixe
+# a esteira renderizar a peça de prova antes de confiar.
+ARG CHROMIUM_VERSAO=154.0.8037.92-1~deb13u1
+
+RUN set -eux; \
+    apt-get update; \
+    if ! apt-get install -y --no-install-recommends "chromium=${CHROMIUM_VERSAO}"; then \
+      echo "=== o Chromium ${CHROMIUM_VERSAO} não está mais no repositório ==="; \
+      apt-cache policy chromium; \
+      echo "Troque CHROMIUM_VERSAO para a versão acima, reconstrua, e confira a"; \
+      echo "peça de prova antes de aceitar: o texto pode ter mudado de tamanho."; \
+      exit 1; \
+    fi; \
+    apt-get install -y --no-install-recommends ffmpeg curl fonts-dejavu-core fontconfig; \
+    rm -rf /var/lib/apt/lists/*
+
+# As versões ficam gravadas na imagem: assim o sistema em pé sabe dizer com o
+# que está desenhando, e a diferença entre duas máquinas aparece na hora.
+RUN set -eux; \
+    printf '{"chromium":"%s","fontes_dejavu":"%s","ffmpeg":"%s"}\n' \
+      "$(dpkg-query -W -f='${Version}' chromium)" \
+      "$(dpkg-query -W -f='${Version}' fonts-dejavu-core)" \
+      "$(dpkg-query -W -f='${Version}' ffmpeg)" > /app-versoes.json; \
+    cat /app-versoes.json
 
 # O motor procura o binário por nome; garante que "chrome" resolva.
 RUN ln -sf /usr/bin/chromium /usr/local/bin/chrome

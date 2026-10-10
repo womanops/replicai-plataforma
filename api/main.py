@@ -72,11 +72,31 @@ def tela():
     return pagina.read_text(encoding="utf-8")
 
 
+VERSOES = Path("/app-versoes.json")
+
+
+def desenhando_com() -> dict:
+    """Com que Chromium e que fontes esta instância desenha.
+
+    Vale expor: o motor mede o texto perguntando ao navegador, então duas
+    máquinas com Chromium diferente entregam peças com tipografia diferente —
+    sem erro nenhum para avisar. Aqui a diferença aparece.
+    """
+    if VERSOES.exists():
+        try:
+            return json.loads(VERSOES.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            pass
+    from motor.replica import find_chrome
+    return {"chromium": "fora de contêiner", "navegador": find_chrome() or "nenhum"}
+
+
 @app.get("/saude")
 def saude():
     from api import modelo
     return {"ok": True, "fila": type(FILA).__name__,
-            "compositor": "modelo+regra" if modelo.disponivel() else "regra"}
+            "compositor": "modelo+regra" if modelo.disponivel() else "regra",
+            "desenhando_com": desenhando_com()}
 
 
 @app.get("/formatos")

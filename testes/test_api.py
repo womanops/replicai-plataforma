@@ -218,3 +218,30 @@ class TestQuemCompoe:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
         assert cliente.get("/saude").json()["compositor"] == "regra"
+
+
+class TestComOQueDesenha:
+    """Duas máquinas com Chromium diferente entregam tipografia diferente, sem
+    erro para avisar. A saúde precisa dizer com o que está desenhando."""
+
+    def test_fora_do_conteiner_diz_qual_navegador_achou(self, cliente, monkeypatch):
+        from api import main
+        monkeypatch.setattr(main, "VERSOES", main.Path("/nao-existe.json"))
+        d = cliente.get("/saude").json()["desenhando_com"]
+        assert d["chromium"] == "fora de contêiner"
+        assert "navegador" in d
+
+    def test_dentro_do_conteiner_le_as_versoes_gravadas(self, cliente, tmp_path, monkeypatch):
+        from api import main
+        f = tmp_path / "versoes.json"
+        f.write_text('{"chromium":"154.0.8037.92-1~deb13u1","fontes_dejavu":"2.37-8"}')
+        monkeypatch.setattr(main, "VERSOES", f)
+        d = cliente.get("/saude").json()["desenhando_com"]
+        assert d["chromium"].startswith("154.")
+
+    def test_arquivo_corrompido_nao_derruba_a_saude(self, cliente, tmp_path, monkeypatch):
+        from api import main
+        f = tmp_path / "versoes.json"
+        f.write_text("isto não é json")
+        monkeypatch.setattr(main, "VERSOES", f)
+        assert cliente.get("/saude").status_code == 200
