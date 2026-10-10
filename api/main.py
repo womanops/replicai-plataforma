@@ -57,7 +57,8 @@ def processar(job: str, arte: str, formatos: list[str], headline: str,
                       trabalhos.pasta_do(job), brief)
         trabalhos.gravar(job, {"status": r.status,
                                "prontas": sorted(r.prontas),
-                               "falhas": r.falhas})
+                               "falhas": r.falhas,
+                               "avisos": r.avisos})
     except Exception as e:
         # sem isto o trabalho fica "rodando" para sempre e ninguém sabe por quê
         trabalhos.gravar(job, {"status": "erro", "erro": str(e)})

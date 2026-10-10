@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from api.compositor import ComposicaoImpossivel, Compositor
+from api.qualidade import conferir_fundo, recorte_e_retangulo
 from motor.replica import render_peca
 
 
@@ -23,6 +24,7 @@ class Resultado:
     pasta: Path
     prontas: dict[str, Path] = field(default_factory=dict)
     falhas: dict[str, str] = field(default_factory=dict)
+    avisos: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def status(self) -> str:
@@ -37,7 +39,50 @@ class Resultado:
             "status": self.status,
             "prontas": {k: str(v) for k, v in self.prontas.items()},
             "falhas": self.falhas,
+            "avisos": self.avisos,
         }
+
+
+def conferir_peca(peca: dict, pasta: Path, arte: Path) -> list[str]:
+    """As regras de qualidade que esta sessão descobriu, aplicadas a cada peça.
+
+    Escrever a verificação e não chamá-la foi o erro que deixou o lettering
+    fantasma passar: a regra existia em `api/qualidade.py` e ninguém a usava.
+    Por isso ela roda aqui, na esteira, e não à parte.
+
+    Devolve avisos, não erros. A peça é entregue com a ressalva em vez de ser
+    barrada: quem decide se o fundo está bom o bastante é quem vai publicar.
+    """
+    avisos = []
+    fundo = (peca.get("fundo") or {}).get("src")
+    if fundo:
+        caminho = pasta / fundo if not Path(fundo).is_absolute() else Path(fundo)
+        if caminho.exists() and caminho.resolve() != Path(arte).resolve():
+            try:
+                ok, msg = conferir_fundo(arte, caminho)
+                if not ok:
+                    avisos.append(msg)
+            except Exception:
+                pass                      # conferência não pode derrubar entrega
+
+    for e in peca.get("elementos", []):
+        if e.get("tipo") != "imagem" or (e.get("papel") or "") not in ("marca", "logo", "selo"):
+            continue
+        src = e.get("src")
+        if not src:
+            continue
+        caminho = pasta / src if not Path(src).is_absolute() else Path(src)
+        if not caminho.exists():
+            continue
+        try:
+            if recorte_e_retangulo(caminho):
+                avisos.append(
+                    f"a marca `{e.get('papel')}` é um bloco opaco: vai aparecer com moldura "
+                    f"em volta, porque o fundo que veio no recorte não bate com o da peça. "
+                    f"Recorte com transparência")
+        except Exception:
+            pass
+    return avisos
 
 
 def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
@@ -61,6 +106,9 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
         except ComposicaoImpossivel as e:
             r.falhas[fid] = str(e)
             continue
+
+        for a in conferir_peca(peca, pasta, copia):
+            r.avisos.setdefault(fid, []).append(a)
 
         arq = pasta / "pecas" / f"{fid}.json"
         arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")

@@ -158,6 +158,20 @@ O modelo responde **papéis e zonas**, nunca pixels; a caixa é calculada em
 - `CompositorEmCadeia(modelo, regra)` — sem `ANTHROPIC_API_KEY` cai para a regra
   determinística. `/saude` diz qual está valendo.
 
+### As verificações de qualidade rodam na esteira
+
+`api/qualidade.py` tem quatro, e `api/pipeline.py` chama as que se aplicam a
+cada peça: fidelidade do fundo e marca recortada como bloco opaco. O resultado
+sai em `avisos`, por formato, e aparece na tela como "com ressalva".
+
+**São ressalva, não barreira.** A peça é entregue com a observação; quem decide
+se o fundo está bom o bastante é quem vai publicar.
+
+Isso existe porque escrever a verificação e não chamá-la foi o erro de
+10/10/2026 que deixou um fundo com lettering fantasma passar: a regra estava
+escrita e ninguém a usava. Teste novo em `testes/test_pipeline.py` garante que
+ela continue sendo chamada, não só existindo.
+
 **Falta rodar com chave de verdade.** Tudo foi provado com modelo falso: o
 contrato, a conferência, a correção, as caixas e o render. A chamada em si e o
 custo por peça não foram exercitados — no teste de ponta a ponta com modelo

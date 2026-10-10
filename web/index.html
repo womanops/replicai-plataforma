@@ -67,6 +67,9 @@ textarea{resize:vertical;min-height:70px}
   background:rgba(14,10,12,.82);color:var(--sinal)}
 .f.falhou .selo{color:var(--err)}
 .pulsa{animation:p 1.2s ease-in-out infinite}
+.f .ressalva{font:500 9.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--sinal);cursor:help}
+.f .ressalva::before{content:'▲ ';font-size:8px;vertical-align:1px}
 @keyframes p{0%,100%{opacity:.35}50%{opacity:.9}}
 
 /* ---------- rodapé ---------- */
@@ -285,6 +288,12 @@ async function acompanhar(){
     for (const b of document.querySelectorAll('.f')){
       const id = b.dataset.id, cx = b.querySelector('.cx');
       if (!escolhidos.has(id)) { b.style.opacity = .25; continue; }
+      const aviso = (d.avisos || {})[id];
+      if (aviso && aviso.length && !b.querySelector('.ressalva')){
+        // peça entregue, mas com ressalva: quem publica decide se serve
+        b.insertAdjacentHTML('beforeend',
+          `<span class="ressalva" title="${aviso.join(' · ').replace(/"/g,'')}">com ressalva</span>`);
+      }
       if (prontas.has(id) && !cx.querySelector('img')){
         const arq = (d.entregas||[]).find(e => e.nome.includes(id) && e.nome.endsWith('.png'));
         if (arq) cx.innerHTML = `<img src="/jobs/${job}/arquivos/${encodeURIComponent(arq.nome)}" alt="">`;
