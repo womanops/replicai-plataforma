@@ -177,13 +177,26 @@ def _largura(zona: str, x0: int, x1: int, vizinhas: set[str]) -> tuple[int, int]
     return (x0 + i * fatia, fatia - folga)
 
 
+# quanto da faixa o conjunto deve ocupar quando sobra espaço. Os pesos de
+# `PESO` foram pensados para a peça inteira; numa faixa com um ou dois
+# elementos eles deixavam o conteúdo miúdo no meio do vazio — o CTA saía com
+# 27px de corpo numa faixa de 366.
+# sem teto de crescimento: quem segura o tamanho do texto é o `max` de cada
+# papel, que olha a peça. Um teto aqui prendia o botão em 35px numa faixa de
+# 232 — miúdo no meio do vazio, de novo.
+OCUPACAO = 0.80
+
+
 def _alturas(papeis: list[str], util_h: int, respiro: int) -> list[int]:
     alt = [max(14, round(util_h * PESO[p][0])) for p in papeis]
-    total = sum(alt) + respiro * (len(alt) - 1)
+    entre = respiro * (len(alt) - 1)
+    total = sum(alt) + entre
     if total > util_h:                       # encolhe proporcional em vez de estourar
-        sobra = util_h - respiro * (len(alt) - 1)
-        f = sobra / max(1, sum(alt))
-        alt = [max(14, int(a * f)) for a in alt]
+        f = (util_h - entre) / max(1, sum(alt))
+        return [max(14, int(a * f)) for a in alt]
+    if total < util_h * OCUPACAO:            # cresce proporcional em vez de boiar
+        f = (util_h * OCUPACAO - entre) / max(1, sum(alt))
+        return [max(14, int(a * f)) for a in alt]
     return alt
 
 
@@ -333,7 +346,10 @@ def montar(esq: Esquema, formato: dict, fundo: dict, fontes: list | None = None,
                 # o botão abraça o texto. Herdando a caixa da coluna ele saía
                 # como uma barra branca atravessando a peça com a letra
                 # minúscula no meio — larga demais e baixa demais ao mesmo tempo
-                corpo = max(14, min(round(box["h"] * 0.42), round(H * 0.030)))
+                # o corpo do CTA vem da peça, não da caixa da coluna: numa
+                # faixa estreita a caixa é baixa, e tirar o corpo dela deixava
+                # o botão com letra de 18px num canvas de 1920
+                corpo = max(14, min(round(H * 0.024), round(box["h"] * 0.62)))
                 alt = min(box["h"], round(corpo * 2.4))
                 larg = min(box["w"], round(len(e.texto) * corpo * 0.60) + corpo * 3)
                 x = box["x"]

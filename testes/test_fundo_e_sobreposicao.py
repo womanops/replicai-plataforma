@@ -277,3 +277,50 @@ class TestBotao:
         meio, f = self._cta("ig-feed-1x1", "baixo-centro")
         dir_, _ = self._cta("ig-feed-1x1", "baixo-direita")
         assert dir_["box"]["x"] > meio["box"]["x"]
+
+
+class TestOcupacaoDaFaixa:
+    def test_um_elemento_sozinho_nao_boia_na_faixa(self):
+        """Os pesos valem para a peça inteira. Numa faixa com um elemento só,
+        o CTA saía com 27px de corpo numa faixa de 366."""
+        from api.composicao import PESO, _alturas
+        alt = _alturas(["cta"], 366, 20)[0]
+        assert alt > 366 * PESO["cta"][0] * 1.5
+
+    def test_quando_nao_cabe_continua_encolhendo(self):
+        """Encolhe até o piso de 14px, que é onde o texto ainda se lê. Abaixo
+        disso não há o que fazer: a faixa não comporta tantos papéis."""
+        from api.composicao import PESO, _alturas
+        papeis = ["headline", "apoio", "cta", "selo", "marca"]
+        alt = _alturas(papeis, 200, 20)
+        assert all(a >= 14 for a in alt)
+        assert all(a <= round(200 * PESO[p][0]) for p, a in zip(papeis, alt))
+
+    def test_o_crescimento_para_na_ocupacao_da_faixa(self):
+        """Quem segura o tamanho do texto é o `max` de cada papel, não a caixa."""
+        from api.composicao import OCUPACAO, _alturas
+        assert _alturas(["selo"], 2000, 20)[0] <= round(2000 * OCUPACAO)
+
+    def test_o_botao_fica_legivel_numa_faixa_estreita(self):
+        from api.composicao import Elemento, Esquema, montar
+        esq = Esquema([Elemento("cta", "baixo-centro", "Inscreva-se")], {})
+        f = formato_by_id("ig-stories")
+        peca = montar(esq, f, {"tipo": "cor", "cor": "#000"},
+                      livres={"bottom": [64, 1214, 1016, 1580]})
+        cta = peca["elementos"][0]
+        assert cta["tamanho"] >= round(f["h"] * 0.020)
+
+
+class TestModoDoFundo:
+    def test_o_ambiente_escolhe_o_modo(self, arte, tmp_path, monkeypatch):
+        """Generativo custa e demora. Quem roda decide se vale nesta peça."""
+        monkeypatch.setenv("REPLICAI_FUNDO", "stretch")
+        r = preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770),
+                     tmp_path / "f.png")
+        assert r["modo"] == "stretch"
+
+    def test_o_modo_pedido_na_chamada_vence_o_ambiente(self, arte, tmp_path, monkeypatch):
+        monkeypatch.setenv("REPLICAI_FUNDO", "stretch")
+        r = preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770),
+                     tmp_path / "f.png", modo="solid")
+        assert r["modo"] == "solid"

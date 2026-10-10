@@ -18,6 +18,7 @@ as letras. Fundo intacto e texto ao lado sai melhor.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from PIL import Image
@@ -99,6 +100,8 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
 
     margem = _com_respiro(protegido, formato, W, H)
     porque = ""
+    if modo == "auto":
+        modo = os.environ.get("REPLICAI_FUNDO", "auto").strip().lower() or "auto"
     if modo == "auto":
         # continuar o desenho do fundo é a única coisa que bloco de cor não
         # faz. Sem generativo, faixa chapada tirada da paleta — nunca borrão,
