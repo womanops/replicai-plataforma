@@ -346,3 +346,45 @@ class TestOQueFicouDeFora:
         r = desdobrar(base, ["ig-stories"], Diz(), tmp_path / "job")
         assert r.descartados["ig-stories"]["apoio"] == "o brief não deu material"
         assert "descartados" in r.para_json()
+
+
+class TestQuandoOGenerativoNaoVem:
+    def test_a_peca_sai_dizendo_que_o_fundo_caiu(self, arte, tmp_path, monkeypatch):
+        """O motor esperava 30 minutos pelo generativo sem dar sinal de vida.
+        Agora tem prazo — e a queda aparece, porque queda calada foi o defeito
+        que entregou peça de régua com cara de peça do modelo."""
+        import api.fundo as fu
+        monkeypatch.setattr(fu, "_continuar", lambda base, ex, espera: (None, "não respondeu em 180s"))
+        r = preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770),
+                     tmp_path / "f.png", modo="outpaint")
+        assert r["modo"] == "solid"
+        assert "não respondeu" in r["caiu_para"]
+        assert r["caminho"].exists()           # a peça sai mesmo assim
+
+    def test_quando_vem_nao_ha_queda(self, arte, tmp_path, monkeypatch):
+        from PIL import Image as Im
+        import api.fundo as fu
+        monkeypatch.setattr(fu, "_continuar",
+                            lambda base, ex, espera: (Im.new("RGB", (
+                                base.width + ex["left"] + ex["right"],
+                                base.height + ex["top"] + ex["bottom"]), "#123456"), ""))
+        r = preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770),
+                     tmp_path / "f.png", modo="outpaint")
+        assert r["modo"] == "outpaint" and r["caiu_para"] == ""
+
+    def test_a_queda_chega_na_entrega(self, arte, tmp_path, monkeypatch):
+        import api.fundo as fu
+        import api.pipeline as pl
+        from api.leitura import Leitura
+        from api.pipeline import desdobrar
+        monkeypatch.setattr(fu, "_continuar", lambda base, ex, espera: (None, "não respondeu em 180s"))
+        monkeypatch.setattr(pl, "render_peca", lambda a, d: d.write_bytes(b"x"))
+
+        class Serve:
+            def compor(self, base, formato_id, brief="", terreno=None):
+                return {"canvas": {"w": 1080, "h": 1080}, "fundo": terreno.fundo,
+                        "elementos": [], "saida": f"{formato_id}.png"}
+
+        r = desdobrar(arte, ["ig-feed-1x1"], Serve(), tmp_path / "job",
+                      leitor=lambda a: Leitura(True, (0.47, 0.4, 0.46, 0.31), []))
+        assert any("bloco de cor" in a for a in r.avisos["ig-feed-1x1"])

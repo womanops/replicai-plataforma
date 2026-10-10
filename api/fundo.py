@@ -41,6 +41,11 @@ FAIXA_DEMAIS = 0.50
 # interface do app come o canto.
 RESPIRO = 0.86
 
+# quanto esperar pelo generativo, por formato. O motor esperava 30 minutos sem
+# dar sinal de vida; ninguém paga para olhar uma tela parada meia hora. Passou
+# do prazo, a peça sai com o fundo determinístico e dizendo que saiu.
+ESPERA_PADRAO = 180
+
 
 def escolher_estrategia(W: int, H: int, w: int, h: int, protegido=None) -> tuple[str, str]:
     """Preservar tudo (`contain`) enquanto a faixa vazia não dominar a peça;
@@ -56,6 +61,30 @@ def escolher_estrategia(W: int, H: int, w: int, h: int, protegido=None) -> tuple
     if vazio <= FAIXA_DEMAIS:
         return "contain", f"a arte inteira cabe deixando {round(vazio * 100)}% de faixa"
     return "smart", f"a arte inteira deixaria {round(vazio * 100)}% de faixa vazia"
+
+
+def _continuar(base, ex: dict, espera: int):
+    """Continua o desenho do fundo no espaço novo, com prazo.
+
+    Devolve (imagem, "") quando deu, (None, motivo) quando não. O motivo sobe
+    até a entrega: fundo que caiu para o determinístico tem que aparecer.
+    """
+    import tempfile
+
+    tmp = Path(tempfile.mkstemp(suffix=".png", prefix="replicai-fundo-")[1])
+    base.save(tmp)
+    try:
+        feito, log = _outpaint_higgsfield(tmp, ex, None, timeout=espera)
+    except Exception as e:
+        return None, f"o fundo generativo falhou: {e}"
+    finally:
+        tmp.unlink(missing_ok=True)
+    if feito is None:
+        return None, (f"o fundo generativo não respondeu em {espera}s "
+                      f"({log.get('erro') or 'sem resposta'})")
+    alvo = (base.width + ex["left"] + ex["right"], base.height + ex["top"] + ex["bottom"])
+    return (feito if feito.size == alvo
+            else ImageOps.fit(feito, alvo, Image.Resampling.LANCZOS)), ""
 
 
 class FundoImpossivel(RuntimeError):
@@ -116,6 +145,17 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
     crop, ex = plano["crop"], plano["expand"]
     base = img.crop(tuple(crop))
 
+    caiu_para = ""
+    if modo == "outpaint":
+        espera = max(30, int(os.environ.get("REPLICAI_FUNDO_ESPERA", ESPERA_PADRAO)))
+        tela, motivo = _continuar(base, ex, espera)
+        if tela is None:
+            # o generativo é o único que continua o desenho do fundo, mas não
+            # pode prender a entrega. Passou do prazo, a peça sai com o fundo
+            # determinístico — e dizendo que saiu, porque queda calada foi o
+            # defeito que entregou peça de régua com cara de peça do modelo.
+            caiu_para, modo = motivo, "solid"
+
     if plano["estrategia"] == "crop" or modo == "none" or not any(ex.values()):
         tela = base
         modo = "none"
@@ -130,20 +170,7 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
     elif modo == "solid":
         tela = _solid_canvas(base, base.width + ex["left"] + ex["right"],
                              base.height + ex["top"] + ex["bottom"], ex["left"], ex["top"], cor)
-    elif modo == "outpaint":
-        # continuar o desenho do fundo — grade, pontilhado, gradiente — é a
-        # única coisa que faixa chapada não faz. Falhou, não inventa: quem
-        # chamou decide, porque cair para borrão calado é o defeito antigo.
-        import tempfile
-        tmp = Path(tempfile.mkstemp(suffix=".png", prefix="replicai-fundo-")[1])
-        base.save(tmp)
-        feito, log = _outpaint_higgsfield(tmp, ex, None)
-        tmp.unlink(missing_ok=True)
-        if feito is None:
-            raise FundoImpossivel(f"o outpaint não rodou: {log.get('erro')}")
-        alvo = (base.width + ex["left"] + ex["right"], base.height + ex["top"] + ex["bottom"])
-        tela = feito if feito.size == alvo else ImageOps.fit(feito, alvo, Image.Resampling.LANCZOS)
-    else:
+    elif modo != "outpaint":
         raise ValueError(f"modo de fundo desconhecido: {modo}. Use {', '.join(MODOS)}")
 
     final = tela.resize((w, h), Image.Resampling.LANCZOS) if tela.size != (w, h) else tela
@@ -158,7 +185,7 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
         json.dumps({"origem": "extend", "modo": modo, "base": str(Path(arte).resolve()),
                     "crop": crop, "expand": ex}, ensure_ascii=False, indent=1), encoding="utf-8")
 
-    return {"src": destino.name, "caminho": destino, "modo": modo,
+    return {"src": destino.name, "caminho": destino, "modo": modo, "caiu_para": caiu_para,
             "estrategia": plano["estrategia"], "enquadramento": estrategia, "porque": porque, "cortou": bool(plano.get("cortou_fundo")),
             "base_box": plano["base_box"], "protect_box": plano.get("protect_box"),
             "areas_livres": plano.get("areas_livres") or {}}

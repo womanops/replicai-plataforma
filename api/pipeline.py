@@ -171,40 +171,50 @@ def _fonte_do_trabalho(pasta: Path) -> list[dict]:
     return [{"familia": "PecaSans", "arquivo": destino.name, "peso": "100 900"}]
 
 
-def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | None, str]:
+def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | None, list[str]]:
     """O fundo do formato e o espaço que ele deixou. Sem leitura, sem terreno:
-    quem compõe volta ao comportamento antigo em vez de receber meia verdade."""
+    quem compõe volta ao comportamento antigo em vez de receber meia verdade.
+
+    Devolve lista de avisos, não um só: fundo que caiu e tinta encostando na
+    margem são problemas independentes, e com uma variável só o segundo
+    apagava o primeiro.
+    """
     f = formato_by_id(fid)
     if not f or leitura is None:
-        return None, ""
+        return None, []
     from PIL import Image
     with Image.open(copia) as im:
         tinta = leitura.em_pixels(*im.size)
     info = prep_fundo.preparar(copia, f, tinta, pasta / f"fundo-{fid}.png")
-    aviso = ""
+
+    avisos = []
+    if info.get("caiu_para"):
+        avisos.append(f"{info['caiu_para']} — o fundo saiu em bloco de cor, que não "
+                      f"continua a grade nem a textura da arte. Vale rodar de novo")
     if info["protect_box"]:
         s, x0, y0, x1, y1 = f["safe"], *info["protect_box"]
         if (x0 < s["left"] or y0 < s["top"]
                 or x1 > f["w"] - s["right"] or y1 > f["h"] - s["bottom"]):
-            aviso = ("o texto da arte encosta na área que o app recorta: num aparelho "
-                     "menor pode aparecer cortado")
+            avisos.append("o texto da arte encosta na área que o app recorta: num "
+                          "aparelho menor pode aparecer cortado")
+
     return Terreno(fundo={"tipo": "imagem", "src": info["src"], "fit": "cover"},
                    livres=prep_fundo.espaco_livre(f, info["protect_box"]),
                    ja_escrito=list(leitura.frases),
-                   fontes=_fonte_do_trabalho(pasta)), aviso
+                   fontes=_fonte_do_trabalho(pasta)), avisos
 
 
 def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Path,
                      brief: str, leitura=None) -> None:
     for fid in formatos:
         try:
-            terreno, aviso = _terreno(copia, fid, pasta, leitura)
+            terreno, avisos_do_fundo = _terreno(copia, fid, pasta, leitura)
         except Exception as e:
             # fundo que não sai é falha do formato, não do trabalho inteiro
             r.falhas[fid] = f"o fundo não saiu: {e}"
             continue
-        if aviso:
-            r.avisos.setdefault(fid, []).append(aviso)
+        for a in avisos_do_fundo:
+            r.avisos.setdefault(fid, []).append(a)
         try:
             # caminho completo, não o nome: o compositor do modelo precisa
             # abrir o arquivo para mandar a arte junto. Com o nome curto ele

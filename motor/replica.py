@@ -955,8 +955,9 @@ def _higgsfield_job_por_params(model: str, params: dict) -> str | None:
 def _higgsfield_gerar(args: list[str], model: str, params: dict, timeout: int = 1800) -> tuple[str | None, str]:
     """`generate create --wait`: bloqueia até o job terminar e imprime o resultado.
     Se a chamada travar além do timeout, recupera o job pelos params e faz `wait` nele."""
+    espera = f"{max(1, round(timeout / 60))}m"
     try:
-        cr = run_cmd(args + ["--wait", "--wait-timeout", "30m"], timeout=timeout)
+        cr = run_cmd(args + ["--wait", "--wait-timeout", espera], timeout=timeout)
         url = _job_result_url(cr.stdout)
         m = UUID_RE.search(cr.stdout)
         if url:
@@ -970,7 +971,7 @@ def _higgsfield_gerar(args: list[str], model: str, params: dict, timeout: int = 
     return job, wt.stdout
 
 
-def _outpaint_higgsfield(src: Path, ex: dict, log_dir: Path | None) -> tuple[Image.Image | None, dict]:
+def _outpaint_higgsfield(src: Path, ex: dict, log_dir: Path | None, timeout: int = 1800) -> tuple[Image.Image | None, dict]:
     st = higgsfield_status()
     if not st.get("available"):
         return None, {"erro": "Higgsfield CLI indisponível", **st}
@@ -994,7 +995,7 @@ def _outpaint_higgsfield(src: Path, ex: dict, log_dir: Path | None) -> tuple[Ima
         if ex.get(k, 0) > 0:
             args += [f"--expand_{k}", str(int(ex[k]))]
     params = {f"expand_{k}": int(ex.get(k, 0)) for k in ("left", "right", "top", "bottom")}
-    job, raw = _higgsfield_gerar(args, "flux_2_pro_outpaint", params)
+    job, raw = _higgsfield_gerar(args, "flux_2_pro_outpaint", params, timeout=timeout)
     url = _job_result_url(raw)
     if not url:
         return None, {"erro": "sem URL de resultado", "stdout": raw[-800:]}
