@@ -7,12 +7,14 @@ renderizar leva minutos e requisição não espera. Quem trabalha é o worker.
 """
 from __future__ import annotations
 
+import io
 import json
 import shutil
+import zipfile
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 
 from api import trabalhos
 from api.compositor import CompositorSimples
@@ -21,6 +23,7 @@ from api.pipeline import desdobrar
 from motor.replica import formato_by_id, load_formatos
 
 app = FastAPI(title="ReplicAI", version="0.1.0")
+WEB = Path(__file__).resolve().parent.parent / "web"
 FILA = fila_do_ambiente()
 
 ACEITOS = {".png", ".jpg", ".jpeg", ".webp", ".psd", ".psb", ".pdf"}
@@ -41,6 +44,14 @@ def processar(job: str, arte: str, formatos: list[str], headline: str,
         # sem isto o trabalho fica "rodando" para sempre e ninguém sabe por quê
         trabalhos.gravar(job, {"status": "erro", "erro": str(e)})
         raise
+
+
+@app.get("/", response_class=HTMLResponse)
+def tela():
+    pagina = WEB / "index.html"
+    if not pagina.exists():
+        raise HTTPException(404, "a interface não foi instalada nesta imagem")
+    return pagina.read_text(encoding="utf-8")
 
 
 @app.get("/saude")
@@ -96,6 +107,27 @@ def ver(job: str):
     if estado is None:
         raise HTTPException(404, "trabalho não existe")
     return {"job": job, **estado, "entregas": trabalhos.entregas(job)}
+
+
+@app.get("/jobs/{job}/zip")
+def zip_do_trabalho(job: str):
+    """Tudo num arquivo só. Baixar peça por peça é o que mais irrita quem
+    entrega para cliente, e são oito, dez arquivos por campanha."""
+    try:
+        pasta = trabalhos.pasta_do(job)
+    except ValueError:
+        raise HTTPException(400, "identificador inválido")
+    itens = trabalhos.entregas(job)
+    if not itens:
+        raise HTTPException(404, "este trabalho ainda não tem entregas")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for it in itens:
+            z.write(pasta / it["nome"], Path(it["nome"]).name)
+    buf.seek(0)
+    return StreamingResponse(
+        buf, media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{job}.zip"'})
 
 
 @app.get("/jobs/{job}/arquivos/{nome:path}")

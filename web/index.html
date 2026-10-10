@@ -1,0 +1,317 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ReplicAI</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0E0A0C; --painel:#160F12; --painel2:#1E1518; --fgRGB:245,236,233;
+  --fg:#F5ECE9; --mut:rgba(var(--fgRGB),.58); --linha:rgba(var(--fgRGB),.13);
+  --vinho:#741B47; --rosa:#E8B4C8; --sinal:#B6FF3C; --err:#FF5A5A;
+  --disp:'Bebas Neue',sans-serif; --corpo:'Space Grotesk',system-ui,sans-serif;
+  --mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.5 var(--corpo);
+  -webkit-font-smoothing:antialiased}
+header{display:flex;align-items:baseline;gap:14px;padding:22px 26px 0}
+header b{font:400 30px/1 var(--disp);letter-spacing:.06em}
+header span{font:500 11px var(--mono);color:var(--mut);letter-spacing:.14em;text-transform:uppercase}
+main{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:26px;padding:22px 26px 120px;
+  align-items:start}
+@media (max-width:860px){main{grid-template-columns:1fr}}
+
+/* ---------- a peça ---------- */
+.zona{border:1px dashed rgba(var(--fgRGB),.26);border-radius:14px;background:var(--painel);
+  min-height:200px;display:grid;place-items:center;text-align:center;padding:26px;cursor:pointer}
+.zona:hover{border-color:var(--rosa)}
+.zona .arte{max-width:100%;max-height:300px;border-radius:8px;display:block}
+.zona h2{font:400 22px/1 var(--disp);letter-spacing:.04em;margin:0 0 8px}
+.zona p{margin:0;font-size:12.5px;color:var(--mut);line-height:1.45}
+.medida{font:500 11px var(--mono);color:var(--mut);margin-top:10px;display:block;letter-spacing:.06em}
+body.recebendo::after{content:'Solte em qualquer lugar';position:fixed;inset:10px;z-index:90;
+  border:2px dashed var(--sinal);border-radius:18px;pointer-events:none;display:grid;
+  place-items:start center;padding-top:24px;font:500 12px var(--mono);letter-spacing:.14em;
+  text-transform:uppercase;color:var(--sinal);background:rgba(182,255,60,.05)}
+
+label.campo{display:block;margin:18px 0 0}
+label.campo span{display:block;font:500 10.5px var(--mono);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--mut);margin-bottom:6px}
+input[type=text],textarea{width:100%;background:var(--painel);color:var(--fg);
+  border:1px solid var(--linha);border-radius:9px;padding:10px 12px;font:400 14px var(--corpo)}
+input:focus,textarea:focus{outline:2px solid var(--rosa);outline-offset:1px}
+textarea{resize:vertical;min-height:70px}
+.conta{float:right;font:500 10.5px var(--mono);color:var(--mut)}
+.conta.cheio{color:var(--err)}
+
+/* ---------- a grade de formatos, em proporção real ---------- */
+.titulo{display:flex;align-items:baseline;gap:12px;margin:0 0 14px}
+.titulo h2{font:400 24px/1 var(--disp);letter-spacing:.05em;margin:0}
+.titulo em{font:500 11px var(--mono);color:var(--mut);font-style:normal;letter-spacing:.08em}
+.canal{font:500 10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--mut);margin:22px 0 10px;border-top:1px solid var(--linha);padding-top:10px}
+.grade{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.f{background:transparent;border:0;padding:0;cursor:pointer;text-align:left;color:inherit;
+  display:flex;flex-direction:column;gap:5px;width:132px}
+.f .cx{position:relative;width:100%;border:1.5px solid rgba(var(--fgRGB),.22);border-radius:5px;
+  background:repeating-conic-gradient(#141014 0% 25%,#191419 0% 50%) 50%/12px 12px;overflow:hidden}
+.f .cx img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.f.on .cx{border-color:var(--sinal);box-shadow:0 0 0 3px rgba(182,255,60,.16)}
+.f.feito .cx{border-color:var(--sinal)}
+.f.falhou .cx{border-color:var(--err)}
+.f b{font:500 12px var(--corpo);font-weight:500;line-height:1.25}
+.f i{font:400 10.5px var(--mono);color:var(--mut);font-style:normal;letter-spacing:.04em}
+.f .selo{position:absolute;left:5px;top:5px;z-index:2;font:500 9px var(--mono);
+  letter-spacing:.1em;text-transform:uppercase;padding:2px 5px;border-radius:3px;
+  background:rgba(14,10,12,.82);color:var(--sinal)}
+.f.falhou .selo{color:var(--err)}
+.pulsa{animation:p 1.2s ease-in-out infinite}
+@keyframes p{0%,100%{opacity:.35}50%{opacity:.9}}
+
+/* ---------- rodapé ---------- */
+footer{position:fixed;left:0;right:0;bottom:0;display:flex;align-items:center;gap:14px;
+  padding:13px 26px;background:rgba(14,10,12,.9);backdrop-filter:blur(10px);
+  border-top:1px solid var(--linha);z-index:60}
+footer .estado{flex:1;min-width:0}
+footer .estado b{display:block;font:400 19px/1 var(--disp);letter-spacing:.05em}
+footer .estado span{font-size:12.5px;color:var(--mut)}
+button.acao{background:var(--sinal);color:#13200A;border:0;border-radius:9px;padding:11px 20px;
+  font:600 14px var(--corpo);cursor:pointer}
+button.acao:disabled{background:var(--painel2);color:rgba(var(--fgRGB),.4);cursor:default}
+button.secund{background:transparent;color:var(--fg);border:1px solid var(--linha);
+  border-radius:9px;padding:10px 16px;font:500 13px var(--corpo);cursor:pointer}
+.aviso{position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:80;
+  background:var(--painel2);border:1px solid var(--linha);border-left:3px solid var(--err);
+  padding:11px 16px;border-radius:9px;font-size:13.5px;max-width:560px;box-shadow:0 14px 40px rgba(0,0,0,.6)}
+.aviso.ok{border-left-color:var(--sinal)}
+.aviso.hidden{display:none}
+</style>
+
+<header><b>ReplicAI</b><span>uma peça aprovada, todos os formatos</span></header>
+
+<main>
+  <section>
+    <div class="zona" id="zona">
+      <div>
+        <h2>Arraste a peça aqui</h2>
+        <p>PSD, PNG, JPEG ou PDF.<br>O PSD rende mais: abre em camadas e o fundo vem inteiro.</p>
+      </div>
+    </div>
+    <input type="file" id="arquivo" hidden accept="image/*,.pdf,.psd,.psb,application/octet-stream">
+
+    <label class="campo"><span>Chamada <i class="conta" id="cHead"></i></span>
+      <input type="text" id="headline" placeholder="Chegamos a Porto Belo" maxlength="120"></label>
+    <label class="campo"><span>Botão <i class="conta" id="cCta"></i></span>
+      <input type="text" id="cta" placeholder="Candidate-se" maxlength="60"></label>
+    <label class="campo"><span>Nome da campanha</span>
+      <input type="text" id="titulo" placeholder="Save the Date Energiza"></label>
+    <label class="campo"><span>O que ajustar</span>
+      <textarea id="brief" placeholder="ex.: no Stories a chamada desce; não encostar nada no logo."></textarea></label>
+  </section>
+
+  <section>
+    <div class="titulo"><h2>Para onde vai</h2><em id="resumoSel">nenhum formato escolhido</em></div>
+    <div id="formatos"></div>
+  </section>
+</main>
+
+<div class="aviso hidden" id="aviso"></div>
+
+<footer>
+  <div class="estado"><b id="conta">Comece pela peça</b><span id="detalhe">Arraste a arte aprovada em qualquer lugar da tela.</span></div>
+  <button class="secund" id="btnZip" style="display:none">Baixar tudo</button>
+  <button class="acao" id="btnIr" disabled>Replicar</button>
+</footer>
+
+<script>
+const $ = s => document.querySelector(s);
+const escolhidos = new Set();
+let catalogo = [], peca = null, job = null, pulso = null;
+
+/* ---------- avisos ---------- */
+let somem;
+function aviso(msg, ok){ const a=$('#aviso'); a.textContent=msg; a.className='aviso'+(ok?' ok':'');
+  clearTimeout(somem); somem=setTimeout(()=>a.className='aviso hidden', 8000); }
+
+/* ---------- a peça ---------- */
+const ACEITOS = ['png','jpg','jpeg','webp','pdf','psd','psb'];
+
+// O PSD guarda a medida nos primeiros 26 bytes e uma miniatura logo depois.
+// Ler de lá mostra a arte na hora, sem subir nada — num arquivo de 400 MB a
+// leitura é a mesma. Sem isso o PSD vira um cartão mudo e parece que não leu.
+async function lerPsd(f){
+  const d = new DataView(await f.slice(0,26).arrayBuffer());
+  const sig = String.fromCharCode(d.getUint8(0),d.getUint8(1),d.getUint8(2),d.getUint8(3));
+  if (sig !== '8BPS') return { erro:'não parece um PSD' };
+  const out = { h:d.getUint32(14), w:d.getUint32(18), capa:null };
+  try{
+    const cm = new DataView(await f.slice(26,30).arrayBuffer()).getUint32(0);
+    const ini = 30+cm, len = new DataView(await f.slice(ini,ini+4).arrayBuffer()).getUint32(0);
+    if (len>0 && len<50e6){
+      const r = new DataView(await f.slice(ini+4, ini+4+len).arrayBuffer());
+      const marca = o => String.fromCharCode(r.getUint8(o),r.getUint8(o+1),r.getUint8(o+2),r.getUint8(o+3));
+      let p=0;
+      while (p+12 < len){
+        if (marca(p)!=='8BIM') break;
+        const id = r.getUint16(p+4); let q = p+6;
+        q += 1 + r.getUint8(q); if (q%2) q++;
+        const tam = r.getUint32(q); q += 4;
+        if ((id===1036||id===1033) && r.getUint32(q)===1 && tam>28){
+          const j = ini+4+q+28;
+          out.capa = URL.createObjectURL(f.slice(j, j+tam-28, 'image/jpeg'));
+          break;
+        }
+        p = q + tam + (tam%2);
+      }
+    }
+  }catch(e){}
+  return out;
+}
+
+async function receber(f){
+  const ext = (f.name.split('.').pop()||'').toLowerCase();
+  if (!ACEITOS.includes(ext)) { aviso(`Não trabalho com .${ext}. Mande PSD, PNG, JPEG ou PDF.`); return; }
+  const tam = f.size>=1048576 ? (f.size/1048576).toFixed(1)+' MB' : Math.round(f.size/1024)+' KB';
+  peca = { arquivo:f, ext, w:null, h:null };
+  if (!$('#titulo').value) $('#titulo').value = f.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ');
+
+  const pinta = (url, medida) => {
+    $('#zona').innerHTML = url
+      ? `<div><img class="arte" src="${url}" alt=""><span class="medida">${medida}</span></div>`
+      : `<div><h2>${f.name}</h2><span class="medida">${medida}</span></div>`;
+  };
+  if (['png','jpg','jpeg','webp'].includes(ext)){
+    const url = URL.createObjectURL(f), im = new Image();
+    im.onload = () => { peca.w=im.naturalWidth; peca.h=im.naturalHeight;
+      pinta(url, `${peca.w}×${peca.h} · ${tam}`); pintarFormatos(); pintarRodape(); };
+    im.onerror = () => { pinta(null, tam); pintarRodape(); };
+    im.src = url;
+  } else if (ext==='psd' || ext==='psb'){
+    pinta(null, `lendo o PSD… · ${tam}`);
+    const r = await lerPsd(f);
+    if (r.erro){ aviso(r.erro); pinta(null, tam); }
+    else { peca.w=r.w; peca.h=r.h; pinta(r.capa, `${r.w}×${r.h} · ${tam}`); }
+    pintarFormatos(); pintarRodape();
+  } else { pinta(null, tam); pintarRodape(); }
+}
+
+$('#zona').onclick = () => $('#arquivo').click();
+$('#arquivo').onchange = e => e.target.files[0] && receber(e.target.files[0]);
+
+// A peça pode ser solta em qualquer lugar da janela. A zona é pequena, errar o
+// alvo é fácil, e quando se erra o navegador abre o arquivo e a página não vê nada.
+let arrastando = 0;
+addEventListener('dragenter', e => { if (![...(e.dataTransfer?.types||[])].includes('Files')) return;
+  e.preventDefault(); if (arrastando++===0) document.body.classList.add('recebendo'); });
+addEventListener('dragover', e => { if ([...(e.dataTransfer?.types||[])].includes('Files')) e.preventDefault(); });
+addEventListener('dragleave', e => { if (!e.relatedTarget){ arrastando=0; document.body.classList.remove('recebendo'); } });
+addEventListener('drop', e => { arrastando=0; document.body.classList.remove('recebendo');
+  const f = e.dataTransfer?.files?.[0]; if (!f) return; e.preventDefault(); if (!job) receber(f); });
+
+/* ---------- formatos, em proporção real ---------- */
+async function carregarFormatos(){
+  catalogo = await (await fetch('/formatos')).json();
+  pintarFormatos();
+}
+const LARG = 132;
+function pintarFormatos(){
+  const porCanal = {};
+  for (const f of catalogo) (porCanal[f.canal] ||= []).push(f);
+  $('#formatos').innerHTML = Object.entries(porCanal).map(([canal, fs]) => `
+    <div class="canal">${canal}</div>
+    <div class="grade">${fs.map(cartao).join('')}</div>`).join('');
+  $('#formatos').querySelectorAll('.f').forEach(b => b.onclick = () => {
+    if (job) return;
+    escolhidos.has(b.dataset.id) ? escolhidos.delete(b.dataset.id) : escolhidos.add(b.dataset.id);
+    b.classList.toggle('on'); pintarRodape();
+  });
+}
+function cartao(f){
+  // altura pela proporção verdadeira do destino: o retângulo É o formato
+  const alt = Math.max(26, Math.min(190, Math.round(LARG * f.h / f.w)));
+  const on = escolhidos.has(f.id) ? ' on' : '';
+  return `<button class="f${on}" data-id="${f.id}" type="button" title="${f.nome}">
+    <div class="cx" style="height:${alt}px"></div>
+    <b>${f.nome}</b><i>${f.w}×${f.h}</i></button>`;
+}
+
+/* ---------- rodapé ---------- */
+function pintarRodape(){
+  const n = escolhidos.size;
+  $('#resumoSel').textContent = n ? `${n} formato${n>1?'s':''} escolhido${n>1?'s':''}` : 'nenhum formato escolhido';
+  if (job) return;
+  const temPeca = !!peca, temHead = !!$('#headline').value.trim();
+  $('#btnIr').disabled = !(temPeca && n && temHead);
+  $('#conta').textContent = !temPeca ? 'Comece pela peça' : !temHead ? 'Falta a chamada'
+    : !n ? 'Escolha os formatos' : `${n} peça${n>1?'s':''} para replicar`;
+  $('#detalhe').textContent = !temPeca ? 'Arraste a arte aprovada em qualquer lugar da tela.'
+    : !temHead ? 'A chamada é o texto principal da peça.'
+    : !n ? 'Cada retângulo está na proporção real do destino.'
+    : 'Leva cerca de um minuto por peça.';
+}
+['#headline','#cta'].forEach(s => $(s).oninput = () => { contar(); pintarRodape(); });
+function contar(){
+  const h = $('#headline').value.length, c = $('#cta').value.length;
+  $('#cHead').textContent = h ? `${h}` : '';
+  $('#cCta').textContent = c ? `${c}` : '';
+}
+
+/* ---------- enviar e acompanhar ---------- */
+$('#btnIr').onclick = async () => {
+  const fd = new FormData();
+  fd.append('arte', peca.arquivo);
+  fd.set('formatos', [...escolhidos].join(','));
+  fd.set('headline', $('#headline').value.trim());
+  fd.set('cta', $('#cta').value.trim());
+  fd.set('titulo', $('#titulo').value.trim());
+  fd.set('brief', $('#brief').value.trim());
+  $('#btnIr').disabled = true; $('#conta').textContent = 'Enviando';
+  $('#detalhe').textContent = 'Subindo a arte…';
+  let r;
+  try { r = await (await fetch('/jobs', { method:'POST', body:fd })).json(); }
+  catch(e){ r = { detail:'Não consegui falar com o servidor.' }; }
+  if (!r.job){ aviso(r.detail || 'O envio falhou.'); $('#btnIr').disabled=false; pintarRodape(); return; }
+  job = r.job;
+  $('#btnIr').style.display='none';
+  acompanhar();
+};
+
+async function acompanhar(){
+  clearInterval(pulso);
+  const ver = async () => {
+    let d; try { d = await (await fetch(`/jobs/${job}`)).json(); } catch(e){ return; }
+    const prontas = new Set(d.prontas || []), falhas = d.falhas || {};
+    for (const b of document.querySelectorAll('.f')){
+      const id = b.dataset.id, cx = b.querySelector('.cx');
+      if (!escolhidos.has(id)) { b.style.opacity = .25; continue; }
+      if (prontas.has(id) && !cx.querySelector('img')){
+        const arq = (d.entregas||[]).find(e => e.nome.includes(id) && e.nome.endsWith('.png'));
+        if (arq) cx.innerHTML = `<img src="/jobs/${job}/arquivos/${encodeURIComponent(arq.nome)}" alt="">`;
+        b.classList.add('feito'); b.classList.remove('pulsa');
+      } else if (falhas[id]){
+        b.classList.add('falhou'); b.classList.remove('pulsa');
+        if (!cx.querySelector('.selo')) cx.insertAdjacentHTML('afterbegin', `<span class="selo">não saiu</span>`);
+        b.title = falhas[id];
+      } else if (!prontas.has(id)) b.classList.add('pulsa');
+    }
+    const feitas = prontas.size, erradas = Object.keys(falhas).length, total = escolhidos.size;
+    $('#conta').textContent = d.status === 'rodando' || d.status === 'na fila' ? 'Replicando'
+      : d.status === 'pronto' ? 'Pronto' : d.status === 'parcial' ? 'Pronto com ressalvas' : 'Deu erro';
+    $('#detalhe').textContent = d.status === 'rodando' || d.status === 'na fila'
+      ? `${feitas} de ${total}`
+      : erradas ? `${feitas} entregue${feitas>1?'s':''}, ${erradas} não saiu. Passe o mouse para ver por quê.`
+      : `${feitas} peça${feitas>1?'s':''} entregue${feitas>1?'s':''}.`;
+    if (['pronto','parcial','erro'].includes(d.status)){
+      clearInterval(pulso);
+      if (feitas){ const z=$('#btnZip'); z.style.display=''; z.onclick=()=>location.href=`/jobs/${job}/zip`; }
+      document.querySelectorAll('.pulsa').forEach(b => b.classList.remove('pulsa'));
+      if (d.erro) aviso(d.erro);
+    }
+  };
+  await ver();
+  pulso = setInterval(ver, 2500);
+}
+
+carregarFormatos(); pintarRodape();
+</script>

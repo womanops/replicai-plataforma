@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "replicai", "runtimeExecutable": ".venv/bin/python",
+      "runtimeArgs": ["-m","uvicorn","api.main:app","--port","8010"], "port": 8010 }
+  ]
+}

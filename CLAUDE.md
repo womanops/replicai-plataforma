@@ -135,8 +135,20 @@ parar de ler `CHROME_FLAGS`, e inverter largura com altura no PSD.
 
 **`docker compose up` já vale**, agora que `api.main:app` existe.
 
-Falta o front-end: uma página de envio e uma de resultado. E a decisão de
-`docs/DECISAO-quem-compoe.md`, que hoje faz a API usar o `CompositorSimples`.
+- `web/index.html` — a tela. Uma só: a grade de formatos é o seletor **e** o
+  acompanhamento. Cada retângulo está na proporção verdadeira do destino e se
+  preenche com a peça quando ela fica pronta; o que falhou fica vermelho com o
+  motivo no title. Não há página de resultado separada porque a replicação é o
+  que a pessoa veio ver acontecer.
+
+Herdou do Studio o que custou caro descobrir: a peça pode ser solta em qualquer
+lugar da janela (a zona é pequena e, quando se erra, o navegador abre o arquivo
+e a página não vê nada) e o PSD mostra medida e miniatura lendo o cabeçalho do
+próprio arquivo, sem subir nada.
+
+Falta a decisão de `docs/DECISAO-quem-compoe.md`: hoje a API usa o
+`CompositorSimples`, a regra determinística, e é ela que limita a qualidade —
+não a esteira.
 
 ### Como os testes da API são rápidos
 

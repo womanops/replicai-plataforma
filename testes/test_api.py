@@ -179,3 +179,22 @@ class TestDePontaAPonta:
                     and e["nome"] != "arte.png")
         r = c.get(f"/jobs/{job}/arquivos/{nome}")
         assert r.status_code == 200 and r.content[:4] == b"\x89PNG"
+
+
+class TestBaixarTudo:
+    def test_trabalho_sem_entregas_avisa(self, cliente):
+        job = enviar(cliente).json()["job"]
+        # a fila é espiã: nada foi processado, mas a arte subiu
+        r = cliente.get(f"/jobs/{job}/zip")
+        assert r.status_code == 200          # a arte já é uma entrega
+        assert r.headers["content-type"] == "application/zip"
+
+    def test_trabalho_que_nao_existe(self, cliente):
+        assert cliente.get("/jobs/nao-existe/zip").status_code == 404
+
+    def test_o_zip_leva_as_entregas(self, cliente):
+        import io as _io, zipfile as _zip
+        job = enviar(cliente).json()["job"]
+        r = cliente.get(f"/jobs/{job}/zip")
+        nomes = _zip.ZipFile(_io.BytesIO(r.content)).namelist()
+        assert "arte.png" in nomes
