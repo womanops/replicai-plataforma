@@ -188,3 +188,41 @@ Para o compositor automático, isso quer dizer duas coisas:
 2. **Verificar depois é obrigatório, e uma verificação só não serve.** As três
    regras estão em `api/qualidade.py`, com teste, inclusive o caso que me
    enganou.
+
+
+---
+
+# Por que o fundo nunca fechava (10/10/2026)
+
+Depois de quatro tentativas no banner do Energiza, a causa não era o método.
+
+**O grafismo da arte mora embaixo do texto.** Os arcos da esfera ficam atrás do
+"SAVE THE DATE"; a grade, atrás do parágrafo e da data. Isso fecha as três
+saídas de uma vez:
+
+- fugir do texto para achar fundo leva às áreas vazias da peça — foi o meu
+  borrão, e o outpaint estendeu fielmente o vazio que eu dei a ele;
+- apagar o texto destrói o grafismo junto — a cicatriz de 1,4% de nitidez;
+- esticar deforma — 2,02x, arcos em ângulo que não existe na arte.
+
+**A base do Energiza é um PNG achatado.** Com PSD o problema não existe: a
+camada de fundo chega inteira, sem texto por cima, e no caso da Consigaz ela
+mede 1200x1463 numa prancheta de 1200x1200 — sobra material real para estender.
+
+Para esta peça, o limite é o arquivo de entrada, não o motor.
+
+## O que entrou no código
+
+`api/qualidade.py`, com teste nos dois sentidos:
+
+| Verificação | O que pega |
+|---|---|
+| `fidelidade_do_fundo` | degradê liso no lugar da trama |
+| `fundo_invade_marca` | recorte de fundo que pega logo ou lettering |
+| `recorte_e_retangulo` | marca colada como bloco opaco, com moldura |
+| `grafismo_sob_texto` | **arte cujo grafismo só existe atrás do texto: avisa no envio que sem PSD o fundo vai sair liso** |
+
+A última mede o **anel em volta** das áreas de texto, não o miolo. Medindo por
+dentro, as próprias letras inflavam a conta e uma peça com fotos longe do texto
+acusava igual a uma com grade atrás dele. Energiza dá 6x; Candidate-se, que tem
+as fotos longe, não dispara.

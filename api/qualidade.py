@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter
 
 
 def estrutura(img: Image.Image | Path | str) -> float:
@@ -104,3 +104,61 @@ def recorte_e_retangulo(img: Image.Image | Path | str, borda: int = 2) -> bool:
     ])
     # se a borda inteira é opaca, o recorte carrega fundo junto
     return bool((moldura > 240).mean() > 0.95)
+
+
+# ------------------------------------------------------ grafismo embaixo do texto
+
+def grafismo_sob_texto(arte, regioes: list[tuple], anel: int = 60) -> tuple[bool, str]:
+    """Diz se a identidade gráfica da arte mora debaixo do texto.
+
+    Quando mora, base achatada não serve e não há método que resolva: fugir do
+    texto leva às áreas vazias, apagar o texto destrói o grafismo junto, e
+    estender a partir de área vazia estende o vazio.
+
+    Mede o **anel em volta** de cada área de texto, não o que está dentro dela.
+    Dentro está o próprio texto, e as letras inflam a conta: medindo por dentro,
+    uma peça com fotos longe do texto acusava igual a uma com grade atrás dele.
+    O entorno diz o que o texto está tapando.
+
+    Vivido no Save the Date do Energiza, que veio em PNG achatado: os arcos da
+    esfera ficam atrás do "SAVE THE DATE" e a grade atrás do parágrafo. Toda
+    peça saiu com fundo liso. Com PSD não acontece: a camada de fundo chega
+    inteira e costuma sobrar além da prancheta.
+    """
+    if not isinstance(arte, Image.Image):
+        arte = Image.open(arte)
+    if not regioes:
+        return False, "sem áreas de texto para comparar"
+    W, H = arte.size
+
+    vizinhos, distantes = [], []
+    marcadas = Image.new("L", (W, H), 0)
+    d = ImageDraw.Draw(marcadas)
+    for r in regioes:
+        x0, y0, x1, y1 = (int(v) for v in r)
+        d.rectangle((x0 - anel, y0 - anel, x1 + anel, y1 + anel), fill=255)
+        for caixa in ((x0 - anel, y0 - anel, x1 + anel, y0),      # acima
+                      (x0 - anel, y1, x1 + anel, y1 + anel),      # abaixo
+                      (x0 - anel, y0, x0, y1),                    # esquerda
+                      (x1, y0, x1 + anel, y1)):                   # direita
+            cx = (max(0, caixa[0]), max(0, caixa[1]), min(W, caixa[2]), min(H, caixa[3]))
+            if cx[2] - cx[0] > 8 and cx[3] - cx[1] > 8:
+                vizinhos.append(estrutura(arte.crop(cx)))
+    if not vizinhos:
+        return False, "as áreas de texto cobrem a arte inteira"
+
+    m = np.asarray(marcadas) == 0
+    if m.mean() < 0.12:
+        return True, "o texto e o entorno dele cobrem quase toda a arte: sem PSD não há fundo para aproveitar"
+    a = np.asarray(arte.convert("L"))
+    distante = estrutura(Image.fromarray(np.where(m, a, int(a[m].mean())).astype(np.uint8)))
+
+    viz = float(np.mean(vizinhos))
+    razao = viz / distante if distante > 0.01 else 99.0
+    if razao < 2.0:
+        return False, (f"grafismo distribuído pela arte: em volta do texto {viz:.1f}, "
+                       f"longe dele {distante:.1f}")
+    return True, (
+        f"o grafismo está concentrado atrás do texto (nitidez {viz:.1f} no entorno das "
+        f"áreas de texto contra {distante:.1f} longe delas, {razao:.0f}x). Com base "
+        f"achatada o fundo das peças sai liso: peça o PSD, onde o fundo vem inteiro")

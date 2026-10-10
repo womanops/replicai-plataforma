@@ -115,3 +115,42 @@ class TestRecorteComAlfa:
         im = Image.new("RGBA", (120, 60), (0, 0, 0, 0))
         im.paste((255, 255, 255, 255), (30, 15, 90, 45))     # só o miolo é opaco
         assert recorte_e_retangulo(im) is False
+
+
+class TestGrafismoSobTexto:
+    """Quando a identidade gráfica mora atrás do texto, base achatada não
+    entrega fundo fiel e nenhum método resolve. Vale avisar no envio, não
+    depois da peça pronta.
+
+    Medido nas artes reais: Energiza (grade atrás do texto) dá 6x; Consigaz
+    Candidate-se (fotos longe do texto) não dispara.
+    """
+
+    TEXTO = [(120, 120, 380, 180)]
+
+    def arte(self, onde_tem_grafismo):
+        """Grade só na faixa indicada; o resto é cor chapada."""
+        a = np.full((300, 500, 3), (12, 30, 110), dtype=np.uint8)
+        y0, y1 = onde_tem_grafismo
+        faixa = a[y0:y1]
+        faixa[::12, :] = (60, 100, 200)
+        faixa[:, ::12] = (60, 100, 200)
+        a[y0:y1] = faixa
+        return Image.fromarray(a)
+
+    def test_acusa_quando_a_grade_esta_atras_do_texto(self):
+        from api.qualidade import grafismo_sob_texto
+        sob, msg = grafismo_sob_texto(self.arte((80, 220)), self.TEXTO)
+        assert sob, msg
+        assert "peça o PSD" in msg
+
+    def test_nao_acusa_quando_o_grafismo_esta_longe(self):
+        from api.qualidade import grafismo_sob_texto
+        sob, msg = grafismo_sob_texto(self.arte((240, 300)), self.TEXTO)
+        assert not sob, msg
+        assert "distribuído" in msg
+
+    def test_sem_areas_de_texto_nao_opina(self):
+        from api.qualidade import grafismo_sob_texto
+        sob, _ = grafismo_sob_texto(self.arte((80, 220)), [])
+        assert not sob
