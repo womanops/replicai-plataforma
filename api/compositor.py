@@ -226,6 +226,10 @@ Regras:
 - Texto que não cabe no limite deve ser encurtado por você, não truncado depois.
 - Não escreva frase nova. Use só o que está no material abaixo, encurtando se
   precisar. Papel sem material é papel que fica de fora, e vai em `descartados`.
+- Encurtar é tirar palavra que sobra, não é deixar um pedaço solto. Se o que
+  restar não se sustentar sozinho — uma palavra avulsa, uma frase pela metade —
+  deixe o papel de fora e diga o motivo. Peça com a arte e só o CTA é melhor do
+  que peça com um pedaço de frase no topo.
 - Tudo que você deixar de fora entra em `descartados`, com o motivo. Cortar
   conteúdo calado não é aceito.
 - A marca sai de um recorte da arte: informe `origem` com o arquivo.

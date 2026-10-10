@@ -75,6 +75,7 @@ def processar(job: str, arte: str, formatos: list[str], headline: str,
                                "prontas": sorted(r.prontas),
                                "falhas": r.falhas,
                                "avisos": r.avisos,
+                               "descartados": r.descartados,
                                "custo": r.custo})
     except Exception as e:
         # sem isto o trabalho fica "rodando" para sempre e ninguém sabe por quê

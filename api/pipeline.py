@@ -27,6 +27,7 @@ class Resultado:
     prontas: dict[str, Path] = field(default_factory=dict)
     falhas: dict[str, str] = field(default_factory=dict)
     avisos: dict[str, list[str]] = field(default_factory=dict)
+    descartados: dict[str, dict] = field(default_factory=dict)
     custo: dict = field(default_factory=dict)
 
     @property
@@ -43,6 +44,7 @@ class Resultado:
             "prontas": {k: str(v) for k, v in self.prontas.items()},
             "falhas": self.falhas,
             "avisos": self.avisos,
+            "descartados": self.descartados,
             "custo": self.custo,
         }
 
@@ -211,6 +213,12 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
         except ComposicaoImpossivel as e:
             r.falhas[fid] = str(e)
             continue
+
+        # o modelo explica cada coisa que deixou de fora, e essa explicação é
+        # metade da entrega: é por ela que se descobre que o brief não deu
+        # material para a headline. Guardar e não mostrar foi o erro antigo.
+        if peca.get("descartados"):
+            r.descartados[fid] = peca["descartados"]
 
         for a in tirar_imagem_fantasma(peca, pasta):
             r.avisos.setdefault(fid, []).append(a)

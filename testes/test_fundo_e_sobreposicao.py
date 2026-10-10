@@ -324,3 +324,25 @@ class TestModoDoFundo:
         r = preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770),
                      tmp_path / "f.png", modo="solid")
         assert r["modo"] == "solid"
+
+
+class TestOQueFicouDeFora:
+    def test_o_descartado_chega_na_entrega(self, tmp_path, monkeypatch):
+        """O modelo explica cada coisa que deixou de fora, e é por aí que se
+        descobre que o brief não deu material para a headline. Guardar sem
+        mostrar é o erro de sempre."""
+        import api.pipeline as pl
+        from api.pipeline import desdobrar
+        monkeypatch.setattr(pl, "render_peca", lambda a, d: d.write_bytes(b"x"))
+        base = tmp_path / "base.png"
+        Image.new("RGB", (64, 64), "red").save(base)
+
+        class Diz:
+            def compor(self, base, formato_id, brief="", terreno=None):
+                return {"w": 10, "h": 10, "fundo": {"tipo": "cor", "cor": "#000"},
+                        "elementos": [], "saida": f"{formato_id}.png",
+                        "descartados": {"apoio": "o brief não deu material"}}
+
+        r = desdobrar(base, ["ig-stories"], Diz(), tmp_path / "job")
+        assert r.descartados["ig-stories"]["apoio"] == "o brief não deu material"
+        assert "descartados" in r.para_json()
