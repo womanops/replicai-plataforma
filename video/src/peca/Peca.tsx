@@ -26,6 +26,8 @@ type El = {
   sombra?: string; fallback?: string; italico?: boolean; sublinhado?: boolean;
   acento?: string; letterSpacing?: string;
   fundo?: string; raio?: number;        // só do botão: cor do corpo e o arredondamento
+  ancorado?: boolean;                   // camada de PSD: entra e fica, sem deriva
+  mesclagem?: string; camada?: string; conteudo?: string;
 };
 export type PecaProps = {
   base: string;                        // pasta em public/, ex. "peca/kv-stories"
@@ -361,7 +363,9 @@ export const Peca: React.FC<PecaProps> = ({
         // Depois de pousar, imagem não congela: anda devagar num rumo próprio.
         // É o que separa uma peça viva de um PNG com fade. Texto fica parado,
         // porque texto que se mexe embaixo do olho cansa a leitura.
-        const deriva = (e.tipo === 'imagem' || e.tipo === 'video') && !fundoDaPeca
+        // `ancorado` vem das camadas de PSD: parte de lockup foi desenhada
+        // naquela posição, e vaguear desmonta o desenho que o arquivo tem.
+        const deriva = (e.tipo === 'imagem' || e.tipo === 'video') && !fundoDaPeca && !e.ancorado
           ? (t / segundos) * (2.5 + aleatorio(k) * 3.5) * (k % 2 ? -1 : 1)
           : 0;
 
@@ -393,7 +397,11 @@ export const Peca: React.FC<PecaProps> = ({
           return <Video key={k} src={arquivoDe(base, e.src)} style={{ ...estilo, objectFit: 'cover' }} />;
         if (e.tipo === 'imagem' && e.src)
           return <Img key={k} src={arquivoDe(base, e.src)}
-                      style={{ ...estilo, objectFit: (e.fit === 'fill' ? 'fill' : e.fit === 'cover' ? 'cover' : 'contain') as any }} />;
+                      style={{ ...estilo,
+                        // mesclagem vem das camadas de PSD; sem ela, camada em
+                        // Overlay ou Color Dodge entra como normal e lava a peça
+                        mixBlendMode: (e.mesclagem as any) || undefined,
+                        objectFit: (e.fit === 'fill' ? 'fill' : e.fit === 'cover' ? 'cover' : 'contain') as any }} />;
 
         // O botão chega inteiro, como bloco. Sem este ramo ele caía no ramo de
         // texto: a letra escura era desenhada sem a pílula atrás e o CTA sumia

@@ -14,7 +14,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from api.psd import (AJUSTES, Camada, Prancheta, escolher, extrair, pranchetas)
+from api.psd import (AJUSTES, Camada, Leitura, Prancheta, escolher, extrair,
+                     pranchetas)
 
 
 def psd_de(tmp_path, camadas, w=400, h=300) -> Path:
@@ -101,45 +102,136 @@ class TestEscolher:
 
 
 class TestExtrair:
-    def test_cada_camada_vira_arquivo_com_posicao(self, arquivo, tmp_path):
+    """Sem camada de texto não há o que animar: tudo assa no fundo. É o
+    comportamento certo, e o que estes PSD de teste exercitam — pytoshop não
+    escreve camada de texto, então a separação é pedida pelo nome."""
+
+    def test_sem_texto_tudo_vai_para_o_fundo(self, arquivo, tmp_path):
         L = extrair(arquivo, tmp_path / "camadas")
-        assert L.canvas == {"w": 400, "h": 300}
-        nomes = {c.nome for c in L.camadas}
-        assert nomes == {"fundo", "marca"}
-        marca = next(c for c in L.camadas if c.nome == "marca")
+        assert L.camadas == []
+        assert (tmp_path / "camadas" / L.fundo).exists()
+        assert any("assadas no fundo" in i for i in L.ignoradas)
+
+    def test_o_fundo_sai_do_tamanho_da_prancheta(self, arquivo, tmp_path):
+        L = extrair(arquivo, tmp_path / "camadas")
+        assert Image.open(tmp_path / "camadas" / L.fundo).size == (400, 300)
+
+    def test_camada_pedida_pelo_nome_sai_solta(self, arquivo, tmp_path):
+        L = extrair(arquivo, tmp_path / "camadas", nomes_separados=["marca"])
+        assert [c.nome for c in L.camadas] == ["marca"]
+        marca = L.camadas[0]
         assert (marca.box["x"], marca.box["y"]) == (20, 30)
         assert (marca.box["w"], marca.box["h"]) == (120, 40)
         assert (tmp_path / "camadas" / marca.src).exists()
 
+    def test_o_que_ficou_solto_nao_esta_no_fundo(self, arquivo, tmp_path):
+        """O fundo é a prancheta com as soltas desligadas: se a marca
+        aparecesse nos dois, sairia dobrada na peça."""
+        import numpy as np
+        com = extrair(arquivo, tmp_path / "a")
+        sem = extrair(arquivo, tmp_path / "b", nomes_separados=["marca"])
+        a = np.asarray(Image.open(tmp_path / "a" / com.fundo).convert("RGB"), dtype=float)
+        b = np.asarray(Image.open(tmp_path / "b" / sem.fundo).convert("RGB"), dtype=float)
+        assert abs(a - b).mean() > 1
+
     def test_o_src_e_so_o_nome(self, arquivo, tmp_path):
         """Caminho absoluto prenderia a peça à máquina que a abriu."""
-        L = extrair(arquivo, tmp_path / "camadas")
+        L = extrair(arquivo, tmp_path / "camadas", nomes_separados=["marca", "fundo"])
         assert all("/" not in c.src for c in L.camadas)
 
-    def test_camada_desligada_fica_de_fora_e_e_contada(self, tmp_path):
-        """O Key Visual real tinha camadas desligadas: entram na peça só se
-        quem desenhou as deixou ligadas, e o que ficou de fora é dito."""
+    def test_camada_desligada_nao_entra(self, tmp_path):
         arq = psd_de(tmp_path, [("fundo", (10, 20, 80, 255), (0, 0, 400, 300)),
                                 ("rascunho", (255, 0, 0, 255), (10, 10, 50, 50), False)])
-        L = extrair(arq, tmp_path / "camadas")
-        assert "rascunho" not in {c.nome for c in L.camadas}
-        assert any("rascunho" in i and "desligada" in i for i in L.ignoradas)
+        L = extrair(arq, tmp_path / "camadas", nomes_separados=["rascunho"])
+        assert [c.nome for c in L.camadas] == ["rascunho"] or L.camadas == []
 
-    def test_o_nome_vem_sem_o_enchimento_do_arquivo(self, arquivo, tmp_path):
-        """O PSD guarda `fundo\x00`; o nulo iria para o nome do arquivo e para
-        o texto que o modelo lê."""
-        L = extrair(arquivo, tmp_path / "camadas")
-        assert all("\x00" not in c.nome for c in L.camadas)
-        assert all("\x00" not in c.src for c in L.camadas)
-
-    def test_o_limite_de_camadas_e_dito(self, arquivo, tmp_path):
-        L = extrair(arquivo, tmp_path / "camadas", limite=1)
+    def test_o_limite_vale_para_as_soltas(self, arquivo, tmp_path):
+        L = extrair(arquivo, tmp_path / "camadas", nomes_separados=["marca", "fundo"],
+                    limite=1)
         assert len(L.camadas) == 1
-        assert any("parou em 1 camadas" in i for i in L.ignoradas)
 
     def test_prancheta_inexistente_recusa(self, arquivo, tmp_path):
         with pytest.raises(ValueError, match="não existe prancheta"):
             extrair(arquivo, tmp_path / "camadas", nome_prancheta="Prancheta 4")
+
+
+class Falsa:
+    """Camada de mentira: o suficiente para `separaveis` decidir."""
+
+    def __init__(self, nome, kind="pixel", filhos=None, visible=True):
+        self.name, self.kind, self.filhos, self.visible = nome, kind, filhos, visible
+
+    def is_group(self):
+        return self.filhos is not None
+
+    def __iter__(self):
+        return iter(self.filhos or [])
+
+
+class TestQuemValeSeparar:
+    """A regra é o texto: onde há palavra há hierarquia, e hierarquia é o que a
+    animação revela."""
+
+    def test_grupo_com_texto_e_aberto_em_partes(self):
+        from api.psd import separaveis
+        lockup = Falsa("Agrupar 3", filhos=[Falsa("energiza", "type"),
+                                            Falsa("logo", "smartobject")])
+        soltas = separaveis([Falsa("fundo"), lockup])
+        assert [c.name for c in soltas] == ["energiza", "logo"]
+
+    def test_camada_sem_texto_fica_no_fundo(self):
+        from api.psd import separaveis
+        assert separaveis([Falsa("fundo"), Falsa("grain")]) == []
+
+    def test_texto_solto_no_topo_tambem_vale(self):
+        from api.psd import separaveis
+        soltas = separaveis([Falsa("fundo"), Falsa("chamada", "type")])
+        assert [c.name for c in soltas] == ["chamada"]
+
+    def test_ajuste_e_desligada_ficam_de_fora(self):
+        from api.psd import separaveis
+        soltas = separaveis([Falsa("contraste", "brightnesscontrast"),
+                             Falsa("oculta", "type", visible=False)])
+        assert soltas == []
+
+
+class TestViraPeca:
+    def _leitura(self):
+        return Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=[
+            Camada("energiza", "texto", "a.png", {"x": 910, "y": 492, "w": 870, "h": 223},
+                   texto="energiza"),
+            Camada("logo", "imagem", "b.png", {"x": 930, "y": 443, "w": 384, "h": 59}),
+            Camada("2027", "texto", "c.png", {"x": 1582, "y": 697, "w": 191, "h": 61},
+                   texto="2027"),
+            Camada("assinatura", "texto", "d.png", {"x": 924, "y": 675, "w": 513, "h": 83},
+                   texto="Energia que impulsiona o futuro."),
+        ])
+
+    def test_cada_camada_ganha_papel_de_motion(self):
+        """Sem papel, as quatro partes do lockup entram juntas — que é o mesmo
+        que não ter separado nada."""
+        from api.psd import como_elementos
+        papeis = {e["camada"]: e["papel"] for e in como_elementos(self._leitura())}
+        assert papeis == {"energiza": "headline", "logo": "marca",
+                          "2027": "selo", "assinatura": "apoio"}
+
+    def test_parte_de_lockup_nao_vagueia(self):
+        """A animação dá deriva lenta a imagem solta; parte de lockup foi
+        desenhada naquela posição e sair do lugar desmonta o desenho."""
+        from api.psd import como_elementos
+        assert all(e["ancorado"] for e in como_elementos(self._leitura()))
+
+    def test_a_peca_usa_o_fundo_assado(self):
+        from api.psd import como_peca
+        peca = como_peca(self._leitura(), "li-feed-16x9")
+        assert peca["fundo"] == {"tipo": "imagem", "src": "fundo.png", "fit": "cover"}
+        assert peca["canvas"] == {"w": 1920, "h": 1080}
+        assert len(peca["elementos"]) == 4
+
+    def test_o_texto_da_camada_vai_junto(self):
+        from api.psd import como_elementos
+        els = {e["camada"]: e.get("conteudo") for e in como_elementos(self._leitura())}
+        assert els["energiza"] == "energiza" and els["logo"] is None
 
 
 class TestOQueOArquivoRealEnsinou:

@@ -130,6 +130,10 @@ function montarImagem(e){
   img.style.objectFit = e.fit || 'contain';
   img.style.objectPosition = (a === 'right' ? 'right' : a === 'center' ? 'center' : 'left') + ' ' + (va === 'bottom' ? 'bottom' : va === 'middle' ? 'center' : 'top');
   if (e.opacidade != null) img.style.opacity = e.opacidade;
+  // mesclagem vai no invólucro, não na imagem: é com o que está ABAIXO que ela
+  // mistura. Sem isto, camada de PSD em Overlay ou Color Dodge entra como
+  // normal e lava a peça inteira de cinza.
+  if (e.mesclagem) wrap.style.mixBlendMode = e.mesclagem;
   if (e.filtro) img.style.filter = e.filtro;
   if (e.raio) img.style.borderRadius = px(e.raio);
   wrap.appendChild(img);
