@@ -1,0 +1,219 @@
+"""O PSD aberto em camadas, para a peça inteira se mexer.
+
+Com PNG, a arte chega achatada: o lettering, a marca e a assinatura estão
+grudados no fundo, e a animação só consegue tratar tudo como um bloco. É por
+isso que o desdobramento em PNG anima só o que a plataforma acrescenta.
+
+Com PSD cada camada vira um arquivo com a posição dela, e aí o CONSIGAZ pode
+entrar antes, o lettering subir atrás de um corte e o ano assentar depois.
+
+Duas coisas que o arquivo real ensinou, e que um leitor ingênuo erra:
+
+- **um PSD pode ter várias pranchetas.** O Key Visual do Energiza tem seis
+  versões lado a lado, num quadro de 7942x2256, e só a quarta é a arte que
+  estava sendo adaptada. Ler o arquivo inteiro daria uma colagem.
+- **camada de ajuste não tem pixel próprio.** Matiz/Saturação e Brilho/Contraste
+  modificam o que está abaixo; extrair como imagem devolve nada ou um quadrado
+  vazio.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+# não têm pixel próprio: modificam o que está abaixo
+AJUSTES = {"huesaturation", "brightnesscontrast", "curves", "levels", "gradientmap",
+           "colorbalance", "photofilter", "invert", "posterize", "threshold",
+           "selectivecolor", "channelmixer", "exposure", "vibrance", "blackandwhite"}
+
+# acima disso a peça vira um enxame e o render não aguenta
+LIMITE_CAMADAS = 60
+
+
+@dataclass
+class Prancheta:
+    nome: str
+    x: int
+    y: int
+    w: int
+    h: int
+
+    @property
+    def proporcao(self) -> float:
+        return self.w / max(1, self.h)
+
+
+@dataclass
+class Camada:
+    nome: str
+    tipo: str                      # "texto" ou "imagem"
+    src: str
+    box: dict
+    texto: str = ""
+    fonte: str = ""
+
+
+@dataclass
+class Leitura:
+    pranchetas: list[Prancheta] = field(default_factory=list)
+    escolhida: str = ""
+    ambigua: bool = False          # havia mais de uma e ninguém escolheu
+    canvas: dict = field(default_factory=dict)
+    camadas: list[Camada] = field(default_factory=list)
+    ignoradas: list[str] = field(default_factory=list)
+
+
+def _abrir(caminho: Path):
+    from psd_tools import PSDImage
+    return PSDImage.open(Path(caminho))
+
+
+def pranchetas(caminho: Path) -> list[Prancheta]:
+    """As pranchetas do arquivo, ou uma só com o quadro inteiro.
+
+    PSD sem prancheta é o caso comum; tratar os dois pelo mesmo caminho evita
+    um ramo a mais em tudo que vem depois.
+    """
+    psd = _abrir(caminho)
+    achadas = []
+    for g in psd:
+        if not getattr(g, "is_group", lambda: False)():
+            continue
+        try:
+            dados = g.tagged_blocks.get_data(b"artb")
+        except Exception:
+            dados = None
+        if not dados:
+            continue
+        r = dados[b"artboardRect"]
+        achadas.append(Prancheta(g.name, int(r[b"Left"]), int(r[b"Top "]),
+                                 int(r[b"Rght"]) - int(r[b"Left"]),
+                                 int(r[b"Btom"]) - int(r[b"Top "])))
+    if achadas:
+        return achadas
+    return [Prancheta("", 0, 0, psd.width, psd.height)]
+
+
+def escolher(lista: list[Prancheta], nome: str = "",
+             proporcao: float | None = None) -> tuple[Prancheta, bool]:
+    """Qual prancheta usar, e se a escolha foi um chute.
+
+    Por nome, quando quem pediu sabe. Senão pela proporção da arte de
+    referência — mas no arquivo real as seis pranchetas têm a mesma proporção,
+    então isso não desempata nada e escolheria a errada calada. Quando sobra
+    mais de uma candidata, o segundo valor volta `True` e quem chamou pergunta
+    em vez de fingir que sabe.
+    """
+    if nome:
+        achada = next((p for p in lista if p.nome == nome), None)
+        if achada is None:
+            raise ValueError(f"não existe prancheta `{nome}`. "
+                             f"Tem: {', '.join(p.nome for p in lista) or '(nenhuma nomeada)'}")
+        return achada, False
+    if len(lista) == 1:
+        return lista[0], False
+    if proporcao:
+        por_proporcao = sorted(lista, key=lambda p: abs(p.proporcao - proporcao))
+        melhor = por_proporcao[0]
+        empatadas = [p for p in lista if abs(p.proporcao - melhor.proporcao) < 0.02]
+        return melhor, len(empatadas) > 1
+    return max(lista, key=lambda p: p.w * p.h), True
+
+
+def _plano(camadas, prefixo: str = ""):
+    """Desce nos grupos. O lockup vive num grupo e precisa vir separado: é a
+    diferença entre a marca entrar junto com o lettering e cada um no seu tempo."""
+    for i, c in enumerate(camadas):
+        chave = f"{prefixo}{i:02d}"
+        if c.is_group():
+            yield from _plano(c, f"{chave}-")
+        else:
+            yield chave, c
+
+
+def _nome_limpo(nome: str) -> str:
+    """O PSD guarda o nome com enchimento: vem `fundo\x00`. Sem limpar, o nulo
+    vai para o nome do arquivo e para o texto que o modelo lê."""
+    return (nome or "").replace("\x00", "").strip()
+
+
+def _apelido(nome: str) -> str:
+    import re
+    base = re.sub(r"[^a-z0-9]+", "-", (nome or "camada").lower()).strip("-")
+    return base[:40] or "camada"
+
+
+def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
+            proporcao: float | None = None, limite: int = LIMITE_CAMADAS) -> Leitura:
+    """Abre uma prancheta em camadas dentro de `destino`."""
+    caminho, destino = Path(caminho), Path(destino)
+    lista = pranchetas(caminho)
+    alvo, ambigua = escolher(lista, nome_prancheta, proporcao)
+
+    psd = _abrir(caminho)
+    raiz = psd
+    if alvo.nome:
+        raiz = next((g for g in psd if getattr(g, "is_group", lambda: False)()
+                     and g.name == alvo.nome), None)
+        if raiz is None:
+            raise ValueError(f"a prancheta `{alvo.nome}` sumiu do arquivo")
+
+    destino.mkdir(parents=True, exist_ok=True)
+    camadas, ignoradas = [], []
+    for chave, c in _plano(raiz):
+        if len(camadas) >= limite:
+            ignoradas.append(f"parou em {limite} camadas: o arquivo tem mais do que uma "
+                             f"peça comporta")
+            break
+        if not c.visible:
+            ignoradas.append(f"`{_nome_limpo(c.name)}` está desligada no arquivo")
+            continue
+        if c.kind in AJUSTES:
+            ignoradas.append(f"`{_nome_limpo(c.name)}` é camada de ajuste: muda o que está abaixo, "
+                             f"não tem imagem própria")
+            continue
+        try:
+            im = c.composite()
+        except Exception as e:
+            ignoradas.append(f"`{_nome_limpo(c.name)}` não abriu: {type(e).__name__}")
+            continue
+        if im is None or not im.getbbox():
+            ignoradas.append(f"`{_nome_limpo(c.name)}` saiu vazia")
+            continue
+
+        nome = _nome_limpo(c.name)
+        arq = destino / f"{chave}-{_apelido(nome)}.png"
+        im.save(arq)
+        x0, y0, x1, y1 = c.bbox
+        camadas.append(Camada(
+            nome=nome,
+            tipo="texto" if c.kind == "type" else "imagem",
+            src=arq.name,
+            box={"x": x0 - alvo.x, "y": y0 - alvo.y, "w": x1 - x0, "h": y1 - y0},
+            texto=(c.text or "").replace("\r", " ").strip() if c.kind == "type" else "",
+            fonte=_primeira_fonte(c) if c.kind == "type" else "",
+        ))
+
+    return Leitura(pranchetas=lista, escolhida=alvo.nome, ambigua=ambigua,
+                   canvas={"w": alvo.w, "h": alvo.h},
+                   camadas=camadas, ignoradas=ignoradas)
+
+
+def _primeira_fonte(c) -> str:
+    """O nome da fonte que o PSD pede. Não é enfeite: quando ela não está
+    instalada, o texto sai noutra letra e ninguém avisa."""
+    try:
+        fontes = c.resource_dict.get("FontSet") or []
+    except Exception:
+        return ""
+    for f in fontes:
+        # cada item é um descritor do psd-tools, não um dicionário, e o valor
+        # não é str: é um objeto cujo texto sai entre aspas. Sem converter, o
+        # `in` levantava dentro do try e o nome da fonte sumia calado
+        try:
+            nome = str(dict(f).get("Name") or "").strip("'\"")
+        except Exception:
+            continue
+        if nome and "AdobeInvis" not in nome and nome != "MyriadPro-Regular":
+            return nome
+    return ""

@@ -5,6 +5,8 @@
 pillow==12.3.0          # abertura, composição e export de imagem
 numpy==2.5.3            # operações de pixel (limpeza, fundo, máscaras)
 psd-tools==1.19.0       # leitura de arte-mãe em .psd
+scipy==1.18.1           # psd-tools precisa dela para camada com gradiente; sem ela
+                        # a camada de fundo do PSD levanta em vez de sair
 fonttools==4.65.0       # métricas de fonte para ajuste de texto ao box
 pytoshop==1.2.1         # ESCRITA de PSD em camadas (export-psd). Faltava aqui:
                         # psd_io.py importa e no contêiner quebraria em tempo de
