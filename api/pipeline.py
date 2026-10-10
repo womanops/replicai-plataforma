@@ -14,7 +14,7 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from api import contraste, custo, fundo as prep_fundo
+from api import contraste, custo, fundo as prep_fundo, sossego
 from api.compositor import ComposicaoImpossivel, Compositor, Terreno
 from motor.replica import formato_by_id
 from api.qualidade import conferir_fundo, recorte_e_retangulo
@@ -187,7 +187,13 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | Non
         tinta = leitura.em_pixels(*im.size)
     info = prep_fundo.preparar(copia, f, tinta, pasta / f"fundo-{fid}.png")
 
-    avisos = []
+    livres = prep_fundo.espaco_livre(f, info["protect_box"])
+    with Image.open(info["caminho"]) as pronto:
+        # ter espaço não é ter lugar: a faixa é aparada ao pedaço de fundo
+        # quieto, senão o texto entra por cima do desenho e some nele
+        livres, notas = sossego.acalmar(pronto.convert("RGB"), livres)
+
+    avisos = list(notas)
     if info.get("caiu_para"):
         avisos.append(f"{info['caiu_para']} — o fundo saiu em bloco de cor, que não "
                       f"continua a grade nem a textura da arte. Vale rodar de novo")
@@ -199,7 +205,7 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | Non
                           "aparelho menor pode aparecer cortado")
 
     return Terreno(fundo={"tipo": "imagem", "src": info["src"], "fit": "cover"},
-                   livres=prep_fundo.espaco_livre(f, info["protect_box"]),
+                   livres=livres,
                    ja_escrito=list(leitura.frases),
                    fontes=_fonte_do_trabalho(pasta),
                    tinta=info["protect_box"]), avisos
