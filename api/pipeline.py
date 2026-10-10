@@ -14,11 +14,16 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from api import contraste, custo, fundo as prep_fundo, sossego
+from api import contraste, custo, fundo as prep_fundo, psd as leitor_psd, sossego
 from api.compositor import ComposicaoImpossivel, Compositor, Terreno
+from PIL import Image
+
 from motor.replica import formato_by_id
 from api.qualidade import conferir_fundo, recorte_e_retangulo
 from motor.replica import render_peca
+
+
+PSD = {".psd", ".psb"}
 
 
 @dataclass
@@ -28,6 +33,7 @@ class Resultado:
     falhas: dict[str, str] = field(default_factory=dict)
     avisos: dict[str, list[str]] = field(default_factory=dict)
     descartados: dict[str, dict] = field(default_factory=dict)
+    psd: dict = field(default_factory=dict)       # prancheta usada e camadas soltas
     custo: dict = field(default_factory=dict)
 
     @property
@@ -45,6 +51,7 @@ class Resultado:
             "falhas": self.falhas,
             "avisos": self.avisos,
             "descartados": self.descartados,
+            "psd": self.psd,
             "custo": self.custo,
         }
 
@@ -117,7 +124,7 @@ def conferir_peca(peca: dict, pasta: Path, arte: Path) -> list[str]:
 
 
 def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
-              pasta: Path, brief: str = "", leitor=None) -> Resultado:
+              pasta: Path, brief: str = "", leitor=None, prancheta: str = "") -> Resultado:
     """Compõe e renderiza cada formato pedido dentro de `pasta`.
 
     `leitor(arte) -> Leitura` diz onde a arte já tem tinta e o que ela diz. Com
@@ -138,6 +145,17 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
         shutil.copy2(base, copia)
 
     r = Resultado(pasta=pasta)
+    if copia.suffix.lower() in PSD:
+        # PSD tem caminho próprio: as camadas vêm separadas do arquivo, então
+        # não há o que perguntar ao modelo sobre onde está a tinta nem o que
+        # assar. Entrava achatado antes, e a peça inteira não animava.
+        with custo.medir() as conta:
+            _psd_e_render(r, formatos, copia, pasta, brief, compositor, prancheta)
+        r.custo = conta.resumo()
+        (pasta / "resultado.json").write_text(
+            json.dumps(r.para_json(), ensure_ascii=False, indent=1), encoding="utf-8")
+        return r
+
     with custo.medir() as conta:
         # a leitura é uma chamada por trabalho, não por formato: é a arte que
         # está sendo lida, e ela é a mesma para todos
@@ -169,6 +187,107 @@ def _fonte_do_trabalho(pasta: Path) -> list[dict]:
     if not destino.exists():
         shutil.copy2(FONTE_PADRAO, destino)
     return [{"familia": "PecaSans", "arquivo": destino.name, "peso": "100 900"}]
+
+
+def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
+                  compositor, prancheta: str) -> None:
+    """A esteira do PSD: abre em camadas e desdobra cada formato.
+
+    O fundo vem assado pelo próprio Photoshop, as camadas soltas vêm com
+    posição, e o lockup acompanha ou se solta do fundo conforme a proporção
+    mude pouco ou muito. O que o modelo ainda faz é o texto novo — data,
+    local, CTA — no espaço que sobrou.
+    """
+    try:
+        leitura = leitor_psd.extrair(copia, pasta, nome_prancheta=prancheta)
+    except Exception as e:
+        for fid in formatos:
+            r.falhas[fid] = f"o PSD não abriu: {e}"
+        return
+
+    r.psd = {"prancheta": leitura.escolhida,
+             "pranchetas": [p.nome for p in leitura.pranchetas],
+             "camadas": [c.nome for c in leitura.camadas],
+             "notas": leitura.ignoradas}
+    base_els = leitor_psd.como_elementos(leitura, pasta)
+
+    for fid in formatos:
+        f = formato_by_id(fid)
+        if not f:
+            r.falhas[fid] = f"formato desconhecido: {fid}"
+            continue
+        try:
+            peca = leitor_psd.desdobrar(leitura, f, pasta)
+        except Exception as e:
+            r.falhas[fid] = f"o fundo não saiu: {e}"
+            continue
+        info = peca.pop("_fundo", {})
+        for a in info.get("avisos") or []:
+            r.avisos.setdefault(fid, []).append(a)
+        if info.get("caiu_para"):
+            r.avisos.setdefault(fid, []).append(
+                f"{info['caiu_para']} — o fundo saiu em bloco de cor")
+
+        for a in _texto_novo(peca, f, pasta, leitura, brief, compositor, info):
+            r.avisos.setdefault(fid, []).append(a)
+
+        arq = pasta / "pecas" / f"{fid}.json"
+        arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
+        destino = pasta / (peca.get("saida") or f"{fid}.png")
+        try:
+            render_peca(arq, destino)
+        except Exception as e:
+            r.falhas[fid] = f"não renderizou: {e}"
+            continue
+        r.prontas[fid] = destino
+
+
+def _texto_novo(peca: dict, formato: dict, pasta: Path, leitura, brief: str,
+                compositor, info: dict) -> list[str]:
+    """Acrescenta à peça do PSD o que o brief pede e a arte não diz.
+
+    O lockup já está na peça, vindo do arquivo. O que falta é o que muda de
+    campanha para campanha — data, local, CTA — e isso entra no espaço livre.
+
+    Numa peça recomposta, livre não é só "fora do lockup": a arte ocupa uma
+    faixa própria, e escrever ali cobre o assunto. Sem essa conta a data caiu
+    em cima da chama — e a rede de segurança do sossego, ao descartar as duas
+    faixas, devolveu a peça inteira e piorou.
+    """
+    if compositor is None:
+        return []
+    caixas = [e["box"] for e in peca["elementos"]]
+    if not caixas:
+        return []
+    tinta = [min(b["x"] for b in caixas), min(b["y"] for b in caixas),
+             max(b["x"] + b["w"] for b in caixas), max(b["y"] + b["h"] for b in caixas)]
+    if peca.get("via") == "psd-recompor" and info.get("base_box"):
+        arte = info["base_box"]
+        tinta = [min(tinta[0], arte[0]), min(tinta[1], arte[1]),
+                 max(tinta[2], arte[2]), max(tinta[3], arte[3])]
+    livres = prep_fundo.espaco_livre(formato, tinta)
+    with Image.open(pasta / peca["fundo"]["src"]) as pronto:
+        livres, _ = sossego.acalmar(pronto.convert("RGB"), livres)
+    terreno = Terreno(fundo=peca["fundo"], livres=livres,
+                      ja_escrito=[c.texto for c in leitura.camadas if c.texto],
+                      fontes=_fonte_do_trabalho(pasta), tinta=tinta)
+    try:
+        # o que o modelo olha é o fundo assado: é a arte de verdade da peça, e
+        # o arquivo original é PSD, que ele não abre
+        extra = compositor.compor(pasta / leitura.fundo, formato["id"], brief, terreno)
+    except ComposicaoImpossivel as e:
+        return [f"nada foi acrescentado à peça: {e}"]
+
+    # queda calada já entregou peça de régua com cara de peça do modelo uma
+    # vez; aqui ela voltou no caminho novo, e o CTA saiu sem botão
+    avisos = [f"o texto novo saiu pela régua, não pelo modelo — {d}"
+              for d in extra.pop("_desvios", [])]
+    novos = [e for e in extra.get("elementos", []) if e.get("tipo") in ("texto", "botao")]
+    peca["elementos"].extend(novos)
+    peca["fontes"] = extra.get("fontes") or peca.get("fontes") or []
+    if extra.get("descartados"):
+        peca["descartados"] = extra["descartados"]
+    return avisos
 
 
 def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | None, list[str]]:

@@ -384,3 +384,56 @@ class TestDesdobrar:
         peca = recompor(self._leitura(tmp_path), formato_by_id("ig-stories"), tmp_path)
         fim = peca["_fundo"]["base_box"][3]
         assert all(e["box"]["y"] >= fim for e in peca["elementos"])
+
+
+class TestTextoNovoSobreOPsd:
+    """O lockup vem do arquivo; o que muda de campanha vem do brief. Estes
+    testes travam os dois defeitos que a primeira rodada real mostrou."""
+
+    def peca_recomposta(self):
+        return {"via": "psd-recompor", "canvas": {"w": 1080, "h": 1920},
+                "fundo": {"tipo": "imagem", "src": "fundo-ig-stories.png"},
+                "elementos": [{"tipo": "imagem", "camada": "energiza",
+                               "box": {"x": 150, "y": 953, "w": 780, "h": 280}}]}
+
+    def test_a_faixa_da_arte_conta_como_ocupada(self, tmp_path, monkeypatch):
+        """Na peça recomposta a arte ocupa uma faixa própria; sem contá-la, a
+        data caiu em cima da chama."""
+        import api.pipeline as pl
+        vistos = {}
+
+        class Espia:
+            def compor(self, base, formato_id, brief="", terreno=None):
+                vistos["livres"] = terreno.livres
+                return {"elementos": []}
+
+        Image.new("RGB", (1080, 1920), "#0a1a55").save(tmp_path / "fundo-ig-stories.png")
+        Image.new("RGB", (1920, 1080), "#0a1a55").save(tmp_path / "fundo.png")
+        L = Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=[])
+        pl._texto_novo(self.peca_recomposta(), formato_by_id("ig-stories"), tmp_path,
+                       L, "", Espia(), {"base_box": [0, 0, 1080, 608]})
+        # nada pode sobrar acima de 608: ali está a arte
+        for r in vistos["livres"].values():
+            assert r[1] >= 608 or r[3] <= 608 or r[1] >= 608
+
+    def test_a_queda_para_a_regua_e_dita(self, tmp_path):
+        """Sem isto o CTA saiu como texto simples, sem botão, e nada acusou."""
+        import api.pipeline as pl
+
+        class CaiuParaARegua:
+            def compor(self, base, formato_id, brief="", terreno=None):
+                return {"elementos": [], "_desvios": ["CompositorModelo: recusou"]}
+
+        Image.new("RGB", (1080, 1920), "#0a1a55").save(tmp_path / "fundo-ig-stories.png")
+        Image.new("RGB", (1920, 1080), "#0a1a55").save(tmp_path / "fundo.png")
+        L = Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=[])
+        avisos = pl._texto_novo(self.peca_recomposta(), formato_by_id("ig-stories"),
+                                tmp_path, L, "", CaiuParaARegua(), {})
+        assert any("régua" in a and "recusou" in a for a in avisos)
+
+    def test_sem_compositor_a_peca_fica_como_esta(self, tmp_path):
+        import api.pipeline as pl
+        peca = self.peca_recomposta()
+        assert pl._texto_novo(peca, formato_by_id("ig-stories"), tmp_path, None, "",
+                              None, {}) == []
+        assert len(peca["elementos"]) == 1

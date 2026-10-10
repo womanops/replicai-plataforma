@@ -65,17 +65,18 @@ def leitor():
 
 
 def processar(job: str, arte: str, formatos: list[str], headline: str,
-              cta: str, brief: str) -> None:
+              cta: str, brief: str, prancheta: str = "") -> None:
     """O que o worker executa. Fora da API de propósito: é o pedaço pesado."""
     trabalhos.gravar(job, {"status": "rodando"})
     try:
         r = desdobrar(Path(arte), formatos, compositor(arte, headline, cta),
-                      trabalhos.pasta_do(job), brief, leitor())
+                      trabalhos.pasta_do(job), brief, leitor(), prancheta)
         trabalhos.gravar(job, {"status": r.status,
                                "prontas": sorted(r.prontas),
                                "falhas": r.falhas,
                                "avisos": r.avisos,
                                "descartados": r.descartados,
+                               "psd": r.psd,
                                "custo": r.custo})
     except Exception as e:
         # sem isto o trabalho fica "rodando" para sempre e ninguém sabe por quê
@@ -139,6 +140,7 @@ async def criar(
     cta: str = Form(""),
     titulo: str = Form(""),
     brief: str = Form(""),
+    prancheta: str = Form(""),
 ):
     ext = Path(arte.filename or "").suffix.lower()
     if ext not in ACEITOS:
@@ -159,10 +161,55 @@ async def criar(
     with destino.open("wb") as f:
         shutil.copyfileobj(arte.file, f)
 
-    trabalhos.gravar(job, {"status": "na fila", "formatos": pedidos,
-                           "titulo": titulo, "arte": destino.name})
-    FILA.enfileirar(processar, job, str(destino), pedidos, headline, cta, brief)
+    comum = {"formatos": pedidos, "titulo": titulo, "arte": destino.name,
+             "headline": headline, "cta": cta, "brief": brief}
+
+    # PSD com várias pranchetas é vários trabalhos num arquivo só. Escolher a
+    # maior ou a primeira pega a errada e fica calado: no Key Visual real as
+    # seis têm a mesma proporção e só a quarta era a arte em uso.
+    if ext in {".psd", ".psb"}:
+        from api import psd
+        try:
+            achadas = psd.pranchetas(destino)
+        except Exception as e:
+            raise HTTPException(422, f"não consegui abrir o PSD: {e}")
+        if len(achadas) > 1 and not prancheta:
+            lista = [{"nome": p.nome, "w": p.w, "h": p.h} for p in achadas]
+            trabalhos.gravar(job, {**comum, "status": "escolha a prancheta",
+                                   "pranchetas": lista})
+            return {"job": job, "status": "escolha a prancheta", "pranchetas": lista,
+                    "como": f"POST /jobs/{job}/prancheta com o nome"}
+        if prancheta and prancheta not in {p.nome for p in achadas}:
+            raise HTTPException(422, f"não existe prancheta `{prancheta}` nesse arquivo. "
+                                     f"Tem: {', '.join(p.nome for p in achadas)}")
+
+    trabalhos.gravar(job, {**comum, "status": "na fila", "prancheta": prancheta})
+    FILA.enfileirar(processar, job, str(destino), pedidos, headline, cta, brief, prancheta)
     return {"job": job, "status": trabalhos.ler(job)["status"]}
+
+
+@app.post("/jobs/{job}/prancheta", status_code=202)
+def escolher_prancheta(job: str, nome: str = Form(...)):
+    """Escolhe a prancheta de um PSD e põe o trabalho na fila."""
+    try:
+        estado = trabalhos.ler(job)
+    except ValueError:
+        raise HTTPException(400, "identificador inválido")
+    if estado is None:
+        raise HTTPException(404, "trabalho não existe")
+    nomes = {p["nome"] for p in (estado.get("pranchetas") or [])}
+    if not nomes:
+        raise HTTPException(409, "este trabalho não está esperando escolha de prancheta")
+    if nome not in nomes:
+        raise HTTPException(422, f"não existe prancheta `{nome}`. "
+                                 f"Tem: {', '.join(sorted(nomes))}")
+
+    arte = trabalhos.pasta_do(job) / estado["arte"]
+    trabalhos.gravar(job, {"status": "na fila", "prancheta": nome})
+    FILA.enfileirar(processar, job, str(arte), estado["formatos"],
+                    estado.get("headline", ""), estado.get("cta", ""),
+                    estado.get("brief", ""), nome)
+    return {"job": job, "status": trabalhos.ler(job)["status"], "prancheta": nome}
 
 
 def processar_video(job: str, formatos: list[str], preset: str, segundos: float) -> None:
