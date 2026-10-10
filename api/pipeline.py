@@ -14,6 +14,7 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from api import custo
 from api.compositor import ComposicaoImpossivel, Compositor
 from api.qualidade import conferir_fundo, recorte_e_retangulo
 from motor.replica import render_peca
@@ -25,6 +26,7 @@ class Resultado:
     prontas: dict[str, Path] = field(default_factory=dict)
     falhas: dict[str, str] = field(default_factory=dict)
     avisos: dict[str, list[str]] = field(default_factory=dict)
+    custo: dict = field(default_factory=dict)
 
     @property
     def status(self) -> str:
@@ -40,6 +42,7 @@ class Resultado:
             "prontas": {k: str(v) for k, v in self.prontas.items()},
             "falhas": self.falhas,
             "avisos": self.avisos,
+            "custo": self.custo,
         }
 
 
@@ -100,12 +103,29 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
         shutil.copy2(base, copia)
 
     r = Resultado(pasta=pasta)
+    with custo.medir() as conta:
+        _compor_e_render(r, formatos, compositor, copia, pasta, brief)
+    # o custo entra mesmo quando o job falha: a chamada que não deu peça
+    # foi cobrada igual, e é ela que explica a fatura no fim do mês
+    r.custo = conta.resumo()
+
+    (pasta / "resultado.json").write_text(
+        json.dumps(r.para_json(), ensure_ascii=False, indent=1), encoding="utf-8")
+    return r
+
+
+def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Path,
+                     brief: str) -> None:
     for fid in formatos:
         try:
             peca = compositor.compor(Path(copia.name), fid, brief)
         except ComposicaoImpossivel as e:
             r.falhas[fid] = str(e)
             continue
+
+        for d in peca.pop("_desvios", []):
+            r.avisos.setdefault(fid, []).append(
+                f"composto pela régua, não pelo modelo — {d}")
 
         for a in conferir_peca(peca, pasta, copia):
             r.avisos.setdefault(fid, []).append(a)
@@ -121,7 +141,3 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
             r.falhas[fid] = f"não renderizou: {e}"
             continue
         r.prontas[fid] = destino
-
-    (pasta / "resultado.json").write_text(
-        json.dumps(r.para_json(), ensure_ascii=False, indent=1), encoding="utf-8")
-    return r

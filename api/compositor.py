@@ -225,7 +225,14 @@ class CompositorEmCadeia:
         motivos = []
         for c in self.compositores:
             try:
-                return c.compor(base, formato_id, brief)
+                peca = c.compor(base, formato_id, brief)
             except ComposicaoImpossivel as e:
                 motivos.append(f"{type(c).__name__}: {e}")
+                continue
+            # quem compôs não foi o primeiro da fila: a peça sai, mas sai
+            # dizendo por quê. Cair em silêncio para a regra foi o defeito que
+            # entregou peça de régua com cara de peça do modelo.
+            if motivos:
+                peca["_desvios"] = list(motivos)
+            return peca
         raise ComposicaoImpossivel(" | ".join(motivos) or "nenhum compositor configurado")

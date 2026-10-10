@@ -16,6 +16,8 @@ import json
 import os
 from pathlib import Path
 
+from api import custo
+
 MODELO = "claude-opus-5-5"
 
 TIPOS = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
@@ -86,6 +88,9 @@ def responder_anthropic(instrucao: str, arte, cliente=None, modelo: str = MODELO
         output_config={"effort": "medium", "format": {"type": "json_schema", "schema": ESQUEMA}},
         messages=[{"role": "user", "content": conteudo}],
     )
+    # antes da recusa: recusa também é cobrada
+    custo.registrar(modelo, getattr(r, "usage", None))
+
     # o modelo pode recusar: nesse caso não há texto para ler
     if getattr(r, "stop_reason", None) == "refusal":
         det = getattr(r, "stop_details", None)
