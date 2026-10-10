@@ -34,6 +34,25 @@ def e_faixa(formato: dict) -> bool:
     return formato["w"] / max(1, formato["h"]) >= FAIXA
 
 
+def onde_acaba_a_arte(tinta, formato: dict) -> str:
+    """De que lado a arte termina, em palavra.
+
+    O modelo escolhe a zona sem saber disso, e escolhia o centro: o botão
+    ficava solto no meio enquanto o lockup terminava à direita. Com a
+    informação ele fecha do lado certo, e a máquina encosta na borda.
+    Arte centrada não ganha frase nenhuma — ali o centro é o lugar certo.
+    """
+    if not tinta:
+        return ""
+    w = formato["w"]
+    esq, dir_ = tinta[0], w - tinta[2]
+    if abs(esq - dir_) < w * 0.10:
+        return ""
+    lado = "direita" if dir_ < esq else "esquerda"
+    return (f"A arte termina à {lado} da peça. Feche o CTA desse mesmo lado, para ele "
+            f"alinhar com a borda dela — zona `baixo-{lado}`.")
+
+
 def convencao(formato: dict) -> str:
     """O que dizer ao modelo antes de ele escolher. Dito antes, sai certo na
     primeira; dito só na recusa, custa uma rodada."""

@@ -17,7 +17,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from api.diagramacao import convencao
+from api.diagramacao import convencao, onde_acaba_a_arte
 from motor.replica import formato_by_id
 
 
@@ -202,7 +202,7 @@ def _onde_cabe(livres: dict | None) -> str:
 
 def instrucao(formato: dict, brief: str = "", marcas: list[str] | None = None,
               ja_escrito: list[str] | None = None, livres: dict | None = None,
-              material: str | None = None) -> str:
+              material: str | None = None, tinta=None) -> str:
     """O que o modelo precisa saber para compor este formato.
 
     Leva as regras da casa como restrição, não como texto de apoio: o
@@ -222,7 +222,7 @@ esquerda/centro/direita, por exemplo "meio-esquerda".
 
 Limites deste formato: {limites}.
 Convenção do formato: {formato.get('notas', '—')}
-Diagramação: {convencao(formato)}
+Diagramação: {convencao(formato)} {onde_acaba_a_arte(tinta, formato)}
 
 Regras:
 - Um papel só aparece uma vez.
@@ -279,7 +279,8 @@ class CompositorModelo:
         livres = terreno.livres if terreno else None
         fundo = terreno.fundo if terreno else self.fundo
         material = " ".join(x for x in (self.material, brief, *ja) if x) or None
-        texto = instrucao(f, brief, self.marcas, ja, livres, material)
+        tinta = terreno.tinta if terreno else None
+        texto = instrucao(f, brief, self.marcas, ja, livres, material, tinta)
         ultimo = ""
         for tentativa in range(self.tentativas):
             try:
@@ -293,7 +294,7 @@ class CompositorModelo:
                 # na primeira também é desperdício: dizer o erro e pedir de novo
                 # é o que uma pessoa faria, e costuma resolver em uma volta.
                 ultimo = str(e)
-                texto = (f"{instrucao(f, brief, self.marcas, ja, livres, material)}\n\n"
+                texto = (f"{instrucao(f, brief, self.marcas, ja, livres, material, tinta)}\n\n"
                          f"A resposta anterior foi recusada: {ultimo}\n"
                          f"Corrija isso e responda de novo.")
                 continue

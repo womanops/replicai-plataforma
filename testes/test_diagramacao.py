@@ -119,3 +119,32 @@ class TestAConferenciaUsaARegra:
         """Dizer o erro certo é o que faz o modelo corrigir numa volta só."""
         with pytest.raises(RespostaInvalida, match="sem headline"):
             conferir_resposta(self.peca(cta="topo-centro"), formato_by_id("ig-stories"))
+
+
+class TestDeQueLadoAArteTermina:
+    """O modelo escolhia o centro sem saber que o lockup terminava à direita:
+    o botão ficava solto no meio em vez de fechar com a arte."""
+
+    def test_arte_encostada_a_direita_pede_cta_a_direita(self):
+        from api.diagramacao import onde_acaba_a_arte
+        f = formato_by_id("ig-feed-1x1")
+        assert "baixo-direita" in onde_acaba_a_arte([507, 479, 1010, 670], f)
+
+    def test_arte_encostada_a_esquerda_pede_cta_a_esquerda(self):
+        from api.diagramacao import onde_acaba_a_arte
+        f = formato_by_id("ig-feed-1x1")
+        assert "baixo-esquerda" in onde_acaba_a_arte([70, 479, 573, 670], f)
+
+    def test_arte_centrada_nao_pede_lado(self):
+        """No Stories o lockup é centrado e o centro é o lugar certo."""
+        from api.diagramacao import onde_acaba_a_arte
+        assert onde_acaba_a_arte([132, 859, 964, 1176], formato_by_id("ig-stories")) == ""
+
+    def test_sem_tinta_nao_diz_nada(self):
+        from api.diagramacao import onde_acaba_a_arte
+        assert onde_acaba_a_arte(None, formato_by_id("ig-feed-1x1")) == ""
+
+    def test_a_instrucao_leva_a_informacao(self):
+        from api.compositor import instrucao
+        t = instrucao(formato_by_id("ig-feed-1x1"), tinta=[507, 479, 1010, 670])
+        assert "termina à direita" in t
