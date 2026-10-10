@@ -63,6 +63,43 @@ def escolher_estrategia(W: int, H: int, w: int, h: int, protegido=None) -> tuple
     return "smart", f"a arte inteira deixaria {round(vazio * 100)}% de faixa vazia"
 
 
+# quantas vezes insistir quando o generativo inventa traço que a arte não tem.
+# Ele é estocástico: a segunda tentativa costuma sair limpa, e repetir custa
+# menos do que entregar peça com um risco de luz que não existe no KV.
+TENTATIVAS = 2
+
+
+def _melhor_continuacao(base, ex: dict, espera: int, plano: dict, w: int, h: int):
+    """Continua o fundo, repetindo enquanto inventar estrutura.
+
+    A conferência já sabia acusar o traço inventado, mas acusar não conserta.
+    Como o generativo é estocástico, insistir resolve na maior parte das
+    vezes; quando não resolve, fica a tentativa menos ruim e o aviso vai junto.
+    """
+    import tempfile
+
+    from PIL import Image as Im
+
+    melhor, melhor_nota, motivo = None, None, ""
+    for _ in range(TENTATIVAS):
+        tela, motivo = _continuar(base, ex, espera)
+        if tela is None:
+            return None, motivo
+        prova = Path(tempfile.mkstemp(suffix=".png", prefix="replicai-prova-")[1])
+        try:
+            pronta = tela.resize((w, h), Im.Resampling.LANCZOS) if tela.size != (w, h) else tela
+            pronta.save(prova)
+            caixa = _to_target_coords(plano, 0, 0, w, h)["base_box"]
+            nota = len(inventou_estrutura(prova, caixa))
+        finally:
+            prova.unlink(missing_ok=True)
+        if nota == 0:
+            return tela, ""
+        if melhor_nota is None or nota < melhor_nota:
+            melhor, melhor_nota = tela, nota
+    return melhor, motivo
+
+
 def _continuar(base, ex: dict, espera: int):
     """Continua o desenho do fundo no espaço novo, com prazo.
 
@@ -150,7 +187,7 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
     caiu_para = ""
     if modo == "outpaint":
         espera = max(30, int(os.environ.get("REPLICAI_FUNDO_ESPERA", ESPERA_PADRAO)))
-        tela, motivo = _continuar(base, ex, espera)
+        tela, motivo = _melhor_continuacao(base, ex, espera, plano, w, h)
         if tela is None:
             # o generativo é o único que continua o desenho do fundo, mas não
             # pode prender a entrega. Passou do prazo, a peça sai com o fundo

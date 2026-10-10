@@ -325,6 +325,14 @@ def _encostar(caixa: list[int], zona: str, tinta, formato: dict) -> list[int]:
     elif zona.endswith("esquerda"):
         if limite_esq <= tinta[0] <= limite_dir and (x1 - tinta[0]) / largura >= ENCOSTE_MINIMO:
             x0 = tinta[0]
+    else:
+        # centro é o centro da arte, não o da peça. O CTA centralizado no
+        # canvas fica solto ao lado do lockup em vez de pendurado nele.
+        meio = (tinta[0] + tinta[2]) / 2
+        if x0 < meio < x1:
+            meia = min(meio - x0, x1 - meio)
+            if (2 * meia) / largura >= ENCOSTE_MINIMO:
+                x0, x1 = round(meio - meia), round(meio + meia)
     return [x0, y0, x1, y1]
 
 

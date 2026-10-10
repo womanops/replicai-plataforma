@@ -519,3 +519,85 @@ class TestOGenerativoInventando:
         r = desdobrar(arte, ["ig-feed-1x1"], Serve(), tmp_path / "job",
                       leitor=lambda a: L(True, (0.47, 0.4, 0.46, 0.31), []))
         assert any("traço forte" in a for a in r.avisos["ig-feed-1x1"])
+
+
+class TestInsistirComOGenerativo:
+    """Acusar o traço inventado não conserta a peça. Como o generativo é
+    estocástico, insistir resolve na maior parte das vezes."""
+
+    def test_repete_ate_sair_limpo(self, arte, tmp_path, monkeypatch):
+        from PIL import Image as Im
+        import api.fundo as fu
+        tentativas = []
+
+        def continua(base, ex, espera):
+            tentativas.append(1)
+            alvo = (base.width + ex["left"] + ex["right"],
+                    base.height + ex["top"] + ex["bottom"])
+            return Im.new("RGB", alvo, "#0a1a55"), ""
+
+        monkeypatch.setattr(fu, "_continuar", continua)
+        sujas = [1]
+
+        def confere(caminho, caixa):
+            return ["inventou"] if sujas and sujas.pop() else []
+
+        monkeypatch.setattr(fu, "inventou_estrutura", confere)
+        r = fu.preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770),
+                        tmp_path / "f.png", modo="outpaint")
+        assert len(tentativas) == 2            # insistiu e a segunda saiu limpa
+        assert r["avisos"] == []
+
+    def test_desiste_depois_do_limite_e_avisa(self, arte, tmp_path, monkeypatch):
+        from PIL import Image as Im
+        import api.fundo as fu
+        tentativas = []
+
+        def continua(base, ex, espera):
+            tentativas.append(1)
+            alvo = (base.width + ex["left"] + ex["right"],
+                    base.height + ex["top"] + ex["bottom"])
+            return Im.new("RGB", alvo, "#0a1a55"), ""
+
+        monkeypatch.setattr(fu, "_continuar", continua)
+        monkeypatch.setattr(fu, "inventou_estrutura", lambda *a: ["inventou"])
+        r = fu.preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770),
+                        tmp_path / "f.png", modo="outpaint")
+        assert len(tentativas) == fu.TENTATIVAS
+        assert r["avisos"]                     # a peça sai, com a ressalva
+
+    def test_generativo_que_nao_responde_nao_vira_duas_esperas(self, arte, tmp_path,
+                                                               monkeypatch):
+        """Insistir é para quando ele responde mal, não para quando não
+        responde: repetir o tempo de espera dobraria a fila."""
+        import api.fundo as fu
+        tentativas = []
+        monkeypatch.setattr(fu, "_continuar",
+                            lambda *a: (tentativas.append(1), (None, "não respondeu"))[1])
+        r = fu.preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770),
+                        tmp_path / "f.png", modo="outpaint")
+        assert len(tentativas) == 1 and r["modo"] == "solid"
+
+
+class TestCentralizarPelaArte:
+    def test_o_centro_e_o_da_arte_e_nao_o_da_peca(self):
+        """CTA centralizado no canvas fica solto ao lado do lockup em vez de
+        pendurado nele."""
+        from api.composicao import Elemento, Esquema, montar
+        f = formato_by_id("ig-feed-1x1")
+        tinta = [120, 400, 620, 600]          # lockup à esquerda do centro
+        esq = Esquema([Elemento("cta", "baixo-centro", "Inscreva-se")], {})
+        peca = montar(esq, f, {"tipo": "cor", "cor": "#000"},
+                      livres={"bottom": [0, 700, 1080, 1080]}, tinta=tinta)
+        b = peca["elementos"][0]["box"]
+        meio_do_botao = b["x"] + b["w"] / 2
+        assert abs(meio_do_botao - 370) < 30   # centro do lockup, não 540
+
+    def test_sem_tinta_centraliza_na_peca(self):
+        from api.composicao import Elemento, Esquema, montar
+        f = formato_by_id("ig-feed-1x1")
+        esq = Esquema([Elemento("cta", "baixo-centro", "Inscreva-se")], {})
+        peca = montar(esq, f, {"tipo": "cor", "cor": "#000"},
+                      livres={"bottom": [0, 700, 1080, 1080]})
+        b = peca["elementos"][0]["box"]
+        assert abs((b["x"] + b["w"] / 2) - 540) < 30
