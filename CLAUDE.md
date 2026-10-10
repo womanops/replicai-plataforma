@@ -48,59 +48,58 @@ vende.
 | `motor/assets/` | `template.html` (motor de composição) e `formatos.json` |
 | `docs/ROADMAP.md` | O plano em 4 fases e as decisões de arquitetura |
 
-**Pendência que bloqueia o próximo passo:** não há como rodar Docker nesta
-máquina. Verificado em 10/10/2026:
+**O passo 3 está provado.** Em 10/10/2026 a esteira do GitHub Actions construiu
+a imagem e renderizou a peça de prova dentro de um contêiner Linux. Commit
+`b1f9258`. O motor roda em qualquer servidor — a fundação da Fase 1 está de pé.
+
+### Por que a prova roda no GitHub Actions, e não aqui
 
 | | |
 |---|---|
-| Máquina | MacBook Pro 13" 2017 (MacBookPro14,1), i5 dois núcleos, 8 GB, 26 GB livres |
-| Sistema | macOS 13.7.8 Ventura — **é o teto deste modelo**, a Apple cortou o 2017 no Sonoma |
-| Docker Desktop | exige Sonoma (14+). Não instala |
-| OrbStack | exige Sonoma desde a versão 2.0. Não instala |
-| Colima / Rancher / Podman | instalam, mas o Homebrew não tem mais pacote pronto para Ventura: compila da fonte. E todos sobem uma VM Linux — com 8 GB e dois núcleos, rodando Chromium dentro, é terreno ruim |
+| Máquina | MacBook Pro 13" 2017, i5 dois núcleos, 8 GB |
+| Sistema | macOS 13.7.8 Ventura — **teto deste modelo**, a Apple cortou o 2017 no Sonoma |
+| Docker Desktop e OrbStack | exigem Sonoma. Não instalam |
+| Colima / Rancher / Podman | o Homebrew não tem mais pacote pronto para Ventura: compila da fonte, e ainda sobem uma VM Linux com Chromium dentro |
 
-Não é configuração errada: a máquina saiu da janela de suporte do ecossistema.
+Não é configuração errada: a máquina saiu da janela de suporte. A Fase 1 (API em
+Python) se desenvolve e testa aqui normalmente, sem contêiner. A esteira verifica
+o contêiner a cada push — que é onde isso importa.
 
-**Consequência para o projeto:** o passo 3 não deve ser provado aqui. Ele prova
-que o motor roda em Linux dentro de um contêiner — e isso se prova melhor onde o
-produto vai de fato rodar, num servidor Linux. A Fase 1 (API em Python) continua
-podendo ser desenvolvida e testada nesta máquina normalmente, sem contêiner.
+Para publicar, use o **GitHub Desktop** (instalado). O push por token no terminal
+não funcionou: a colagem não chega no prompt escondido.
 
----
+### Três armadilhas desarmadas antes da prova
+
+Achadas lendo o código, antes de existir Docker. Cada uma faria o passo 3 falhar
+com mensagem que não aponta a causa:
+
+- **Chromium como root não abre sem `--no-sandbox`.** O motor lê `CHROME_FLAGS`
+  do ambiente; o Dockerfile define, o Mac não tem.
+- **`assets/` fora de alcance.** Na skill eles ficam um nível acima do script;
+  aqui o motor é pacote e eles ficam ao lado. Procura nos dois.
+- **Pastas vazias somem no git.** `api/`, `web/` e `fontes/` ganharam `.gitkeep`,
+  senão o `COPY` do Dockerfile quebraria só no servidor.
 
 ## Próximo passo
 
-1. Instalar o Docker Desktop: `brew install --cask docker`, depois abrir o app
-   uma vez e esperar a baleia aparecer na barra de menu
-2. `docker compose -f infra/docker-compose.yml build`
-3. Provar o render dentro do contêiner:
-   `docker compose -f infra/docker-compose.yml run --rm api python testes/prova_container.py`
-4. Só então seguir para a Fase 1 (API + fila)
+Fase 1 — MVP funcional. O caminho mínimo que já tem valor: subir a arte-mãe,
+escolher formatos, baixar as peças.
 
-Não construa a Fase 1 antes de provar o passo 3. Se o Chromium não renderizar no
-contêiner, toda a arquitetura em cima muda.
+- [ ] `api/main.py` — upload, status do job, download
+- [ ] Fila (Redis + RQ): renderizar leva minutos e não cabe numa requisição
+- [ ] Motor recebendo caminhos de entrada e saída por parâmetro
+- [ ] Front-end mínimo: uma página de upload, uma de resultado
+- [ ] Testes do motor com pytest — 2.309 linhas sem rede de proteção hoje
 
-**Use `run`, não `up`.** O `docker compose up` sobe a api, e o CMD da imagem
-chama `uvicorn api.main:app`, que ainda não existe — o serviço entraria em ciclo
-de reinício e pareceria falha de contêiner. `up` passa a valer na Fase 1.
+Comece pelos testes do motor ou pela API, não pelo front-end: o que decide se o
+produto existe é o caminho upload → peça pronta.
 
-### Três armadilhas já desarmadas (09–10/10/2026)
-
-Encontradas antes do Docker existir na máquina, lendo o código. Cada uma faria o
-passo 3 falhar com mensagem que não aponta a causa:
-
-- **Chromium como root não abre sem `--no-sandbox`.** O motor agora aceita
-  `CHROME_FLAGS` do ambiente e o Dockerfile define
-  `--no-sandbox --disable-dev-shm-usage`. No Mac a variável não existe e nada muda.
-- **`assets/` ficava fora do alcance.** Na skill os assets moram um nível acima
-  do script; aqui o motor é um pacote e eles ficam ao lado. O motor procura nos
-  dois lugares.
-- **`../fontes` não existia** e o compose monta essa pasta. Criada com `.gitkeep`.
-
-O `testes/prova_container.py` já passa na máquina local (Chrome do Mac), então o
-teste está correto: o que o passo 3 mede é só o ambiente.
-
----
+**Já existe um Studio funcionando** em
+`~/Desktop/OPERAÇÃO CLAUDE CODE/ReplicAI/studio/` — servidor em Python puro com
+upload, fila, acompanhamento e edição de peça. Ele não é a arquitetura final,
+mas resolveu problemas reais de produto (prévia de PSD lendo o cabeçalho do
+arquivo, aviso de fundo faltante, animação por preset). Vale ler antes de
+desenhar a API do zero.
 
 ## Regras invioláveis
 
