@@ -118,6 +118,13 @@ def saude():
             "desenhando_com": desenhando_com()}
 
 
+@app.get("/presets")
+def presets():
+    from api import animacao
+    return {"presets": list(animacao.PRESETS), "padrao": animacao.PRESET_PADRAO,
+            "disponivel": animacao.instalado()}
+
+
 @app.get("/formatos")
 def formatos():
     return load_formatos()["formatos"]
@@ -155,6 +162,58 @@ async def criar(
                            "titulo": titulo, "arte": destino.name})
     FILA.enfileirar(processar, job, str(destino), pedidos, headline, cta, brief)
     return {"job": job, "status": trabalhos.ler(job)["status"]}
+
+
+def processar_video(job: str, formatos: list[str], preset: str, segundos: float) -> None:
+    """O que o worker executa para animar. Separado de `processar` porque é
+    outra ferramenta e outro tempo: a peça parada leva segundos, o vídeo leva
+    minutos, e quem quer só a peça não deve esperar pelo vídeo."""
+    from api import animacao
+    trabalhos.gravar(job, {"video": {"status": "rodando", "preset": preset,
+                                     "formatos": formatos}})
+    try:
+        prontos, falhas = animacao.animar(trabalhos.pasta_do(job), formatos, preset, segundos)
+        estado = "pronto" if prontos and not falhas else ("parcial" if prontos else "erro")
+        trabalhos.gravar(job, {"video": {"status": estado, "preset": preset,
+                                         "prontos": sorted(prontos), "falhas": falhas}})
+    except Exception as e:
+        trabalhos.gravar(job, {"video": {"status": "erro", "erro": str(e)}})
+        raise
+
+
+@app.post("/jobs/{job}/animar", status_code=202)
+def animar(job: str, formatos: str = Form(""), preset: str = Form("editorial"),
+           segundos: float = Form(5.0)):
+    """Anima formatos que já viraram peça. Só esses: animar o que não foi
+    composto não é pedido válido, é engano."""
+    from api import animacao
+    try:
+        estado = trabalhos.ler(job)
+    except ValueError:
+        raise HTTPException(400, "identificador inválido")
+    if estado is None:
+        raise HTTPException(404, "trabalho não existe")
+    if not animacao.instalado():
+        raise HTTPException(503, "o projeto de vídeo não está instalado nesta máquina: "
+                                 "rode `npm install` em video/")
+
+    prontas = list(estado.get("prontas") or [])
+    if not prontas:
+        raise HTTPException(409, "este trabalho ainda não tem peça pronta para animar")
+    pedidos = [f.strip() for f in formatos.split(",") if f.strip()] or prontas
+    fora = [f for f in pedidos if f not in prontas]
+    if fora:
+        raise HTTPException(422, f"sem peça pronta para: {', '.join(fora)}")
+    if preset not in animacao.PRESETS:
+        raise HTTPException(422, f"preset desconhecido: `{preset}`. "
+                                 f"Use {', '.join(animacao.PRESETS)}")
+    if not 1.0 <= segundos <= 20.0:
+        raise HTTPException(422, "a duração vai de 1 a 20 segundos")
+
+    trabalhos.gravar(job, {"video": {"status": "na fila", "preset": preset,
+                                     "formatos": pedidos}})
+    FILA.enfileirar(processar_video, job, pedidos, preset, float(segundos))
+    return {"job": job, "video": trabalhos.ler(job)["video"]}
 
 
 @app.get("/jobs/{job}")

@@ -25,3 +25,8 @@ Thumbs.db
 testes/saida/
 testes/*.html
 testes/*.report.json
+video/node_modules/
+video/public/peca/
+video/props/
+video/saida/
+video/out/
