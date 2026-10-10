@@ -146,9 +146,22 @@ lugar da janela (a zona é pequena e, quando se erra, o navegador abre o arquivo
 e a página não vê nada) e o PSD mostra medida e miniatura lendo o cabeçalho do
 próprio arquivo, sem subir nada.
 
-Falta a decisão de `docs/DECISAO-quem-compoe.md`: hoje a API usa o
-`CompositorSimples`, a regra determinística, e é ela que limita a qualidade —
-não a esteira.
+### Quem compõe: decidido (10/10/2026)
+
+O modelo responde **papéis e zonas**, nunca pixels; a caixa é calculada em
+`api/composicao.py`. Nada que ele responde chega ao render sem passar por
+`conferir()`, e um erro vira uma volta de correção antes de desistir.
+
+- `api/composicao.py` — o idioma, a conferência e a conversão em peça.
+- `api/modelo.py` — a chamada à API da Anthropic (`claude-opus-5-5`), com saída
+  forçada por esquema. Trocar de provedor é trocar este arquivo.
+- `CompositorEmCadeia(modelo, regra)` — sem `ANTHROPIC_API_KEY` cai para a regra
+  determinística. `/saude` diz qual está valendo.
+
+**Falta rodar com chave de verdade.** Tudo foi provado com modelo falso: o
+contrato, a conferência, a correção, as caixas e o render. A chamada em si e o
+custo por peça não foram exercitados — no teste de ponta a ponta com modelo
+falso foram 5 chamadas para 3 formatos.
 
 ### Como os testes da API são rápidos
 

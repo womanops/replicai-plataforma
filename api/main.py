@@ -17,7 +17,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 
 from api import trabalhos
-from api.compositor import CompositorSimples
+from api.compositor import CompositorEmCadeia, CompositorModelo, CompositorSimples
 from api.fila import fila_do_ambiente
 from api.pipeline import desdobrar
 from motor.replica import formato_by_id, load_formatos
@@ -29,13 +29,31 @@ FILA = fila_do_ambiente()
 ACEITOS = {".png", ".jpg", ".jpeg", ".webp", ".psd", ".psb", ".pdf"}
 
 
+def compositor(arte: str, headline: str, cta: str):
+    """Quem compõe. Com credencial, o modelo decide a estrutura e a máquina
+    calcula as caixas; a regra determinística fica atrás como rede. Sem
+    credencial, só a regra — a plataforma funciona, com menos qualidade, em vez
+    de recusar o trabalho.
+
+    A ordem é essa e não o contrário: a regra dá conta do caso fácil, mas não
+    sabe o que sacrificar quando o formato aperta, que é o que decide a peça.
+    """
+    from api import modelo
+    simples = CompositorSimples(headline=headline, cta=cta)
+    if not modelo.disponivel():
+        return simples
+    pelo_modelo = CompositorModelo(
+        modelo.responder_anthropic,
+        fundo={"tipo": "imagem", "src": Path(arte).name, "fit": "cover"})
+    return CompositorEmCadeia(pelo_modelo, simples)
+
+
 def processar(job: str, arte: str, formatos: list[str], headline: str,
               cta: str, brief: str) -> None:
     """O que o worker executa. Fora da API de propósito: é o pedaço pesado."""
     trabalhos.gravar(job, {"status": "rodando"})
     try:
-        r = desdobrar(Path(arte), formatos,
-                      CompositorSimples(headline=headline, cta=cta),
+        r = desdobrar(Path(arte), formatos, compositor(arte, headline, cta),
                       trabalhos.pasta_do(job), brief)
         trabalhos.gravar(job, {"status": r.status,
                                "prontas": sorted(r.prontas),
@@ -56,7 +74,9 @@ def tela():
 
 @app.get("/saude")
 def saude():
-    return {"ok": True, "fila": type(FILA).__name__}
+    from api import modelo
+    return {"ok": True, "fila": type(FILA).__name__,
+            "compositor": "modelo+regra" if modelo.disponivel() else "regra"}
 
 
 @app.get("/formatos")

@@ -198,3 +198,23 @@ class TestBaixarTudo:
         r = cliente.get(f"/jobs/{job}/zip")
         nomes = _zip.ZipFile(_io.BytesIO(r.content)).namelist()
         assert "arte.png" in nomes
+
+
+class TestQuemCompoe:
+    def test_sem_credencial_usa_so_a_regra(self, cliente, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        from api.main import compositor
+        assert type(compositor("arte.png", "Oi", "")).__name__ == "CompositorSimples"
+
+    def test_com_credencial_o_modelo_vem_primeiro_e_a_regra_atras(self, cliente, monkeypatch):
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-teste")
+        from api.main import compositor
+        c = compositor("arte.png", "Oi", "")
+        assert type(c).__name__ == "CompositorEmCadeia"
+        assert [type(x).__name__ for x in c.compositores] == ["CompositorModelo", "CompositorSimples"]
+
+    def test_a_saude_diz_quem_esta_compondo(self, cliente, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        assert cliente.get("/saude").json()["compositor"] == "regra"

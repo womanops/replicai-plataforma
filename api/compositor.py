@@ -126,3 +126,106 @@ class CompositorSimples:
             "fontes": [],
             "elementos": elementos,
         }
+
+
+# ----------------------------------------------------------------- modelo + regra
+
+def instrucao(formato: dict, brief: str = "", marcas: list[str] | None = None) -> str:
+    """O que o modelo precisa saber para compor este formato.
+
+    Leva as regras da casa como restrição, não como texto de apoio: o
+    experimento mostrou que um modelo com o pipeline no prompt ainda escolhe o
+    caminho errado quando nada confere depois.
+    """
+    t = formato.get("texto", {})
+    limites = ", ".join(f"{k.replace('_max','')} até {v} caracteres" if v else
+                        f"{k.replace('_max','')} não cabe neste formato"
+                        for k, v in t.items())
+    return f"""Você compõe uma peça de {formato['w']}x{formato['h']} ({formato['nome']}, {formato['canal']}).
+
+Responda em papéis e zonas, nunca em pixels. A posição exata é calculada depois.
+
+Papéis: marca, headline, apoio, cta, selo. Zonas: topo/meio/baixo combinado com
+esquerda/centro/direita, por exemplo "meio-esquerda".
+
+Limites deste formato: {limites}.
+Convenção: {formato.get('notas', '—')}
+
+Regras:
+- Um papel só aparece uma vez.
+- Headline é obrigatória.
+- Texto que não cabe no limite deve ser encurtado por você, não truncado depois.
+- Tudo que você deixar de fora entra em `descartados`, com o motivo. Cortar
+  conteúdo calado não é aceito.
+- A marca sai de um recorte da arte: informe `origem` com o arquivo.
+{('- Marcas disponíveis: ' + ', '.join(marcas)) if marcas else ''}
+{('Ajustes pedidos: ' + brief) if brief else ''}
+
+Responda só com JSON:
+{{"elementos": [{{"papel": "...", "zona": "...", "texto": "..."}}],
+  "descartados": {{"o que saiu": "por quê"}}}}"""
+
+
+class CompositorModelo:
+    """Pergunta a estrutura ao modelo e calcula as caixas aqui.
+
+    O modelo entra de fora — `responder(instrucao, arte) -> dict`. Assim o
+    compositor inteiro é testável com um modelo falso, e trocar de provedor não
+    mexe em nada aqui.
+    """
+
+    def __init__(self, responder, fundo: dict, marcas: list[str] | None = None,
+                 fontes: list | None = None, cor_texto: str = "#ffffff", acento: str = "",
+                 tentativas: int = 2):
+        self.responder = responder
+        self.fundo = fundo
+        self.marcas = marcas or []
+        self.fontes = fontes
+        self.cor_texto = cor_texto
+        self.acento = acento
+        self.tentativas = max(1, tentativas)
+
+    def compor(self, base, formato_id: str, brief: str = "") -> dict:
+        from api.composicao import RespostaInvalida, conferir, montar
+        f = formato_by_id(formato_id)
+        if not f:
+            raise ComposicaoImpossivel(f"formato desconhecido: {formato_id}")
+        texto = instrucao(f, brief, self.marcas)
+        ultimo = ""
+        for tentativa in range(self.tentativas):
+            try:
+                bruto = self.responder(texto, base)
+            except Exception as e:
+                raise ComposicaoImpossivel(f"o modelo não respondeu: {e}") from e
+            try:
+                esq = conferir(bruto, f)
+            except RespostaInvalida as e:
+                # resposta de modelo nunca vai direto para o render. Mas desistir
+                # na primeira também é desperdício: dizer o erro e pedir de novo
+                # é o que uma pessoa faria, e costuma resolver em uma volta.
+                ultimo = str(e)
+                texto = (f"{instrucao(f, brief, self.marcas)}\n\n"
+                         f"A resposta anterior foi recusada: {ultimo}\n"
+                         f"Corrija isso e responda de novo.")
+                continue
+            return montar(esq, f, self.fundo, self.fontes, self.cor_texto, self.acento)
+        raise ComposicaoImpossivel(
+            f"o modelo não corrigiu em {self.tentativas} tentativas: {ultimo}")
+
+
+class CompositorEmCadeia:
+    """Tenta um, depois o outro. Serve para a política do
+    `docs/DECISAO-quem-compoe.md`: regra onde ela dá conta, modelo onde precisa
+    de julgamento — ou o contrário, que é escolha de quem monta a cadeia."""
+
+    def __init__(self, *compositores):
+        self.compositores = compositores
+
+    def compor(self, base, formato_id: str, brief: str = "") -> dict:
+        motivos = []
+        for c in self.compositores:
+            try:
+                return c.compor(base, formato_id, brief)
+            except ComposicaoImpossivel as e:
+                motivos.append(f"{type(c).__name__}: {e}")
+        raise ComposicaoImpossivel(" | ".join(motivos) or "nenhum compositor configurado")

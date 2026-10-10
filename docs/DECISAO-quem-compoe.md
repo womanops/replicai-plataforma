@@ -1,6 +1,6 @@
 # Quem compõe a peça?
 
-**Status:** o caminho A foi provado em 10/10/2026 — ver *A prova*, no fim.
+**Status:** decidido e implementado em 10/10/2026. Ver *A decisão*, no fim.
 **Levantado em:** 10/10/2026
 
 ## O buraco
@@ -226,3 +226,55 @@ A última mede o **anel em volta** das áreas de texto, não o miolo. Medindo po
 dentro, as próprias letras inflavam a conta e uma peça com fotos longe do texto
 acusava igual a uma com grade atrás dele. Energiza dá 6x; Candidate-se, que tem
 as fotos longe, não dispara.
+
+
+---
+
+# A decisão (10/10/2026)
+
+**Caminho A, com C atrás como rede** — e a divisão que o experimento apontou.
+
+## O modelo não responde pixels
+
+Ele responde **papéis e zonas**: `headline` em `meio-esquerda`, `cta` em
+`baixo-esquerda`. A caixa exata é calculada por `api/composicao.py`, a partir da
+área segura e das convenções do formato.
+
+Isso tira dele a parte que faz mal — coordenada — e mantém a que faz bem:
+o que entra, o que sai, o que se encurta, qual a hierarquia.
+
+## Nada que o modelo responde chega ao render sem passar por conferência
+
+`conferir()` recusa papel desconhecido, zona desconhecida, papel repetido, texto
+acima do limite do formato, papel que o formato não comporta, e `descartados`
+que não diga o motivo. Peça torta entregue é pior do que peça não entregue.
+
+Recusar na primeira, porém, é desperdício: o compositor **diz o erro ao modelo e
+pede de novo**, uma vez. No teste de ponta a ponta foram 5 chamadas para 3
+formatos — duas precisaram da volta. Esse número é o custo por peça, e agora é
+medível.
+
+## A cadeia
+
+`CompositorEmCadeia(modelo, regra)`. Com credencial, o modelo decide e a regra
+fica atrás; sem credencial, só a regra. A plataforma funciona nos dois casos, com
+qualidades diferentes, em vez de recusar a subir. `/saude` diz qual está valendo.
+
+## O que o render ensinou que o teste não pegava
+
+Duas sobreposições só apareceram na peça pronta, e viraram teste:
+
+- zonas da mesma faixa vertical disputavam a largura — "meio-centro" pegava tudo
+  e o botão em "meio-direita" caía em cima;
+- o corpo mínimo do texto vinha só do canvas, então o apoio não conseguia
+  encolher, estourava a caixa e escrevia por cima do vizinho.
+
+E uma terceira: resolver faixa a faixa deixava o grupo do meio descer até 80% da
+altura enquanto o de baixo começava em 68%. Agora cada coluna é resolvida
+inteira, e um grupo empurra o seguinte.
+
+## O que falta antes de ligar em produção
+
+Rodar com chave de verdade. Tudo foi provado com modelo falso: o contrato, a
+conferência, a volta de correção, as caixas e o render. O que não foi exercitado
+é a chamada em si — e o custo real por peça.
