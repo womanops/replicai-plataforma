@@ -20,7 +20,7 @@ class Espiao:
     def __init__(self):
         self.bases = []
 
-    def compor(self, base, formato_id, brief=""):
+    def compor(self, base, formato_id, brief="", terreno=None):
         self.bases.append(base)
         return {"w": 100, "h": 100, "fundo": {"tipo": "cor", "cor": "#000"},
                 "elementos": [], "saida": f"{formato_id}.png"}

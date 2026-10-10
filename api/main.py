@@ -46,8 +46,22 @@ def compositor(arte: str, headline: str, cta: str):
         return simples
     pelo_modelo = CompositorModelo(
         modelo.responder_anthropic,
-        fundo={"tipo": "imagem", "src": Path(arte).name, "fit": "cover"})
+        fundo={"tipo": "imagem", "src": Path(arte).name, "fit": "cover"},
+        material=" ".join(x for x in (headline, cta) if x))
     return CompositorEmCadeia(pelo_modelo, simples)
+
+
+def leitor():
+    """Quem lê a arte antes de compor. Sem credencial não há leitura, e a
+    esteira cai no comportamento antigo — com a arte crua de fundo."""
+    from api import modelo
+    if not modelo.disponivel():
+        return None
+
+    def ler(arte):
+        from api.leitura import entender
+        return entender(modelo.ler_arte(arte))
+    return ler
 
 
 def processar(job: str, arte: str, formatos: list[str], headline: str,
@@ -56,7 +70,7 @@ def processar(job: str, arte: str, formatos: list[str], headline: str,
     trabalhos.gravar(job, {"status": "rodando"})
     try:
         r = desdobrar(Path(arte), formatos, compositor(arte, headline, cta),
-                      trabalhos.pasta_do(job), brief)
+                      trabalhos.pasta_do(job), brief, leitor())
         trabalhos.gravar(job, {"status": r.status,
                                "prontas": sorted(r.prontas),
                                "falhas": r.falhas,

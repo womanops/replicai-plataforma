@@ -104,6 +104,32 @@ def responder_anthropic(instrucao: str, arte, cliente=None, modelo: str = MODELO
     }
 
 
+def ler_arte(arte, cliente=None, modelo: str = MODELO) -> dict:
+    """Uma chamada por trabalho: onde está a tinta da arte e o que ela diz.
+
+    Esquema próprio, prompt próprio. Sem a arte anexada não há o que ler — e
+    PSD/PDF o modelo não abre, então devolve leitura vazia em vez de inventar.
+    """
+    import anthropic
+
+    from api.leitura import ESQUEMA as ESQ_LEITURA, INSTRUCAO
+
+    img = _imagem(arte)
+    if not img:
+        return {}
+    cliente = cliente or anthropic.Anthropic()
+    r = cliente.messages.create(
+        model=modelo,
+        max_tokens=4000,
+        output_config={"effort": "low", "format": {"type": "json_schema", "schema": ESQ_LEITURA}},
+        messages=[{"role": "user", "content": [img, {"type": "text", "text": INSTRUCAO}]}],
+    )
+    custo.registrar(modelo, getattr(r, "usage", None))
+    if getattr(r, "stop_reason", None) == "refusal":
+        return {}
+    return json.loads(next((b.text for b in r.content if b.type == "text"), "{}"))
+
+
 def disponivel() -> bool:
     """Há credencial para falar com o modelo? Sem ela a plataforma cai para a
     regra determinística em vez de recusar a subir."""

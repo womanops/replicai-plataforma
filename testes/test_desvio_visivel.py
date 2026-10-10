@@ -16,7 +16,7 @@ class Quebrado:
     def __init__(self, motivo="sem crédito"):
         self.motivo = motivo
 
-    def compor(self, base, formato_id, brief=""):
+    def compor(self, base, formato_id, brief="", terreno=None):
         raise ComposicaoImpossivel(self.motivo)
 
 
@@ -24,7 +24,7 @@ class Serve:
     def __init__(self):
         self.chamadas = 0
 
-    def compor(self, base, formato_id, brief=""):
+    def compor(self, base, formato_id, brief="", terreno=None):
         self.chamadas += 1
         return {"w": 100, "h": 100, "fundo": {"tipo": "cor", "cor": "#000"},
                 "elementos": [], "saida": f"{formato_id}.png"}

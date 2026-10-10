@@ -27,7 +27,7 @@ class CompositorQueRecusa:
     """Compositor que nunca dá conta: serve para testar o caminho da falha sem
     depender de navegador."""
 
-    def compor(self, base, formato_id, brief=""):
+    def compor(self, base, formato_id, brief="", terreno=None):
         raise ComposicaoImpossivel(f"não sei compor {formato_id}")
 
 
