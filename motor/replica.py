@@ -89,7 +89,11 @@ def baixar(url: str, dest: Path) -> None:
     except Exception as exc:  # SSL, rede etc.
         if not shutil.which("curl"):
             raise RuntimeError(f"não consegui baixar {url}: {exc}")
-    r = subprocess.run(["curl", "-L", "-sS", "--fail", "-o", str(dest), url], capture_output=True, text=True, timeout=300)
+    # 300s não bastou uma vez: a CDN do generativo entrega devagar e o
+    # trabalho inteiro caiu para bloco de cor por causa do download
+    r = subprocess.run(["curl", "-L", "-sS", "--fail", "--retry", "2",
+                        "--retry-delay", "2", "-o", str(dest), url],
+                       capture_output=True, text=True, timeout=600)
     if r.returncode != 0 or not dest.exists():
         raise RuntimeError(f"curl falhou ao baixar {url}: {r.stderr[-300:]}")
 

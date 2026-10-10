@@ -414,7 +414,9 @@ LOCKUP_NA_LARGURA = 0.82
 # o lockup não centraliza no espaço que sobrou: fica no alto dele, para deixar
 # faixa abaixo. É ali que o CTA entra, centralizado sob a marca — pedido numa
 # revisão, e o certo: botão pendurado no lockup lê como um conjunto só.
-LOCKUP_NO_ALTO = 0.62
+# Em 0,62 a faixa de baixo ficava com 158px para três elementos e o botão saía
+# espremido; em 0,50 sobram 400 e a hierarquia cabe.
+LOCKUP_NO_ALTO = 0.50
 
 
 def recompor(leitura: Leitura, formato: dict, pasta: Path,
