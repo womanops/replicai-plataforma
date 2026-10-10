@@ -1,0 +1,6 @@
+# ReplicAI — dependências de DESENVOLVIMENTO e TESTE
+-r requirements-api.txt
+
+pytest==9.1.1
+pytest-cov==7.0.0       # cobertura
+httpx==0.29.1           # cliente de teste da API

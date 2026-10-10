@@ -1,0 +1,37 @@
+# A prova que decide a arquitetura: o motor renderiza uma peça dentro de um
+# contêiner Linux? Se sim, roda em qualquer servidor, e a Fase 1 vale a pena.
+#
+# Roda aqui, e não na máquina de desenvolvimento, porque aquele MacBook é de
+# 2017 e nenhum runtime de contêiner atual suporta o macOS dele. Aqui a prova
+# acontece onde o produto vai de fato rodar: Linux.
+
+name: prova do contêiner
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:        # permite rodar na mão pelo site do GitHub
+
+jobs:
+  renderizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: construir a imagem
+        run: docker build -f infra/Dockerfile -t replicai:prova .
+
+      - name: renderizar uma peça dentro do contêiner
+        # O repositório entra montado em /app para o contêiner enxergar testes/
+        # e para a peça gerada sobrar aqui fora, onde o passo seguinte a guarda.
+        run: |
+          docker run --rm -v "$PWD:/app" -w /app replicai:prova \
+            python testes/prova_container.py
+
+      - name: guardar a peça gerada
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: peca-de-prova
+          path: testes/saida/
+          if-no-files-found: warn

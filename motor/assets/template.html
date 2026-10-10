@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>ReplicAI — peça</title>
+<!--
+  Motor de composição do ReplicAI.
+  O script render.py injeta a peça (JSON) em PECA e o Chrome headless tira a foto.
+  Todo texto é texto de verdade (HTML), nunca imagem: por isso a tipografia sai
+  idêntica em todos os formatos e a validação consegue ler o que está escrito.
+
+  Depois de montar, cada elemento de texto recebe:
+    data-size      tamanho de fonte final (px), depois do ajuste ao box
+    data-overflow  "1" se mesmo no tamanho mínimo o texto não coube
+    data-box       "x,y,w,h" do box declarado
+  e <html> recebe data-ready="1". O validate lê isso via --dump-dom.
+-->
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { position: relative; overflow: hidden; background: #000; }
+  #canvas { position: relative; overflow: hidden; }
+  #fundo { position: absolute; inset: 0; background-repeat: no-repeat; }
+  .el { position: absolute; box-sizing: border-box; }
+  .txt { display: flex; flex-direction: column; white-space: pre-wrap; overflow-wrap: normal; word-break: normal; }
+  .txt > div { width: 100%; }
+  .img { display: flex; }
+  .img img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .botao { display: flex; align-items: center; justify-content: center; white-space: nowrap; }
+  .forma { }
+  .scrim { position: absolute; inset: 0; pointer-events: none; }
+  .debug-safe { position: absolute; border: 2px dashed rgba(255,0,0,.75); box-sizing: border-box; pointer-events: none; }
+  .debug-box { position: absolute; outline: 1px dashed rgba(0,255,255,.8); pointer-events: none; }
+</style>
+<!--FONTES-->
+</head>
+<body>
+<div id="canvas"><div id="fundo"></div></div>
+<script>
+const PECA = /*PECA*/{}/*PECA*/;
+
+function px(v){ return (typeof v === 'number') ? v + 'px' : v; }
+function fileUrl(p){
+  if (!p) return '';
+  if (/^(https?:|file:|data:)/.test(p)) return p;
+  return 'file://' + (p.startsWith('/') ? p : (PECA._dir + '/' + p));
+}
+
+function montarFundo(c){
+  const f = PECA.fundo || {tipo:'cor', cor:'#111'};
+  const el = document.getElementById('fundo');
+  if (f.tipo === 'imagem') {
+    el.style.backgroundImage = 'url("' + fileUrl(f.src) + '")';
+    el.style.backgroundSize = f.fit === 'contain' ? 'contain' : (f.fit === 'stretch' ? '100% 100%' : 'cover');
+    el.style.backgroundPosition = f.posicao || 'center center';
+    el.style.backgroundColor = f.cor || '#000';
+  } else {
+    el.style.background = f.cor || '#111';
+  }
+  if (f.filtro) el.style.filter = f.filtro;
+}
+
+function montarScrim(s){
+  const d = document.createElement('div');
+  d.className = 'scrim';
+  if (s.tipo === 'gradiente') {
+    d.style.background = 'linear-gradient(' + (s.direcao || 'to bottom') + ', ' + (s.de || 'rgba(0,0,0,0)') + ' ' + (s.inicio || '0%') + ', ' + (s.para || 'rgba(0,0,0,.6)') + ' ' + (s.fim || '100%') + ')';
+  } else if (s.tipo === 'radial') {
+    d.style.background = 'radial-gradient(' + (s.forma || 'ellipse at center') + ', ' + (s.de || 'rgba(0,0,0,0)') + ', ' + (s.para || 'rgba(0,0,0,.6)') + ')';
+  } else {
+    d.style.background = s.cor || 'rgba(0,0,0,.35)';
+  }
+  if (s.box) { d.style.inset = 'auto'; d.style.left = px(s.box.x); d.style.top = px(s.box.y); d.style.width = px(s.box.w); d.style.height = px(s.box.h); }
+  return d;
+}
+
+function aplicarBox(el, b){
+  el.style.left = px(b.x); el.style.top = px(b.y);
+  el.style.width = px(b.w); el.style.height = px(b.h);
+  el.dataset.box = [b.x,b.y,b.w,b.h].join(',');
+}
+
+function montarTexto(e){
+  const wrap = document.createElement('div');
+  wrap.className = 'el txt';
+  wrap.dataset.papel = e.papel || 'texto';
+  wrap.dataset.tipo = 'texto';
+  aplicarBox(wrap, e.box);
+  const va = e.valign || 'top';
+  wrap.style.justifyContent = va === 'bottom' ? 'flex-end' : (va === 'middle' ? 'center' : 'flex-start');
+  const inner = document.createElement('div');
+  let t = e.texto || '';
+  if (e.caixa === 'upper') t = t.toUpperCase();
+  if (e.caixa === 'lower') t = t.toLowerCase();
+  // **negrito** e //itálico// e {{acento}} viram spans — sem inventar palavras.
+  inner.innerHTML = t
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/\/\/(.+?)\/\//g, '<i>$1</i>')
+    .replace(/\{\{(.+?)\}\}/g, '<span style="color:' + (e.acento || 'inherit') + '">$1</span>');
+  // Quebra automática: desligada quando o texto já traz \n (as linhas são decisão de quem compôs;
+  // "0" órfão numa linha é o erro clássico) ou quando `quebra: false`. Aí o ajuste só encolhe.
+  const quebra = (e.quebra === false || (e.quebra == null && t.includes('\n'))) ? 'pre' : 'pre-wrap';
+  inner.style.whiteSpace = quebra;
+  inner.style.fontFamily = e.fonte ? ('"' + e.fonte + '", ' + (e.fallback || 'system-ui, sans-serif')) : 'system-ui, sans-serif';
+  inner.style.fontWeight = e.peso || 700;
+  inner.style.fontStyle = e.italico ? 'italic' : 'normal';
+  if (e.sublinhado) { inner.style.textDecoration = 'underline'; inner.style.textUnderlineOffset = '0.12em'; }
+  inner.style.color = e.cor || '#fff';
+  inner.style.textAlign = e.align || 'left';
+  inner.style.lineHeight = e.lineHeight || 1.05;
+  inner.style.letterSpacing = e.letterSpacing || 'normal';
+  if (e.sombra) inner.style.textShadow = e.sombra;
+  if (e.tarja) { inner.style.background = e.tarja; inner.style.padding = e.tarjaPad || '0.08em 0.25em'; inner.style.boxDecorationBreak = 'clone'; inner.style.webkitBoxDecorationBreak = 'clone'; inner.style.display = 'inline'; inner.style.width = 'auto'; }
+  wrap.appendChild(inner);
+  wrap._cfg = e;
+  return wrap;
+}
+
+function montarImagem(e){
+  const wrap = document.createElement('div');
+  wrap.className = 'el img';
+  wrap.dataset.papel = e.papel || 'imagem';
+  wrap.dataset.tipo = 'imagem';
+  aplicarBox(wrap, e.box);
+  const a = e.align || 'left', va = e.valign || 'top';
+  wrap.style.justifyContent = a === 'right' ? 'flex-end' : (a === 'center' ? 'center' : 'flex-start');
+  wrap.style.alignItems = va === 'bottom' ? 'flex-end' : (va === 'middle' ? 'center' : 'flex-start');
+  const img = document.createElement('img');
+  img.src = fileUrl(e.src);
+  img.style.objectFit = e.fit || 'contain';
+  img.style.objectPosition = (a === 'right' ? 'right' : a === 'center' ? 'center' : 'left') + ' ' + (va === 'bottom' ? 'bottom' : va === 'middle' ? 'center' : 'top');
+  if (e.opacidade != null) img.style.opacity = e.opacidade;
+  if (e.filtro) img.style.filter = e.filtro;
+  if (e.raio) img.style.borderRadius = px(e.raio);
+  wrap.appendChild(img);
+  return wrap;
+}
+
+function montarBotao(e){
+  const b = document.createElement('div');
+  b.className = 'el botao';
+  b.dataset.papel = e.papel || 'cta';
+  b.dataset.tipo = 'botao';
+  aplicarBox(b, e.box);
+  b.textContent = e.caixa === 'upper' ? (e.texto||'').toUpperCase() : (e.texto||'');
+  b.style.fontFamily = e.fonte ? ('"' + e.fonte + '", system-ui, sans-serif') : 'system-ui, sans-serif';
+  b.style.fontWeight = e.peso || 800;
+  b.style.color = e.cor || '#111';
+  b.style.background = e.fundo || '#fff';
+  b.style.borderRadius = px(e.raio != null ? e.raio : Math.round(e.box.h/2));
+  b.style.fontSize = px(e.tamanho || Math.round(e.box.h * 0.42));
+  b.style.letterSpacing = e.letterSpacing || '0.02em';
+  if (e.borda) b.style.border = e.borda;
+  if (e.sombra) b.style.boxShadow = e.sombra;
+  return b;
+}
+
+function montarForma(e){
+  const f = document.createElement('div');
+  f.className = 'el forma';
+  f.dataset.papel = e.papel || 'forma';
+  f.dataset.tipo = 'forma';
+  aplicarBox(f, e.box);
+  f.style.background = e.cor || '#fff';
+  if (e.raio != null) f.style.borderRadius = px(e.raio);
+  if (e.opacidade != null) f.style.opacity = e.opacidade;
+  if (e.borda) f.style.border = e.borda;
+  return f;
+}
+
+// Ajusta o tamanho da fonte ao box: busca binária entre min e max.
+// Cabe = não estoura altura nem largura (palavra comprida também é estouro).
+function ajustar(wrap){
+  const cfg = wrap._cfg, inner = wrap.firstElementChild;
+  const cabe = () => (inner.scrollHeight <= wrap.clientHeight + 0.5) && (inner.scrollWidth <= wrap.clientWidth + 0.5);
+  if (cfg.tamanho && cfg.tamanho !== 'auto') {
+    inner.style.fontSize = px(cfg.tamanho);
+    wrap.dataset.size = String(cfg.tamanho);
+    wrap.dataset.overflow = cabe() ? '0' : '1';
+    return;
+  }
+  // min > max acontece quando quem compôs troca os dois: normaliza em vez de travar a busca
+  let lo = cfg.min || 18, hi = cfg.max || Math.round(wrap.clientHeight);
+  if (lo > hi) { const t = lo; lo = hi; hi = t; wrap.dataset.limites = 'trocados'; }
+  let best = lo;
+  inner.style.fontSize = lo + 'px';
+  if (!cabe()) { wrap.dataset.size = String(lo); wrap.dataset.overflow = '1'; return; }
+  while (hi - lo > 0.5) {
+    const mid = (lo + hi) / 2;
+    inner.style.fontSize = mid + 'px';
+    if (cabe()) { best = mid; lo = mid; } else { hi = mid; }
+  }
+  inner.style.fontSize = best + 'px';
+  wrap.dataset.size = String(Math.round(best * 10) / 10);
+  wrap.dataset.overflow = '0';
+  // Linhas: estimativa pelo line-height, útil pra saber se a headline virou parágrafo.
+  const lh = parseFloat(getComputedStyle(inner).lineHeight) || best * 1.05;
+  wrap.dataset.linhas = String(Math.max(1, Math.round(inner.scrollHeight / lh)));
+  wrap.dataset.lines = JSON.stringify(linhasReais(inner, wrap.clientWidth));
+  wrap.dataset.tinta = tintaDe(inner);
+}
+
+// Onde a tinta ficou de fato, medida pelo próprio navegador. A caixa do texto
+// tem respiro sobrando, e quem confere sobreposição precisa do retângulo das
+// letras: medir a caixa acusa encosto onde só há ar. Reconstituir por fora, com
+// métrica de fonte, também não serve — letter-spacing e kerning não batem.
+function tintaDe(inner){
+  try {
+    const c = document.getElementById('canvas');
+    const r = document.createRange(); r.selectNodeContents(inner);
+    const rs = [...r.getClientRects()].filter(k => k.width > 0.5 && k.height > 0.5);
+    if (!rs.length || !c) return '';
+    const b = c.getBoundingClientRect();
+    const x0 = Math.min(...rs.map(k => k.left))   - b.left;
+    const y0 = Math.min(...rs.map(k => k.top))    - b.top;
+    const x1 = Math.max(...rs.map(k => k.right))  - b.left;
+    const y1 = Math.max(...rs.map(k => k.bottom)) - b.top;
+    return [x0, y0, x1 - x0, y1 - y0].map(v => Math.round(v)).join(',');
+  } catch (e) { return ''; }
+}
+
+// Reconstrói as linhas como o navegador quebrou (medindo palavra a palavra com a mesma fonte),
+// para o SVG exportado quebrar igual ao PNG.
+function linhasReais(inner, maxW){
+  const cs = getComputedStyle(inner);
+  const ctx = document.createElement('canvas').getContext('2d');
+  ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const ls = parseFloat(cs.letterSpacing) || 0;
+  const mede = s => ctx.measureText(s).width + ls * s.length;
+  const noWrap = cs.whiteSpace === 'pre';
+  const out = [];
+  inner.textContent.split('\n').forEach(par => {
+    if (noWrap) { out.push(par); return; }
+    let linha = '';
+    par.split(' ').forEach(w => {
+      const tent = linha ? linha + ' ' + w : w;
+      if (mede(tent) <= maxW + 0.5 || !linha) linha = tent; else { out.push(linha); linha = w; }
+    });
+    out.push(linha);
+  });
+  return out;
+}
+
+async function montar(){
+  const c = document.getElementById('canvas');
+  c.style.width = PECA.canvas.w + 'px'; c.style.height = PECA.canvas.h + 'px';
+  document.body.style.width = PECA.canvas.w + 'px'; document.body.style.height = PECA.canvas.h + 'px';
+  // Modo isolado (export em camadas): só o elemento `somente` ou só os scrims, sobre transparente.
+  const isolado = PECA.somente != null;
+  if (isolado) { document.body.style.background = 'transparent'; c.style.background = 'transparent'; document.getElementById('fundo').style.display = 'none'; }
+  else montarFundo(c);
+  if (!isolado || PECA.somente === 'scrims' || PECA.somente === 'elementos') (PECA.scrims || (PECA.scrim ? [PECA.scrim] : [])).forEach(s => c.appendChild(montarScrim(s)));
+  const textos = [];
+  (PECA.elementos || []).forEach((e, i) => {
+    if (isolado && PECA.somente !== i && PECA.somente !== 'elementos') return;
+    let el = null;
+    if (e.tipo === 'texto') { el = montarTexto(e); textos.push(el); }
+    else if (e.tipo === 'imagem') el = montarImagem(e);
+    else if (e.tipo === 'botao') el = montarBotao(e);
+    else if (e.tipo === 'forma') el = montarForma(e);
+    if (el) { if (e.z != null) el.style.zIndex = e.z; if (e.rot) el.style.transform = 'rotate(' + e.rot + 'deg)'; c.appendChild(el); }
+  });
+  if (PECA.debug && PECA.safe) {
+    const s = PECA.safe, d = document.createElement('div');
+    d.className = 'debug-safe';
+    d.style.left = s.left + 'px'; d.style.top = s.top + 'px';
+    d.style.width = (PECA.canvas.w - s.left - s.right) + 'px'; d.style.height = (PECA.canvas.h - s.top - s.bottom) + 'px';
+    c.appendChild(d);
+    document.querySelectorAll('.el').forEach(el => { const b = document.createElement('div'); b.className='debug-box'; b.style.left=el.style.left; b.style.top=el.style.top; b.style.width=el.style.width; b.style.height=el.style.height; c.appendChild(b); });
+  }
+  try { await document.fonts.ready; } catch(e) {}
+  // Espera as imagens: sem isso o screenshot pode sair antes do logo carregar.
+  await Promise.all([...document.images].map(i => i.complete ? null : new Promise(r => { i.onload = r; i.onerror = r; })));
+  textos.forEach(ajustar);
+  document.documentElement.dataset.ready = '1';
+}
+montar();
+</script>
+</body>
+</html>

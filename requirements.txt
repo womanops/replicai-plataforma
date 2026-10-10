@@ -1,0 +1,13 @@
+# ReplicAI — dependências do MOTOR (replica.py / psd_io.py)
+# Versões travadas, idênticas às validadas no ambiente de desenvolvimento.
+# Instale com:  pip install -r requirements.txt
+
+pillow==12.3.0          # abertura, composição e export de imagem
+numpy==2.5.3            # operações de pixel (limpeza, fundo, máscaras)
+psd-tools==1.19.0       # leitura de arte-mãe em .psd
+fonttools==4.65.0       # métricas de fonte para ajuste de texto ao box
+
+# Dependências de SISTEMA (não vêm pelo pip — ver infra/Dockerfile):
+#   google-chrome   renderiza assets/template.html → imagem final
+#   ffmpeg          trilha de vídeo / export de peça animada
+#   higgsfield CLI  geração generativa (npm install -g @higgsfield/cli)

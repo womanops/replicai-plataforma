@@ -1,0 +1,47 @@
+# Sobe a plataforma inteira com um comando:  docker compose up
+#
+#   api     → recebe upload, cria o job, devolve o resultado
+#   worker  → processa as peças (Chromium + motor). É o que escala.
+#   redis   → fila entre a api e o worker
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_DIR: /dados
+    volumes:
+      - dados:/dados
+      - ../fontes:/app/fontes:ro
+    depends_on:
+      - redis
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    command: rq worker --url redis://redis:6379/0 replicai
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_DIR: /dados
+    volumes:
+      - dados:/dados
+      - ../fontes:/app/fontes:ro
+    depends_on:
+      - redis
+    # Renderizar peça é pesado: suba mais réplicas conforme a demanda.
+    deploy:
+      replicas: 2
+
+  redis:
+    image: redis:8-alpine
+    volumes:
+      - redis:/data
+
+volumes:
+  dados:
+  redis:

@@ -1,0 +1,12 @@
+# ReplicAI — dependências da PLATAFORMA (API + fila)
+# Instale junto com requirements.txt
+
+-r requirements.txt
+
+fastapi==0.120.4        # API HTTP
+uvicorn[standard]==0.38.0   # servidor ASGI
+python-multipart==0.0.20 # upload de arquivo (arte-mãe)
+pydantic==2.12.3        # validação de entrada
+redis==6.4.0            # fila de jobs
+rq==2.7.0               # workers de processamento assíncrono
+boto3==1.41.2           # storage de arquivos (S3 / Cloudflare R2)
