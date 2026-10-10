@@ -386,6 +386,7 @@ class TestQuandoOGenerativoNaoVem:
         assert r["modo"] == "outpaint" and r["caiu_para"] == ""
 
     def test_a_queda_chega_na_entrega(self, arte, tmp_path, monkeypatch):
+        monkeypatch.setenv("REPLICAI_FUNDO", "outpaint")   # `_continuar` está trocado
         import api.fundo as fu
         import api.pipeline as pl
         from api.leitura import Leitura
@@ -444,3 +445,77 @@ class TestAlinharPelaArte:
     def test_a_zona_esquerda_alinha_a_esquerda(self):
         el = self.peca("baixo-esquerda", None, papel="headline", texto="Oi")["elementos"][0]
         assert el["align"] == "left"
+
+
+class TestOGenerativoInventando:
+    """O generativo continua bem gradiente, grade e pontilhado. O que ele às
+    vezes faz de errado é repetir um elemento marcante — numa peça real criou
+    um segundo risco de luz, que não existe no KV e lê como erro."""
+
+    def fundo_com(self, tmp_path, risco_em=None, nome="f.png"):
+        from PIL import ImageDraw
+        im = Image.new("RGB", (400, 600), "#0a1a55")
+        d = ImageDraw.Draw(im)
+        # o risco da arte fica dentro da faixa vizinha do rodapé: é com ela que
+        # a extensão é comparada, e sem nada com que comparar a conferência
+        # pula, que é o certo
+        d.rectangle((0, 380, 400, 386), fill="#66ccff")
+        if risco_em is not None:
+            d.rectangle((0, risco_em, 400, risco_em + 10), fill="#ffffff")
+        im.save(tmp_path / nome)
+        return tmp_path / nome
+
+    def test_acusa_traco_que_a_arte_nao_tem(self, tmp_path):
+        from api.fundo import inventou_estrutura
+        f = self.fundo_com(tmp_path, risco_em=520)
+        avisos = inventou_estrutura(f, [0, 150, 400, 450])
+        assert avisos and "rodapé" in avisos[0] and "inventou" in avisos[0]
+
+    def test_extensao_calma_passa(self, tmp_path):
+        from api.fundo import inventou_estrutura
+        f = self.fundo_com(tmp_path)
+        assert inventou_estrutura(f, [0, 150, 400, 450]) == []
+
+    def test_diz_em_que_linha_esta(self, tmp_path):
+        import re
+        from api.fundo import inventou_estrutura
+        f = self.fundo_com(tmp_path, risco_em=520)
+        aviso = inventou_estrutura(f, [0, 150, 400, 450])[0]
+        linha = int(re.search(r"linha (\d+)", aviso).group(1))
+        assert abs(linha - 520) <= 2
+
+    def test_sem_arte_com_que_comparar_nao_acusa(self, tmp_path):
+        """Faixa vizinha lisa não dá régua: acusar ali seria chute."""
+        from PIL import ImageDraw
+        from api.fundo import inventou_estrutura
+        im = Image.new("RGB", (400, 600), "#0a1a55")
+        ImageDraw.Draw(im).rectangle((0, 520, 400, 530), fill="#ffffff")
+        im.save(tmp_path / "liso.png")
+        assert inventou_estrutura(tmp_path / "liso.png", [0, 150, 400, 450]) == []
+
+    def test_sem_extensao_nao_ha_o_que_conferir(self, tmp_path):
+        from api.fundo import inventou_estrutura
+        f = self.fundo_com(tmp_path)
+        assert inventou_estrutura(f, [0, 0, 400, 600]) == []
+
+    def test_arquivo_que_nao_existe_nao_quebra(self, tmp_path):
+        from api.fundo import inventou_estrutura
+        assert inventou_estrutura(tmp_path / "nao-existe.png", [0, 10, 100, 90]) == []
+
+    def test_o_aviso_chega_na_entrega(self, arte, tmp_path, monkeypatch):
+        """Escrever a conferência e não mostrar é o erro de sempre."""
+        import api.fundo as fu
+        import api.pipeline as pl
+        from api.leitura import Leitura as L
+        from api.pipeline import desdobrar
+        monkeypatch.setattr(fu, "inventou_estrutura", lambda *a: ["inventou um traço forte"])
+        monkeypatch.setattr(pl, "render_peca", lambda a, d: d.write_bytes(b"x"))
+
+        class Serve:
+            def compor(self, base, formato_id, brief="", terreno=None):
+                return {"canvas": {"w": 1080, "h": 1080}, "fundo": terreno.fundo,
+                        "elementos": [], "saida": f"{formato_id}.png"}
+
+        r = desdobrar(arte, ["ig-feed-1x1"], Serve(), tmp_path / "job",
+                      leitor=lambda a: L(True, (0.47, 0.4, 0.46, 0.31), []))
+        assert any("traço forte" in a for a in r.avisos["ig-feed-1x1"])

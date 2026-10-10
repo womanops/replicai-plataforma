@@ -16,6 +16,7 @@ from PIL import Image
 
 from api.psd import (AJUSTES, Camada, Leitura, Prancheta, escolher, extrair,
                      pranchetas)
+from motor.replica import formato_by_id
 
 
 def psd_de(tmp_path, camadas, w=400, h=300) -> Path:
@@ -317,3 +318,69 @@ class TestOrdemELetras:
                                   {"x": 0, "y": 0, "w": 800, "h": 200}, texto="energiza")])
         els = como_elementos(L)
         assert len(els) == 1 and "letra" not in els[0]
+
+
+class TestDesdobrar:
+    """Reenquadrar mantém o lockup colado no fundo; recompor o solta. A escolha
+    veio de uma revisão: no vertical, preservar a relação deixava o assunto
+    fora do quadro e o lockup pequeno no meio do vazio."""
+
+    def _leitura(self, tmp_path):
+        Image.new("RGB", (1920, 1080), "#0a1a55").save(tmp_path / "fundo.png")
+        Image.new("RGBA", (870, 220), (255, 255, 255, 255)).save(tmp_path / "a.png")
+        return Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=[
+            Camada("energiza", "texto", "a.png",
+                   {"x": 910, "y": 443, "w": 870, "h": 315}, texto="energiza")])
+
+    def test_proporcao_parecida_reenquadra(self, tmp_path, monkeypatch):
+        import api.psd as psd
+        chamadas = []
+        monkeypatch.setattr(psd, "reenquadrar", lambda *a, **k: chamadas.append("re") or {})
+        monkeypatch.setattr(psd, "recompor", lambda *a, **k: chamadas.append("rec") or {})
+        psd.desdobrar(self._leitura(tmp_path), formato_by_id("ig-feed-1x1"), tmp_path)
+        assert chamadas == ["re"]
+
+    def test_proporcao_muito_diferente_recompoe(self, tmp_path, monkeypatch):
+        import api.psd as psd
+        chamadas = []
+        monkeypatch.setattr(psd, "reenquadrar", lambda *a, **k: chamadas.append("re") or {})
+        monkeypatch.setattr(psd, "recompor", lambda *a, **k: chamadas.append("rec") or {})
+        psd.desdobrar(self._leitura(tmp_path), formato_by_id("ig-stories"), tmp_path)
+        assert chamadas == ["rec"]
+
+    def test_sem_camada_separada_nao_tem_o_que_recompor(self, tmp_path, monkeypatch):
+        """Com tudo assado no fundo, soltar o lockup não é possível: é o caso
+        do PNG, e aí só resta reenquadrar."""
+        import api.psd as psd
+        Image.new("RGB", (1920, 1080), "#0a1a55").save(tmp_path / "fundo.png")
+        vazia = Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=[])
+        chamadas = []
+        monkeypatch.setattr(psd, "reenquadrar", lambda *a, **k: chamadas.append("re") or {})
+        psd.desdobrar(vazia, formato_by_id("ig-stories"), tmp_path)
+        assert chamadas == ["re"]
+
+    def test_recompor_sem_lockup_recusa(self, tmp_path):
+        from api.psd import recompor
+        Image.new("RGB", (1920, 1080), "#0a1a55").save(tmp_path / "fundo.png")
+        vazia = Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=[])
+        with pytest.raises(ValueError, match="não há lockup"):
+            recompor(vazia, formato_by_id("ig-stories"), tmp_path)
+
+    def test_o_lockup_recomposto_cabe_na_area_segura(self, tmp_path, monkeypatch):
+        import os
+        monkeypatch.setenv("REPLICAI_FUNDO", "solid")
+        from api.psd import recompor
+        f = formato_by_id("ig-stories")
+        peca = recompor(self._leitura(tmp_path), f, tmp_path)
+        s = f["safe"]
+        for e in peca["elementos"]:
+            b = e["box"]
+            assert b["x"] >= s["left"] and b["x"] + b["w"] <= f["w"] - s["right"]
+            assert b["y"] + b["h"] <= f["h"] - s["bottom"]
+
+    def test_o_lockup_recomposto_fica_abaixo_da_arte(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("REPLICAI_FUNDO", "solid")
+        from api.psd import recompor
+        peca = recompor(self._leitura(tmp_path), formato_by_id("ig-stories"), tmp_path)
+        fim = peca["_fundo"]["base_box"][3]
+        assert all(e["box"]["y"] >= fim for e in peca["elementos"])

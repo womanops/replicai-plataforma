@@ -115,11 +115,13 @@ def _com_respiro(protegido, formato: dict, W: int, H: int):
 
 def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = None,
              estrategia: str = "auto", folga: float = 0.0, modo: str = "auto",
-             cor: str | None = None) -> dict:
+             cor: str | None = None, ancora: tuple[float, float] = (0.5, 0.5)) -> dict:
     """Monta o fundo de `formato` a partir de `arte` e diz onde sobrou espaço.
 
     `protegido` é a caixa (x0,y0,x1,y1, em pixels da arte) que não pode ser
-    cortada — a tinta que a peça já carrega. Devolve o caminho do fundo e, em
+    cortada — a tinta que a peça já carrega. `ancora` diz onde a arte encosta
+    quando sobra espaço: (0.5, 0) joga a extensão toda para baixo, que é o que
+    deixa o assunto no topo e abre o rodapé para o texto. Devolve o caminho do fundo e, em
     coordenadas da peça final, onde a arte caiu (`base_box`), onde a tinta caiu
     (`protect_box`) e as faixas livres (`areas_livres`).
     """
@@ -141,7 +143,7 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
         estrategia, porque = escolher_estrategia(W, H, w, h, margem)
     # o enquadramento olha a caixa inflada (para sobrar margem); o relatório
     # volta com a caixa real, que é onde a tinta de fato caiu
-    plano = plan_fit(W, H, w, h, margem, estrategia, (0.5, 0.5), folga)
+    plano = plan_fit(W, H, w, h, margem, estrategia, ancora, folga)
     crop, ex = plano["crop"], plano["expand"]
     base = img.crop(tuple(crop))
 
@@ -179,13 +181,22 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
     final.save(destino)
 
     plano.update(_to_target_coords(plano, W, H, w, h, protegido))
+
     # a mesma assinatura que o motor grava: diz de onde o fundo saiu, para a
     # tela poder mostrar quando não veio da arte inteira
     destino.with_suffix(destino.suffix + ".origem.json").write_text(
         json.dumps({"origem": "extend", "modo": modo, "base": str(Path(arte).resolve()),
                     "crop": crop, "expand": ex}, ensure_ascii=False, indent=1), encoding="utf-8")
 
+    # a conferência vale para qualquer extensão, não só a generativa: amarrá-la
+    # ao modo deixava o teste da entrega dependendo de serviço externo, e a
+    # regra em si não é sobre quem desenhou, é sobre o que apareceu
+    avisos = inventou_estrutura(destino, plano["base_box"]) if any(ex.values()) else []
     return {"src": destino.name, "caminho": destino, "modo": modo, "caiu_para": caiu_para,
+            "avisos": avisos,
+            # crop, expand e escala descrevem a transformação inteira: é com
+            # eles que as camadas do PSD acompanham o fundo no reenquadramento
+            "plano": {"crop": crop, "expand": ex, "escala": plano["escala"]},
             "estrategia": plano["estrategia"], "enquadramento": estrategia, "porque": porque, "cortou": bool(plano.get("cortou_fundo")),
             "base_box": plano["base_box"], "protect_box": plano.get("protect_box"),
             "areas_livres": plano.get("areas_livres") or {}}
@@ -227,6 +238,72 @@ def espaco_livre(formato: dict, tinta) -> dict:
     if dir_[2] - dir_[0] > 0:
         faixas["right"] = dir_
     return faixas
+
+
+# acima disto a extensão tem estrutura mais forte do que a arte que ela
+# continua — ou seja, o generativo inventou. Medido numa peça real: onde ele
+# criou um segundo risco de luz deu 2,33x; onde se comportou, 0,75x e 0,43x.
+INVENTOU = 1.5
+
+
+def _borda_por_linha(a):
+    import numpy as np
+    return np.abs(np.diff(a, axis=0)).mean(1)
+
+
+def inventou_estrutura(caminho, base_box) -> list[str]:
+    """A extensão criou desenho que a arte não tinha?
+
+    O generativo continua bem gradiente, grade e pontilhado. O que ele às
+    vezes faz de errado é repetir um elemento marcante — numa peça real criou
+    um segundo risco de luz, que não existe no KV e dá a impressão de erro.
+
+    A medida é borda horizontal linha a linha: risco de luz é exatamente isso.
+    Comparada com a faixa de arte vizinha do mesmo tamanho, porque a pergunta
+    não é "há estrutura", e sim "há mais estrutura do que no que ela continua".
+    """
+    import numpy as np
+    from PIL import Image
+
+    caminho = Path(caminho)
+    if not caminho.exists() or not base_box:
+        return []
+    with Image.open(caminho) as im:
+        a = np.asarray(im.convert("L"), dtype=float)
+    H = a.shape[0]
+    y0, y1 = int(base_box[1]), int(base_box[3])
+    avisos = []
+    for nome, (ea, eb, va, vb) in {
+        "topo": (0, y0, y0, min(H, y0 + y0)),
+        "rodapé": (y1, H, max(0, y1 - (H - y1)), y1),
+    }.items():
+        if eb - ea < 8 or vb - va < 8:
+            continue
+        ext, viz = _borda_por_linha(a[ea:eb]), _borda_por_linha(a[va:vb])
+        if not len(ext) or not len(viz) or viz.max() <= 0:
+            continue
+        razao = ext.max() / viz.max()
+        if razao >= INVENTOU:
+            linha = ea + int(ext.argmax())
+            avisos.append(
+                f"a continuação do fundo no {nome} inventou um traço forte que a arte "
+                f"não tem (linha {linha}, {razao:.1f}x mais marcado que a arte ao lado). "
+                f"Vale rodar de novo ou escolher outro enquadramento")
+    return avisos
+
+
+def mover(caixa: dict, plano: dict) -> dict:
+    """Leva uma caixa da arte para as coordenadas da peça reenquadrada.
+
+    É a mesma conta que o fundo sofreu. Sem ela as camadas do PSD ficariam
+    onde estavam no arquivo e o lockup descolaria do desenho — que é o
+    contrário de desdobrar.
+    """
+    crop, ex, s = plano["crop"], plano["expand"], plano["escala"]
+    return {"x": round((caixa["x"] - crop[0] + ex["left"]) * s),
+            "y": round((caixa["y"] - crop[1] + ex["top"]) * s),
+            "w": round(caixa["w"] * s),
+            "h": round(caixa["h"] * s)}
 
 
 def maior_faixa(areas: dict) -> tuple[str, list[int]] | None:

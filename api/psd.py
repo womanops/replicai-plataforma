@@ -389,3 +389,134 @@ def como_peca(leitura: Leitura, formato_id: str, safe: dict | None = None,
         "fontes": [],
         "elementos": como_elementos(leitura, pasta),
     }
+
+
+def tinta_de(leitura: Leitura) -> tuple[int, int, int, int] | None:
+    """A caixa que envolve tudo que foi separado — o texto que a arte carrega.
+
+    Com PNG isso é uma pergunta ao modelo, porque detectar por pixel confunde
+    lettering com reflexo. Com PSD é conta: as camadas soltas são exatamente a
+    tinta, e as caixas delas vêm do arquivo.
+    """
+    if not leitura.camadas:
+        return None
+    xs0 = min(c.box["x"] for c in leitura.camadas)
+    ys0 = min(c.box["y"] for c in leitura.camadas)
+    xs1 = max(c.box["x"] + c.box["w"] for c in leitura.camadas)
+    ys1 = max(c.box["y"] + c.box["h"] for c in leitura.camadas)
+    return (xs0, ys0, xs1, ys1)
+
+
+# quanto da largura segura o lockup ocupa quando é recomposto. Mais do que
+# isso ele encosta na margem; menos, e some no meio do vazio.
+LOCKUP_NA_LARGURA = 0.82
+
+
+def recompor(leitura: Leitura, formato: dict, pasta: Path,
+             elementos: list[dict] | None = None) -> dict:
+    """Desdobra soltando o lockup do fundo.
+
+    Reenquadrar preserva a relação entre a arte e o lockup, e é o certo quando
+    a proporção muda pouco. Quando muda muito — 16:9 para 9:16 — preservar essa
+    relação deixa o assunto fora do quadro e o lockup pequeno no meio do vazio.
+
+    Aqui a arte encosta no topo, inteira, e o lockup desce para o espaço que
+    sobrou, no tamanho que esse espaço comporta. Só dá para fazer isso porque
+    as camadas vieram separadas: num PNG o lockup está grudado no fundo.
+    """
+    from api import fundo as pf
+
+    pasta = Path(pasta)
+    base = elementos if elementos is not None else como_elementos(leitura, pasta)
+    tinta = tinta_de(leitura)
+    if not base or not tinta:
+        raise ValueError("não há lockup separado para recompor")
+
+    info = pf.preparar(pasta / leitura.fundo, formato, None,
+                       pasta / f"fundo-{formato['id']}.png",
+                       estrategia="contain", ancora=(0.5, 0.0))
+
+    W, H, s = formato["w"], formato["h"], formato["safe"]
+    fim_da_arte = info["base_box"][3]
+    y0 = max(fim_da_arte, s["top"])
+    y1 = H - s["bottom"]
+    livre_w = W - s["left"] - s["right"]
+    if y1 - y0 < 40:
+        raise ValueError("a arte não deixou rodapé para o lockup")
+
+    lx0, ly0, lx1, ly1 = tinta
+    k = min((livre_w * LOCKUP_NA_LARGURA) / (lx1 - lx0),
+            ((y1 - y0) * 0.70) / max(1, ly1 - ly0))
+    cx, cy = W / 2, (y0 + y1) / 2
+    meio_x, meio_y = (lx0 + lx1) / 2, (ly0 + ly1) / 2
+
+    elementos_novos = []
+    for e in base:
+        b = e["box"]
+        elementos_novos.append(dict(e, box={
+            "x": round(cx + (b["x"] - meio_x) * k),
+            "y": round(cy + (b["y"] - meio_y) * k),
+            "w": round(b["w"] * k), "h": round(b["h"] * k)}))
+
+    return {
+        "formato": formato["id"],
+        "canvas": {"w": W, "h": H},
+        "safe": s,
+        "saida": f"{formato['id']}.png",
+        "via": "psd-recompor",
+        "fundo": {"tipo": "imagem", "src": info["src"], "fit": "cover"},
+        "fontes": [],
+        "elementos": elementos_novos,
+        "_fundo": info,
+    }
+
+
+def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
+                elementos: list[dict] | None = None) -> dict:
+    """Desdobra mantendo o lockup colado no fundo.
+
+    O lockup sofre a mesma transformação que o fundo, então a relação entre
+    ele e o desenho fica igual à do arquivo. É o certo quando a proporção muda
+    pouco: a peça vira a mesma peça noutro tamanho.
+    """
+    from api import fundo as pf
+
+    pasta = Path(pasta)
+    base = elementos if elementos is not None else como_elementos(leitura, pasta)
+    info = pf.preparar(pasta / leitura.fundo, formato, tinta_de(leitura),
+                       pasta / f"fundo-{formato['id']}.png")
+    return {
+        "formato": formato["id"],
+        "canvas": {"w": formato["w"], "h": formato["h"]},
+        "safe": formato["safe"],
+        "saida": f"{formato['id']}.png",
+        "via": "psd-reenquadra",
+        "fundo": {"tipo": "imagem", "src": info["src"], "fit": "cover"},
+        "fontes": [],
+        "elementos": [dict(e, box=pf.mover(e["box"], info["plano"])) for e in base],
+        "_fundo": info,
+    }
+
+
+def desdobrar(leitura: Leitura, formato: dict, pasta: Path,
+              modo: str = "auto") -> dict:
+    """Escolhe entre manter o lockup colado no fundo ou soltá-lo.
+
+    A régua é a mesma do fundo: enquanto preservar a arte inteira não deixa a
+    peça virar moldura, reenquadrar é melhor, porque mantém o desenho como ele
+    foi feito. Passando disso, o assunto sai do quadro e o lockup fica pequeno
+    no meio do vazio — e aí vale soltar.
+    """
+    from api import fundo as pf
+    from PIL import Image
+
+    pasta = Path(pasta)
+    if modo == "auto":
+        with Image.open(pasta / leitura.fundo) as im:
+            W, H = im.size
+        qual, _ = pf.escolher_estrategia(W, H, formato["w"], formato["h"],
+                                         tinta_de(leitura))
+        modo = "reenquadra" if qual == "contain" else "recompoe"
+    if modo == "recompoe" and leitura.camadas:
+        return recompor(leitura, formato, pasta)
+    return reenquadrar(leitura, formato, pasta)

@@ -193,7 +193,7 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | Non
         # quieto, senão o texto entra por cima do desenho e some nele
         livres, notas = sossego.acalmar(pronto.convert("RGB"), livres)
 
-    avisos = list(notas)
+    avisos = list(notas) + list(info.get("avisos") or [])
     if info.get("caiu_para"):
         avisos.append(f"{info['caiu_para']} — o fundo saiu em bloco de cor, que não "
                       f"continua a grade nem a textura da arte. Vale rodar de novo")
