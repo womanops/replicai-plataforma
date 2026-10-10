@@ -40,9 +40,15 @@ class TestOrdemDeLeitura:
 
 
 class TestAlinhamento:
-    def test_misturar_alinhamento_e_recusado(self):
+    def test_misturar_na_mesma_faixa_e_recusado(self):
         assert "mistura alinhamentos" in conferir(
-            els(headline="topo-centro", cta="baixo-esquerda"), formato_by_id("ig-feed-1x1"))
+            els(headline="baixo-centro", cta="baixo-esquerda"), formato_by_id("ig-feed-1x1"))
+
+    def test_variar_entre_faixas_e_permitido(self):
+        """Chamada em cima à esquerda e botão embaixo fechando com a borda da
+        arte é alinhamento pela arte, não descuido — foi o que a revisão pediu."""
+        assert conferir(els(headline="topo-esquerda", cta="baixo-direita"),
+                        formato_by_id("ig-feed-1x1")) == ""
 
     def test_um_alinhamento_so_passa(self):
         assert conferir(els(headline="topo-esquerda", cta="baixo-esquerda"),
@@ -94,9 +100,9 @@ class TestAConferenciaUsaARegra:
             conferir_resposta(self.peca(cta="topo-centro", headline="baixo-centro"),
                               formato_by_id("ig-stories"))
 
-    def test_alinhamento_misto_nao_passa_pela_conferencia(self):
+    def test_alinhamento_misto_na_mesma_faixa_nao_passa_pela_conferencia(self):
         with pytest.raises(RespostaInvalida, match="mistura alinhamentos"):
-            conferir_resposta(self.peca(headline="topo-centro", cta="baixo-esquerda"),
+            conferir_resposta(self.peca(headline="baixo-centro", cta="baixo-esquerda"),
                               formato_by_id("ig-feed-1x1"))
 
     def test_na_faixa_o_cta_a_esquerda_nao_passa(self):

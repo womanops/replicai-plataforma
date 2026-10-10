@@ -85,12 +85,25 @@ class TestOndeCabeTexto:
     def test_a_zona_sem_faixa_propria_cai_na_que_existe(self):
         """Recusar custaria uma rodada de modelo; empilhar é correto."""
         faixas = _faixas(formato_by_id("ig-feed-1x1"), {"bottom": [0, 700, 1080, 1080]})
-        assert faixas["topo"] == faixas["baixo"] == faixas["meio"]
+        assert faixas["topo-centro"] == faixas["baixo-centro"] == faixas["meio-centro"]
 
     def test_sem_livres_divide_a_peca_em_tres(self):
         faixas = _faixas(formato_by_id("ig-feed-1x1"))
-        assert faixas["topo"][3] <= faixas["meio"][1]
-        assert faixas["meio"][3] <= faixas["baixo"][1]
+        assert faixas["topo-centro"][3] <= faixas["meio-centro"][1]
+        assert faixas["meio-centro"][3] <= faixas["baixo-centro"][1]
+
+    def test_as_duas_colunas_sao_aproveitadas(self):
+        """Ficar só com a maior jogava a outra fora: no leaderboard a direita
+        vazia era descartada e o botão acabava espremido no meio do desenho."""
+        f = formato_by_id("gdn-728x90")
+        faixas = _faixas(f, {"left": [12, 8, 288, 82], "right": [532, 8, 716, 82]})
+        assert faixas["meio-esquerda"][0] < 288
+        assert faixas["meio-direita"][0] >= 532
+
+    def test_coluna_unica_serve_as_tres_posicoes(self):
+        f = formato_by_id("gdn-728x90")
+        faixas = _faixas(f, {"left": [12, 8, 288, 82]})
+        assert faixas["meio-direita"] == faixas["meio-esquerda"]
 
 
 class TestNaoRepetirAArte:
@@ -388,3 +401,46 @@ class TestQuandoOGenerativoNaoVem:
         r = desdobrar(arte, ["ig-feed-1x1"], Serve(), tmp_path / "job",
                       leitor=lambda a: Leitura(True, (0.47, 0.4, 0.46, 0.31), []))
         assert any("bloco de cor" in a for a in r.avisos["ig-feed-1x1"])
+
+
+class TestAlinharPelaArte:
+    """A régua é a borda da arte, não a margem da peça. Alinhar pela margem
+    deixava o botão 22px adiante do "2027" — perto o bastante para parecer
+    erro, longe o bastante para não ser alinhamento."""
+
+    def peca(self, zona, tinta, papel="cta", texto="Inscreva-se"):
+        from api.composicao import Elemento, Esquema, montar
+        esq = Esquema([Elemento(papel, zona, texto)], {})
+        return montar(esq, formato_by_id("ig-feed-1x1"), {"tipo": "cor", "cor": "#000"},
+                      livres={"bottom": [0, 700, 1080, 1080]}, tinta=tinta)
+
+    def test_o_botao_fecha_com_a_borda_da_tinta(self):
+        tinta = [507, 479, 1010, 670]
+        b = self.peca("baixo-direita", tinta)["elementos"][0]["box"]
+        assert b["x"] + b["w"] == 1010
+
+    def test_sem_tinta_fecha_na_margem_da_peca(self):
+        f = formato_by_id("ig-feed-1x1")
+        b = self.peca("baixo-direita", None)["elementos"][0]["box"]
+        assert b["x"] + b["w"] > f["w"] - f["safe"]["right"] - 60
+
+    def test_a_esquerda_abre_na_borda_da_tinta(self):
+        el = self.peca("baixo-esquerda", [300, 479, 1010, 670], papel="headline",
+                       texto="Oi")["elementos"][0]
+        assert el["box"]["x"] == 300
+
+    def test_nao_encosta_se_sobrar_coluna_estreita_demais(self):
+        """Coluna de jornal não é alinhamento."""
+        el = self.peca("baixo-direita", [0, 479, 180, 670], papel="headline",
+                       texto="Oi")["elementos"][0]
+        assert el["box"]["x"] + el["box"]["w"] > 180
+
+    def test_a_zona_direita_alinha_o_texto_a_direita(self):
+        """A caixa ia para a direita e o texto ficava encostado na borda
+        errada dela."""
+        el = self.peca("baixo-direita", None, papel="headline", texto="Oi")["elementos"][0]
+        assert el["align"] == "right"
+
+    def test_a_zona_esquerda_alinha_a_esquerda(self):
+        el = self.peca("baixo-esquerda", None, papel="headline", texto="Oi")["elementos"][0]
+        assert el["align"] == "left"

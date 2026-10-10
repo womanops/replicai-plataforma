@@ -12,9 +12,11 @@ Três regras, e nenhuma é gosto:
   CTA acima da headline inverte o sentido da peça;
 - **o CTA fecha** — é o último elemento no caminho do olho: embaixo na peça
   de pé ou quadrada, à direita na faixa horizontal;
-- **um alinhamento por peça** — chamada centralizada com botão à esquerda não
-  é composição, é descuido. A faixa é a exceção, porque ali as três posições
-  são o próprio desenho do formato.
+- **um alinhamento por faixa** — lado a lado com alinhamentos diferentes lê
+  como descuido. Entre faixas pode variar: chamada em cima à esquerda e botão
+  embaixo fechando com a borda da arte é alinhamento pela arte, e foi o que uma
+  revisão pediu. A faixa horizontal é exceção inteira, porque ali as três
+  posições são o próprio desenho do formato.
 """
 from __future__ import annotations
 
@@ -74,8 +76,17 @@ def conferir(elementos, formato: dict) -> str:
     if cta and cta.split("-")[0] == "topo":
         return "o CTA abre a peça em vez de fechar: ele é o último no caminho do olho"
 
-    lados = {z.split("-")[1] for p, z in por_papel.items() if p in ORDEM_LEITURA}
-    if len(lados) > 1:
-        return (f"a peça mistura alinhamentos ({', '.join(sorted(lados))}). Um só, para "
-                f"tudo que é texto: alinhamento misto lê como descuido")
+    # a regra vale dentro da faixa, não entre faixas. Chamada em cima à
+    # esquerda e botão embaixo fechando com a borda da arte é alinhamento pela
+    # arte, não descuido — exigir uma coluna só proibia a composição certa.
+    por_faixa: dict[str, set[str]] = {}
+    for p, z in por_papel.items():
+        if p in ORDEM_LEITURA:
+            vert, horz = z.split("-")
+            por_faixa.setdefault(vert, set()).add(horz)
+    for vert, lados in por_faixa.items():
+        if len(lados) > 1:
+            return (f"na faixa `{vert}` a peça mistura alinhamentos "
+                    f"({', '.join(sorted(lados))}). Dentro de uma faixa, um só: lado a "
+                    f"lado com alinhamentos diferentes lê como descuido")
     return ""

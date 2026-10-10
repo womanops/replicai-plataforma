@@ -71,6 +71,7 @@ class Terreno:
     livres: dict = field(default_factory=dict)
     ja_escrito: list[str] = field(default_factory=list)
     fontes: list[dict] = field(default_factory=list)
+    tinta: list[int] | None = None      # onde a arte já tem texto, na peça final
 
 
 class CompositorSimples:
@@ -169,7 +170,8 @@ def _caixas_na_faixa(formato: dict, terreno, papeis: list[str]) -> list[dict]:
         return []
     from api.composicao import Elemento, _posicionar
     zona = "baixo-esquerda"
-    pos = _posicionar(formato, {zona: [Elemento(p, zona) for p in papeis]}, terreno.livres)
+    pos = _posicionar(formato, {zona: [Elemento(p, zona) for p in papeis]},
+                      terreno.livres, terreno.tinta)
     return pos.get(zona, [])
 
 
@@ -296,7 +298,8 @@ class CompositorModelo:
                          f"Corrija isso e responda de novo.")
                 continue
             fontes = (terreno.fontes if terreno and terreno.fontes else self.fontes)
-            return montar(esq, f, fundo, fontes, self.cor_texto, self.acento, livres)
+            return montar(esq, f, fundo, fontes, self.cor_texto, self.acento, livres,
+                          terreno.tinta if terreno else None)
         raise ComposicaoImpossivel(
             f"o modelo não corrigiu em {self.tentativas} tentativas: {ultimo}")
 

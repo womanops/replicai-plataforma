@@ -237,50 +237,99 @@ def _tercos(r) -> dict[str, list[int]]:
             "baixo": [x0, y0 + round(h * 0.68), x1, y1]}
 
 
+HORIZONTAIS = ("esquerda", "centro", "direita")
+
+
+def _espalhar(bandas: dict) -> dict:
+    """Uma faixa vertical vale para as três posições horizontais dela."""
+    return {f"{v}-{h}": r for v, r in bandas.items() for h in HORIZONTAIS}
+
+
 def _faixas(formato: dict, livres: dict | None = None) -> dict[str, list[int]]:
-    """Onde cada faixa vertical pode compor.
+    """O retângulo disponível para cada zona.
 
-    Sem `livres`, a peça inteira se divide em três — é o comportamento de
-    sempre, para quem compõe sobre fundo que não tem nada dentro.
+    Sem `livres`, a peça inteira se divide em nove — é o comportamento de
+    sempre, para quem compõe sobre fundo vazio.
 
-    Com `livres` (as faixas que a extensão do fundo criou), a composição só
-    acontece nelas. É o que impede o texto novo de cair sobre o texto que a
-    arte já carrega: não por medir distância, mas porque não existe caixa
-    disponível em cima da arte.
+    Com `livres`, a composição só acontece no que sobrou fora da tinta que a
+    arte já carrega. É isso que impede o texto novo de cair sobre o texto
+    antigo: não por medir distância, mas porque não existe caixa disponível
+    em cima dele.
     """
-    # None é "não sei onde dá para escrever"; {} é "não dá em lugar nenhum".
-    # Tratar os dois igual devolvia a peça inteira ao texto e era a
-    # sobreposição de volta no formato de mesma proporção.
     if livres is None:
-        return _tercos(_util(formato))
+        return _espalhar(_tercos(_util(formato)))
 
-    cima = _aparar(formato, livres["top"]) if "top" in livres else None
-    baixo = _aparar(formato, livres["bottom"]) if "bottom" in livres else None
-    lados = [a for a in (_aparar(formato, livres[k]) for k in ("left", "right") if k in livres) if a]
+    bandas = {}
+    for nome, vert in (("top", "topo"), ("bottom", "baixo")):
+        if nome in livres:
+            r = _aparar(formato, livres[nome])
+            if r:
+                bandas[vert] = r
+    if bandas:
+        # a zona sem faixa própria cai na maior que existe, em vez de ser
+        # recusada: recusa custa uma rodada de modelo, e empilhar é correto
+        maior = max(bandas.values(), key=_area)
+        for v in ("topo", "meio", "baixo"):
+            bandas.setdefault(v, maior)
+        return _espalhar(bandas)
 
-    disp: dict[str, list[int]] = {}
-    if cima:
-        disp["topo"] = cima
-    if baixo:
-        disp["baixo"] = baixo
-    if not disp:
-        if not lados:
-            return {}
-        # faixa só nas laterais (banner largo): a maior coluna vira a peça
-        return _tercos(max(lados, key=lambda r: (r[2] - r[0]) * (r[3] - r[1])))
+    # tinta atravessando a peça de cima a baixo: o que sobra são colunas, e
+    # cada posição horizontal fica com a sua. Ficar só com a maior jogava a
+    # outra fora — no leaderboard a direita vazia era descartada e o botão
+    # acabava espremido no meio do desenho.
+    colunas = {}
+    for nome, horz in (("left", "esquerda"), ("right", "direita")):
+        if nome in livres:
+            r = _aparar(formato, livres[nome])
+            if r:
+                colunas[horz] = r
+    if not colunas:
+        return {}
+    maior = max(colunas.values(), key=_area)
+    for h in HORIZONTAIS:
+        colunas.setdefault(h, maior)
+    return {f"{v}-{h}": _tercos(r)[v] for h, r in colunas.items()
+            for v in ("topo", "meio", "baixo")}
 
-    # a zona que não tem faixa própria cai na maior que existe, em vez de ser
-    # recusada: recusa custa uma rodada de modelo, e empilhar é correto
-    maior = max(disp.values(), key=lambda r: (r[2] - r[0]) * (r[3] - r[1]))
-    for v in ("topo", "meio", "baixo"):
-        disp.setdefault(v, maior)
-    return disp
+
+def _area(r) -> int:
+    return (r[2] - r[0]) * (r[3] - r[1])
 
 
 ORDEM_FAIXA = {"topo": 0, "meio": 1, "baixo": 2}
 
+# o quanto a caixa pode encolher para encostar na borda da arte. Abaixo disso
+# a coluna fica estreita demais e o texto vira coluna de jornal
+ENCOSTE_MINIMO = 0.35
 
-def _posicionar(formato: dict, por_zona: dict, livres: dict | None = None) -> dict[str, list[dict]]:
+
+def _encostar(caixa: list[int], zona: str, tinta, formato: dict) -> list[int]:
+    """Puxa a borda da caixa até a borda da tinta da arte.
+
+    Alinhar pela margem da peça deixava o botão 16px adiante do "2027" — perto
+    o bastante para parecer erro, longe o bastante para não ser alinhamento. A
+    régua certa é a da própria arte: é com ela que a peça conversa.
+
+    O limite é a área segura, não o respiro: o respiro é folga que eu somei, e
+    a borda da arte vale mais do que ela.
+    """
+    if not tinta:
+        return caixa
+    x0, y0, x1, y1 = caixa
+    largura = max(1, x1 - x0)
+    s = formato["safe"]
+    limite_esq, limite_dir = s["left"], formato["w"] - s["right"]
+    if zona.endswith("direita"):
+        if limite_esq <= tinta[2] <= limite_dir and (tinta[2] - x0) / largura >= ENCOSTE_MINIMO:
+            x1 = tinta[2]
+    elif zona.endswith("esquerda"):
+        if limite_esq <= tinta[0] <= limite_dir and (x1 - tinta[0]) / largura >= ENCOSTE_MINIMO:
+            x0 = tinta[0]
+    return [x0, y0, x1, y1]
+
+
+def _posicionar(formato: dict, por_zona: dict, livres: dict | None = None,
+                tinta=None) -> dict[str, list[dict]]:
     """Resolve cada retângulo disponível de uma vez, não zona a zona.
 
     Zona a zona, o grupo do meio descia até 80% da altura e o de baixo começava
@@ -294,32 +343,28 @@ def _posicionar(formato: dict, por_zona: dict, livres: dict | None = None) -> di
     respiro = max(4, round(formato["h"] * 0.012))
     grupos: dict[tuple, list[str]] = {}
     for z in por_zona:
-        vert, horz = z.split("-")
-        r = faixas.get(vert)
+        r = faixas.get(z)
         if r is None:
             continue
-        grupos.setdefault((tuple(r), horz), []).append(z)
-
-    por_retangulo: dict[tuple, set[str]] = {}
-    for (r, _horz), zonas in grupos.items():
-        por_retangulo.setdefault(r, set()).update(zonas)
+        grupos.setdefault(tuple(r), []).append(z)
 
     saida: dict[str, list[dict]] = {}
-    for (r, horz), zonas in grupos.items():
-        x0, y0, x1, y1 = r
-        util_h = y1 - y0
-        cx, larg = _largura(zonas[0], x0, x1, por_retangulo[r])
+    for r, zonas in grupos.items():
         zonas.sort(key=lambda z: ORDEM_FAIXA[z.split("-")[0]])
+        lados = {z.split("-")[1] for z in zonas}
+        util_h = r[3] - r[1]
+        alturas = _alturas([e.papel for z in zonas for e in por_zona[z]], util_h, respiro)
 
-        papeis = [e.papel for z in zonas for e in por_zona[z]]
-        alturas = _alturas(papeis, util_h, respiro)
-
-        y, i = y0, 0
+        i, y = 0, r[1]
         for z in zonas:
+            x0, _, x1, _ = _encostar(list(r), z, tinta, formato)
+            # zonas dividindo a mesma faixa repartem a largura; sozinha, a zona
+            # fica com a faixa inteira
+            cx, larg = (_largura(z, x0, x1, set(zonas)) if len(lados) > 1 else (x0, x1 - x0))
             caixas = []
             for _ in por_zona[z]:
                 a = alturas[i]; i += 1
-                caixas.append({"x": int(cx), "y": int(min(y, y1 - a)),
+                caixas.append({"x": int(cx), "y": int(min(y, r[3] - a)),
                                "w": int(larg), "h": int(a)})
                 y += a + respiro
             saida[z] = caixas
@@ -331,8 +376,12 @@ def _posicionar(formato: dict, por_zona: dict, livres: dict | None = None) -> di
 BOTAO_FUNDO = "#ffffff"
 
 
+ALINHAMENTO = {"esquerda": "left", "centro": "center", "direita": "right"}
+
+
 def montar(esq: Esquema, formato: dict, fundo: dict, fontes: list | None = None,
-           cor_texto: str = "#ffffff", acento: str = "", livres: dict | None = None) -> dict:
+           cor_texto: str = "#ffffff", acento: str = "", livres: dict | None = None,
+           tinta=None) -> dict:
     """Esquema + formato -> peça JSON pronta para o motor renderizar."""
     familia = (fontes or [{}])[0].get("familia", "")
     W, H = formato["w"], formato["h"]
@@ -342,7 +391,7 @@ def montar(esq: Esquema, formato: dict, fundo: dict, fontes: list | None = None,
         por_zona.setdefault(e.zona, []).append(e)
 
     elementos = []
-    posicoes = _posicionar(formato, por_zona, livres)
+    posicoes = _posicionar(formato, por_zona, livres, tinta)
     for zona, lista in por_zona.items():
         # zona sem caixa é zona sem espaço livre: o elemento não entra, em vez
         # de ser empurrado para cima da arte
@@ -386,7 +435,9 @@ def montar(esq: Esquema, formato: dict, fundo: dict, fontes: list | None = None,
                   "peso": 800 if e.papel in ("headline", "cta") else 500,
                   "cor": cor_texto, "min": piso, "max": min(round(H * mx), teto),
                   "lineHeight": 1.05 if e.papel == "headline" else 1.25,
-                  "align": "center" if zona.endswith("centro") else "left",
+                  # zona direita alinhava à esquerda: a caixa ia para a direita e
+                # o texto ficava encostado na borda errada dela
+                "align": ALINHAMENTO[zona.split("-")[1]],
                   "valign": "middle"}
             if familia:
                 el["fonte"] = familia

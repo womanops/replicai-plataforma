@@ -201,7 +201,8 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | Non
     return Terreno(fundo={"tipo": "imagem", "src": info["src"], "fit": "cover"},
                    livres=prep_fundo.espaco_livre(f, info["protect_box"]),
                    ja_escrito=list(leitura.frases),
-                   fontes=_fonte_do_trabalho(pasta)), avisos
+                   fontes=_fonte_do_trabalho(pasta),
+                   tinta=info["protect_box"]), avisos
 
 
 def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Path,
