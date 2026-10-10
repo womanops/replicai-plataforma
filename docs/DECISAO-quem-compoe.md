@@ -140,3 +140,51 @@ entregar CTA pior que o humano por obediência. **Decidir antes de automatizar.*
 
 **A passada única obedeceu o limite e o agente não.** Modelo seguindo regra ao pé
 da letra produz peça pior. O prompt precisa dizer quando a regra cede.
+
+
+---
+
+# O fundo (10/10/2026, depois de três tentativas)
+
+A Ligia olhou o banner e disse o que a medição não tinha visto: o fundo perdeu o
+grafismo, e os elementos estavam carimbados por cima. Estava certa nas duas.
+
+## O que descobri tentando consertar
+
+**Primeira tentativa.** Recortei uma faixa "limpa" da arte. Saiu um degradê quase
+liso: 34% do grafismo da arte-mãe. A grade quadriculada e os arcos da esfera
+sumiram — a peça ficou com a cor da marca e a cara de outra.
+
+**Segunda.** Escrevi uma medida de estrutura e procurei a faixa que pontuasse
+mais. Achei uma com 211% e usei. O banner saiu com o rabo do lettering
+"energiza" fantasma atrás de tudo: **a faixa que eu escolhi passava por cima do
+logo.** A minha própria conferência aprovou, porque texto também é estrutura.
+
+**Terceira.** Com a regra de não invadir as marcas, saiu perto da referência. O
+que sobrou de defeito foi o recorte do logo colado como retângulo opaco, com a
+moldura aparecendo — o "carimbado" que ela apontou.
+
+## As três regras, e por que precisam valer juntas
+
+| Regra | O que pega | O que não pega |
+|---|---|---|
+| Fundo preserva ≥50% do grafismo da arte | degradê liso no lugar da trama | fundo com texto embutido |
+| Recorte de fundo não cruza as caixas de marca | lettering fantasma | fundo chapado |
+| Elemento de marca vem com alfa, não como bloco | moldura em volta do logo | as duas acima |
+
+Nenhuma sozinha basta. A primeira, isolada, **aprovou a peça pior das três**.
+
+## O que isso diz sobre composição automática
+
+A regra que faltava já estava escrita no `CLAUDE.md` da skill: *"fundo estendido
+em vez de cortado"*. Eu procurei faixa duas vezes em vez de estender, e o
+resultado foi exatamente o que a regra existia para evitar.
+
+Para o compositor automático, isso quer dizer duas coisas:
+
+1. **As regras da casa precisam chegar ao compositor como restrição, não como
+   texto de apoio.** Um modelo com o PIPELINE.md no prompt ainda assim escolhe o
+   caminho errado se a verificação não existir.
+2. **Verificar depois é obrigatório, e uma verificação só não serve.** As três
+   regras estão em `api/qualidade.py`, com teste, inclusive o caso que me
+   enganou.
