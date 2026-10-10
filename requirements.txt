@@ -6,6 +6,9 @@ pillow==12.3.0          # abertura, composição e export de imagem
 numpy==2.5.3            # operações de pixel (limpeza, fundo, máscaras)
 psd-tools==1.19.0       # leitura de arte-mãe em .psd
 fonttools==4.65.0       # métricas de fonte para ajuste de texto ao box
+pytoshop==1.2.1         # ESCRITA de PSD em camadas (export-psd). Faltava aqui:
+                        # psd_io.py importa e no contêiner quebraria em tempo de
+                        # execução, só na hora de exportar — não no build.
 
 # Dependências de SISTEMA (não vêm pelo pip — ver infra/Dockerfile):
 #   google-chrome   renderiza assets/template.html → imagem final

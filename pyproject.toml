@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+testpaths = ["testes"]
+# -q porque a saída longa esconde a falha; --strict-markers porque marcador
+# escrito errado passava despercebido e o teste não rodava.
+addopts = "-q --strict-markers"

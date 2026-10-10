@@ -13,6 +13,20 @@ on:
   workflow_dispatch:        # permite rodar na mão pelo site do GitHub
 
 jobs:
+  testes:
+    # Roda antes e mais rápido que a prova do contêiner: pega regressão de
+    # lógica em segundos, sem precisar construir imagem.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: instalar dependências
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: rodar os testes
+        run: pytest --cov=motor --cov-report=term-missing
+
   renderizar:
     runs-on: ubuntu-latest
     steps:

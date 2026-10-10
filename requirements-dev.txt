@@ -3,4 +3,4 @@
 
 pytest==9.1.1
 pytest-cov==7.0.0       # cobertura
-httpx==0.29.1           # cliente de teste da API
+httpx==0.28.1           # cliente de teste da API (0.29 não existe)

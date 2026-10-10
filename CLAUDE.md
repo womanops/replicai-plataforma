@@ -89,7 +89,28 @@ escolher formatos, baixar as peças.
 - [ ] Fila (Redis + RQ): renderizar leva minutos e não cabe numa requisição
 - [ ] Motor recebendo caminhos de entrada e saída por parâmetro
 - [ ] Front-end mínimo: uma página de upload, uma de resultado
-- [ ] Testes do motor com pytest — 2.309 linhas sem rede de proteção hoje
+- [x] ~~Testes do motor com pytest~~ — **226 testes, começados em 10/10/2026**
+
+### Sobre os testes
+
+Rodar: `.venv/bin/python -m pytest`. A esteira roda a cada push, antes da prova
+do contêiner, porque pega regressão de lógica em segundos.
+
+Cobertura é 11%, e é de propósito. O alvo foi a lógica que **decide**, não a
+contagem: `plan_fit` (cortar ou estender), o catálogo de formatos, a leitura de
+entrada, as bandeiras do Chrome e a ida e volta de PSD. O resto de `replica.py`
+são comandos que chamam Chrome, Higgsfield e ffmpeg — caros de testar e de valor
+menor agora.
+
+**Todo teste novo precisa falhar antes de passar.** Os primeiros que escrevi aqui
+passavam com o motor sabotado: eu assertava que o corte continha a região
+protegida, mas nos casos escolhidos o corte era a arte inteira, então a asserção
+era verdadeira por acidente. Confira sabotando o motor de propósito e vendo o
+teste quebrar; se não quebrar, o teste não existe.
+
+Sabotagens já conferidas, todas pegas: ignorar a região protegida, centralizar o
+corte em vez de seguir o protegido, trocar a estratégia padrão para `cover`,
+parar de ler `CHROME_FLAGS`, e inverter largura com altura no PSD.
 
 Comece pelos testes do motor ou pela API, não pelo front-end: o que decide se o
 produto existe é o caminho upload → peça pronta.
