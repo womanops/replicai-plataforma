@@ -3,6 +3,9 @@
 #   api     → recebe upload, cria o job, devolve o resultado
 #   worker  → processa as peças (Chromium + motor). É o que escala.
 #   redis   → fila entre a api e o worker
+#
+# A chave do modelo vem do ambiente. Antes de subir:
+#   export ANTHROPIC_API_KEY=...        (ou um .env ao lado deste arquivo)
 
 services:
   # `docker compose up` sobe tudo: a api responde em :8000/docs
@@ -15,6 +18,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /dados
+      # sem repasse, o contêiner não enxerga a chave e cai para a regra
+      # determinística sem dizer nada. /saude denuncia: "compositor": "regra"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - dados:/dados
       - ../fontes:/app/fontes:ro
@@ -29,6 +35,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /dados
+      # sem repasse, o contêiner não enxerga a chave e cai para a regra
+      # determinística sem dizer nada. /saude denuncia: "compositor": "regra"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - dados:/dados
       - ../fontes:/app/fontes:ro

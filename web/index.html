@@ -18,6 +18,10 @@ body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.5 var(--corpo
 header{display:flex;align-items:baseline;gap:14px;padding:22px 26px 0}
 header b{font:400 30px/1 var(--disp);letter-spacing:.06em}
 header span{font:500 11px var(--mono);color:var(--mut);letter-spacing:.14em;text-transform:uppercase}
+/* dizer quem está compondo evita a pior descoberta possível: perceber dias
+   depois que a chave não foi lida e tudo saiu pela regra simples */
+header .quem{margin-left:auto;color:var(--mut)}
+header .quem.simples{color:var(--sinal)}
 main{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:26px;padding:22px 26px 120px;
   align-items:start}
 @media (max-width:860px){main{grid-template-columns:1fr}}
@@ -91,7 +95,8 @@ button.secund{background:transparent;color:var(--fg);border:1px solid var(--linh
 .aviso.hidden{display:none}
 </style>
 
-<header><b>ReplicAI</b><span>uma peça aprovada, todos os formatos</span></header>
+<header><b>ReplicAI</b><span>uma peça aprovada, todos os formatos</span>
+  <span id="quemCompoe" class="quem"></span></header>
 
 <main>
   <section>
@@ -322,5 +327,18 @@ async function acompanhar(){
   pulso = setInterval(ver, 2500);
 }
 
-carregarFormatos(); pintarRodape();
+async function quemCompoe(){
+  try {
+    const s = await (await fetch('/saude')).json();
+    const el = $('#quemCompoe');
+    const simples = s.compositor === 'regra';
+    el.textContent = simples ? 'compondo por regra · sem o modelo' : 'compondo com o modelo';
+    el.classList.toggle('simples', simples);
+    el.title = simples
+      ? 'ANTHROPIC_API_KEY não foi lida: as peças saem pela regra determinística, que não sabe o que sacrificar quando o formato aperta.'
+      : 'O modelo decide a estrutura; as caixas são calculadas pela máquina.';
+  } catch(e){}
+}
+
+carregarFormatos(); pintarRodape(); quemCompoe();
 </script>
