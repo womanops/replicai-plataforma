@@ -20,6 +20,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from api import diagramacao
+from api.tipografia import ajeitar
 
 PAPEIS = ("marca", "headline", "apoio", "cta", "selo")
 
@@ -366,7 +367,7 @@ def montar(esq: Esquema, formato: dict, fundo: dict, fontes: list | None = None,
                 elif zona.endswith("direita"):
                     x = box["x"] + box["w"] - larg
                 caixa = {"x": int(x), "y": int(box["y"]), "w": int(larg), "h": int(alt)}
-                el = {"tipo": "botao", "papel": "cta", "texto": e.texto, "box": caixa,
+                el = {"tipo": "botao", "papel": "cta", "texto": ajeitar(e.texto), "box": caixa,
                       "peso": 700, "cor": acento or "#101828", "fundo": BOTAO_FUNDO,
                       "tamanho": corpo, "raio": round(alt / 2),
                       "letterSpacing": "0.03em"}
@@ -381,7 +382,7 @@ def montar(esq: Esquema, formato: dict, fundo: dict, fontes: list | None = None,
             # escrevia por cima do CTA
             teto = max(12, int(box["h"] * 0.82))
             piso = min(max(11, round(H * mn)), max(11, int(box["h"] * 0.34)))
-            el = {"tipo": "texto", "papel": e.papel, "texto": e.texto, "box": box,
+            el = {"tipo": "texto", "papel": e.papel, "texto": ajeitar(e.texto), "box": box,
                   "peso": 800 if e.papel in ("headline", "cta") else 500,
                   "cor": cor_texto, "min": piso, "max": min(round(H * mx), teto),
                   "lineHeight": 1.05 if e.papel == "headline" else 1.25,
