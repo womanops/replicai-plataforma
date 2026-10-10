@@ -31,7 +31,11 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile
-    command: rq worker --url redis://redis:6379/0 replicai
+    # as duas filas: a de peça primeiro, que é o que a pessoa espera ver.
+    # O vídeo precisa de Node e Remotion, que esta imagem ainda não tem — por
+    # enquanto o trabalho de vídeo falha dizendo isso, em vez de ficar parado
+    # na fila para sempre.
+    command: rq worker --url redis://redis:6379/0 replicai replicai-video
     environment:
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /dados

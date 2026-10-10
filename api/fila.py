@@ -7,7 +7,9 @@ fila, ele recebe um identificador na hora e acompanha.
 Duas implementações atrás da mesma interface:
 
 - `FilaRQ` é a de produção: Redis guarda, o worker executa em outro processo, e
-  derrubar a API não perde trabalho.
+  derrubar a API não perde trabalho. São duas filas — peça e vídeo — porque a
+  peça sai em segundos e o vídeo leva minutos: numa fila só, o vídeo de um
+  cliente segura a peça do outro.
 - `FilaDireta` roda na hora, no mesmo processo. É o que os testes usam — montar
   Redis para testar endpoint é atrito que faz ninguém rodar teste.
 """
@@ -18,35 +20,46 @@ from typing import Any, Callable, Protocol
 
 
 class Fila(Protocol):
-    def enfileirar(self, fn: Callable[..., Any], *args, **kwargs) -> str:
+    def enfileirar(self, fn: Callable[..., Any], *args, fila: str = "", **kwargs) -> str:
         """Devolve o identificador do trabalho na fila."""
 
 
 class FilaDireta:
     """Executa na hora. Para teste e para rodar a plataforma sem Redis."""
 
-    def __init__(self):
+    def __init__(self, porque: str = ""):
         self.feitos: list[str] = []
+        self.porque = porque          # aparece em /saude: queda calada engana
 
-    def enfileirar(self, fn, *args, **kwargs) -> str:
+    def enfileirar(self, fn, *args, fila: str = "", **kwargs) -> str:
         fn(*args, **kwargs)
         nome = getattr(fn, "__name__", "trabalho")
         self.feitos.append(nome)
         return f"direto-{len(self.feitos)}"
 
 
+# a peça sai em segundos, o vídeo leva minutos. Numa fila só, o vídeo de um
+# cliente segura a peça do outro — e peça é o que a pessoa está esperando
+# para ver.
+FILA_PECA = "replicai"
+FILA_VIDEO = "replicai-video"
+
+LIMITES = {FILA_PECA: 1800, FILA_VIDEO: 3600}
+
+
 class FilaRQ:
     """Redis + RQ. O worker é outro processo: `rq worker replicai`."""
 
-    def __init__(self, url: str | None = None, nome: str = "replicai",
-                 limite_segundos: int = 1800):
+    def __init__(self, url: str | None = None, conexao=None):
         from redis import Redis
         from rq import Queue
-        self.q = Queue(nome, connection=Redis.from_url(url or os.environ["REDIS_URL"]),
-                       default_timeout=limite_segundos)
+        conn = conexao or Redis.from_url(url or os.environ["REDIS_URL"])
+        conn.ping()                   # falhar aqui é melhor do que na primeira peça
+        self.filas = {nome: Queue(nome, connection=conn, default_timeout=limite)
+                      for nome, limite in LIMITES.items()}
 
-    def enfileirar(self, fn, *args, **kwargs) -> str:
-        return self.q.enqueue(fn, *args, **kwargs).id
+    def enfileirar(self, fn, *args, fila: str = FILA_PECA, **kwargs) -> str:
+        return self.filas.get(fila, self.filas[FILA_PECA]).enqueue(fn, *args, **kwargs).id
 
 
 def fila_do_ambiente() -> Fila:
@@ -57,8 +70,11 @@ def fila_do_ambiente() -> Fila:
     """
     url = os.environ.get("REDIS_URL")
     if not url:
-        return FilaDireta()
+        return FilaDireta("sem REDIS_URL configurado")
     try:
         return FilaRQ(url)
-    except Exception:
-        return FilaDireta()
+    except Exception as e:
+        # cair é melhor do que recusar a subir, mas cair calado é o defeito que
+        # já entregou peça de régua com cara de peça do modelo. O motivo sobe
+        # até /saude, onde quem opera consegue ver.
+        return FilaDireta(f"o Redis em {url} não respondeu: {type(e).__name__}")

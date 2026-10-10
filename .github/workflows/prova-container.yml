@@ -17,6 +17,21 @@ jobs:
     # Roda antes e mais rápido que a prova do contêiner: pega regressão de
     # lógica em segundos, sem precisar construir imagem.
     runs-on: ubuntu-latest
+    # O Redis de mentira prova a lógica da fila; este prova que o trabalho
+    # atravessa o processo — que é a razão de existir da fila. Na máquina de
+    # desenvolvimento esses testes são pulados.
+    services:
+      redis:
+        image: redis:7-alpine@sha256:6aafb7f25fc93c4ff74e99cff8e85899f03901bc96e61ba12cd3c39e95503c73
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

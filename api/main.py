@@ -18,7 +18,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 
 from api import ambiente, trabalhos
 from api.compositor import CompositorEmCadeia, CompositorModelo, CompositorSimples
-from api.fila import fila_do_ambiente
+from api.fila import FILA_VIDEO, fila_do_ambiente
 from api.pipeline import desdobrar
 from motor.replica import formato_by_id, load_formatos
 
@@ -114,6 +114,7 @@ def desenhando_com() -> dict:
 def saude():
     from api import modelo
     return {"ok": True, "fila": type(FILA).__name__,
+            "fila_porque": getattr(FILA, "porque", ""),
             "compositor": "modelo+regra" if modelo.disponivel() else "regra",
             "desenhando_com": desenhando_com()}
 
@@ -212,7 +213,8 @@ def animar(job: str, formatos: str = Form(""), preset: str = Form("editorial"),
 
     trabalhos.gravar(job, {"video": {"status": "na fila", "preset": preset,
                                      "formatos": pedidos}})
-    FILA.enfileirar(processar_video, job, pedidos, preset, float(segundos))
+    FILA.enfileirar(processar_video, job, pedidos, preset, float(segundos),
+                    fila=FILA_VIDEO)
     return {"job": job, "video": trabalhos.ler(job)["video"]}
 
 
