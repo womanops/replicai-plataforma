@@ -209,10 +209,12 @@ def _alturas(papeis: list[str], util_h: int, respiro: int) -> list[int]:
     return alt
 
 
-# faixa com menos que isto da altura da peça não comporta hierarquia: o texto
-# sai com 14px num canvas de 1920. Veio do Stories, onde a faixa de cima cai
-# quase toda dentro da margem que o app cobre e sobravam 80px úteis.
-FAIXA_MINIMA = 0.09
+# faixa com menos que isto da altura da peça não comporta nem um botão. Veio
+# do Stories, onde a faixa de cima cai quase toda dentro da margem que o app
+# cobre e sobravam 80px úteis — ali o texto saía com 14px num canvas de 1920.
+# Começou em 0,09, calibrado para faixa que segura hierarquia inteira, e isso
+# recusava faixa de 158px onde cabia o CTA sozinho com folga.
+FAIXA_MINIMA = 0.06
 
 
 def _aparar(formato: dict, r) -> list[int] | None:

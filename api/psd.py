@@ -411,6 +411,11 @@ def tinta_de(leitura: Leitura) -> tuple[int, int, int, int] | None:
 # isso ele encosta na margem; menos, e some no meio do vazio.
 LOCKUP_NA_LARGURA = 0.82
 
+# o lockup não centraliza no espaço que sobrou: fica no alto dele, para deixar
+# faixa abaixo. É ali que o CTA entra, centralizado sob a marca — pedido numa
+# revisão, e o certo: botão pendurado no lockup lê como um conjunto só.
+LOCKUP_NO_ALTO = 0.62
+
 
 def recompor(leitura: Leitura, formato: dict, pasta: Path,
              elementos: list[dict] | None = None) -> dict:
@@ -447,7 +452,7 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
     lx0, ly0, lx1, ly1 = tinta
     k = min((livre_w * LOCKUP_NA_LARGURA) / (lx1 - lx0),
             ((y1 - y0) * 0.70) / max(1, ly1 - ly0))
-    cx, cy = W / 2, (y0 + y1) / 2
+    cx, cy = W / 2, y0 + (y1 - y0) * LOCKUP_NO_ALTO / 2
     meio_x, meio_y = (lx0 + lx1) / 2, (ly0 + ly1) / 2
 
     elementos_novos = []

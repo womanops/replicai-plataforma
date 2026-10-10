@@ -437,3 +437,23 @@ class TestTextoNovoSobreOPsd:
         assert pl._texto_novo(peca, formato_by_id("ig-stories"), tmp_path, None, "",
                               None, {}) == []
         assert len(peca["elementos"]) == 1
+
+
+class TestOndeOLockupPousa:
+    def test_fica_no_alto_do_espaco_para_sobrar_faixa(self, tmp_path, monkeypatch):
+        """Centralizado no espaço livre, não sobrava faixa abaixo dele e o CTA
+        não tinha onde entrar — a revisão pediu o botão sob a marca."""
+        monkeypatch.setenv("REPLICAI_FUNDO", "solid")
+        from api.psd import recompor
+        Image.new("RGB", (1920, 1080), "#0a1a55").save(tmp_path / "fundo.png")
+        Image.new("RGBA", (870, 220), (255, 255, 255, 255)).save(tmp_path / "a.png")
+        L = Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=[
+            Camada("energiza", "texto", "a.png",
+                   {"x": 910, "y": 443, "w": 870, "h": 315}, texto="energiza")])
+        f = formato_by_id("ig-stories")
+        peca = recompor(L, f, tmp_path)
+        fim_arte = peca["_fundo"]["base_box"][3]
+        fim_lockup = max(e["box"]["y"] + e["box"]["h"] for e in peca["elementos"])
+        util = f["h"] - f["safe"]["bottom"]
+        # sobra abaixo do lockup pelo menos tanto quanto ele ocupa de margem
+        assert (util - fim_lockup) > (fim_lockup - fim_arte) * 0.25
