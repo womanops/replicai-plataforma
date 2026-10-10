@@ -17,6 +17,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from api.diagramacao import convencao
 from motor.replica import formato_by_id
 
 
@@ -218,7 +219,8 @@ Papéis: marca, headline, apoio, cta, selo. Zonas: topo/meio/baixo combinado com
 esquerda/centro/direita, por exemplo "meio-esquerda".
 
 Limites deste formato: {limites}.
-Convenção: {formato.get('notas', '—')}
+Convenção do formato: {formato.get('notas', '—')}
+Diagramação: {convencao(formato)}
 
 Regras:
 - Um papel só aparece uma vez.

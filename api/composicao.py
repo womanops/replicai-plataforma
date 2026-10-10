@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from api import diagramacao
+
 PAPEIS = ("marca", "headline", "apoio", "cta", "selo")
 
 # 3x3 dentro da área segura. Vocabulário pequeno de propósito: zona demais vira
@@ -139,6 +141,12 @@ def conferir(bruto: dict, formato: dict, ja_escrito=(), material: str | None = N
     # título já está no fundo, e exigir outro é exigir repetição
     if "headline" not in vistos and not ja_escrito:
         raise RespostaInvalida("sem headline não há peça")
+
+    # por último: faltar headline é mais fundamental do que estar no lugar
+    # errado, e dizer o erro certo é o que faz o modelo corrigir numa volta
+    torto = diagramacao.conferir(elementos, formato)
+    if torto:
+        raise RespostaInvalida(torto)
 
     desc = bruto.get("descartados") or {}
     if not isinstance(desc, dict):

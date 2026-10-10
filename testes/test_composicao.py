@@ -173,10 +173,12 @@ class TestGrupoQueNaoCabe:
         assert caixas[-1]["y"] + caixas[-1]["h"] <= STORIES["h"] - s["bottom"]
 
     def test_em_formato_baixo_encolhe_em_vez_de_estourar(self):
+        # as zonas seguem a convenção da faixa — marca à esquerda, frase no
+        # centro, botão à direita — que é o que a diagramação agora exige
         r = {"elementos": [
             {"papel": "marca", "zona": "meio-esquerda", "origem": "logo.png"},
-            {"papel": "headline", "zona": "meio-esquerda", "texto": "Save the date"},
-            {"papel": "cta", "zona": "meio-esquerda", "texto": "Inscreva-se"}]}
+            {"papel": "headline", "zona": "meio-centro", "texto": "Save the date"},
+            {"papel": "cta", "zona": "meio-direita", "texto": "Inscreva-se"}]}
         p = montar(conferir(r, BANNER), BANNER, {})
         s = BANNER["safe"]
         for e in p["elementos"]:
@@ -248,12 +250,19 @@ class TestNadaSeSobrepoe:
 
     @pytest.mark.parametrize("fid", ["ig-stories", "ig-feed-4x5", "gdn-728x90"])
     def test_peca_cheia_nao_tem_elemento_cruzando(self, fid):
+        """Em cada formato, a peça cheia na diagramação que o formato pede: a
+        faixa espalha na horizontal, as outras descem numa coluna só."""
+        from api.diagramacao import e_faixa
         f = formato_by_id(fid)
-        elems = [{"papel": "headline", "zona": "meio-esquerda", "texto": "Save the date"},
-                 {"papel": "cta", "zona": "meio-direita", "texto": "Quero ir"}]
-        if f["texto"].get("apoio_max"):
-            elems.insert(1, {"papel": "apoio", "zona": "baixo-esquerda",
-                             "texto": "25 a 27 de novembro"})
+        if e_faixa(f):
+            elems = [{"papel": "headline", "zona": "meio-centro", "texto": "Save the date"},
+                     {"papel": "cta", "zona": "meio-direita", "texto": "Quero ir"}]
+        else:
+            elems = [{"papel": "headline", "zona": "topo-esquerda", "texto": "Save the date"},
+                     {"papel": "cta", "zona": "baixo-esquerda", "texto": "Quero ir"}]
+            if f["texto"].get("apoio_max"):
+                elems.insert(1, {"papel": "apoio", "zona": "meio-esquerda",
+                                 "texto": "25 a 27 de novembro"})
         p = montar(conferir({"elementos": elems}, f), f, {})
         cs = self.caixas(p)
         for i, a in enumerate(cs):

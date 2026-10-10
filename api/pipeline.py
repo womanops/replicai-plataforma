@@ -14,7 +14,7 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from api import custo, fundo as prep_fundo
+from api import contraste, custo, fundo as prep_fundo
 from api.compositor import ComposicaoImpossivel, Compositor, Terreno
 from motor.replica import formato_by_id
 from api.qualidade import conferir_fundo, recorte_e_retangulo
@@ -222,6 +222,13 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
 
         for a in tirar_imagem_fantasma(peca, pasta):
             r.avisos.setdefault(fid, []).append(a)
+
+        # a cor do texto se decide contra o fundo que a peça vai usar, não
+        # contra o que alguém supôs: branco some no brilho da gota de vidro
+        src = (peca.get("fundo") or {}).get("src")
+        if src:
+            for a in contraste.ajustar(peca, pasta / src):
+                r.avisos.setdefault(fid, []).append(a)
 
         for d in peca.pop("_desvios", []):
             r.avisos.setdefault(fid, []).append(
