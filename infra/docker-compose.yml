@@ -5,6 +5,7 @@
 #   redis   → fila entre a api e o worker
 
 services:
+  # `docker compose up` sobe tudo: a api responde em :8000/docs
   api:
     build:
       context: ..

@@ -123,10 +123,27 @@ parar de ler `CHROME_FLAGS`, e inverter largura com altura no PSD.
 - 247 testes. Rápidos por padrão (2 s); os que abrem navegador ficam atrás do
   marcador `lento` e rodam na esteira.
 
-Falta: fila (Redis + RQ), `api/main.py` com upload/status/download, e front-end.
+- `api/fila.py` — `FilaRQ` (Redis, produção) e `FilaDireta` (roda na hora).
+  Sem `REDIS_URL` cai para direta: a plataforma funciona inteira em máquina de
+  desenvolvimento, só sem paralelismo.
+- `api/trabalhos.py` — estado do trabalho em disco, porque API e worker são
+  processos diferentes e a API pode cair.
+- `api/main.py` — `POST /jobs`, `GET /jobs/{id}`, `GET /jobs/{id}/arquivos/...`,
+  `/formatos`, `/saude`.
+- `api/qualidade.py` — as quatro verificações de fundo e marca.
+- 282 testes. Os rápidos em 4 s; os que abrem navegador ficam atrás de `lento`.
 
-Comece pela API ou pela fila, não pelo front-end: o que decide se o produto
-existe é o caminho upload → peça pronta.
+**`docker compose up` já vale**, agora que `api.main:app` existe.
+
+Falta o front-end: uma página de envio e uma de resultado. E a decisão de
+`docs/DECISAO-quem-compoe.md`, que hoje faz a API usar o `CompositorSimples`.
+
+### Como os testes da API são rápidos
+
+A fila é trocada por uma espiã que anota em vez de executar. Deixá-la executar
+fazia cada teste abrir o Chrome e a suíte ia a 103 segundos — que é o mesmo que
+não ter teste. O render tem cobertura própria no pipeline, e um caminho de ponta
+a ponta roda marcado como `lento`.
 
 **Já existe um Studio funcionando** em
 `~/Desktop/OPERAÇÃO CLAUDE CODE/ReplicAI/studio/` — servidor em Python puro com
