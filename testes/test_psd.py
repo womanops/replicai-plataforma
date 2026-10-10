@@ -246,3 +246,74 @@ class TestOQueOArquivoRealEnsinou:
         c = Camada("energiza", "texto", "x.png", {"x": 0, "y": 0, "w": 1, "h": 1},
                    texto="energiza", fonte="Blanquotey")
         assert c.fonte == "Blanquotey"
+
+
+class TestOrdemELetras:
+    """Revisão de uma peça animada: a ordem de entrada tem que ser a de
+    leitura — marca, nome com ano, assinatura — e o lettering tem que animar
+    letra a letra. Camada inteira entrando é transição de slide, não motion."""
+
+    def _leitura(self, camadas):
+        return Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=camadas)
+
+    def test_a_ordem_de_entrada_e_a_de_leitura(self):
+        from api.psd import como_elementos
+        L = self._leitura([
+            Camada("assinatura", "texto", "d.png", {"x": 0, "y": 600, "w": 500, "h": 80},
+                   texto="Energia que impulsiona"),
+            Camada("logo", "imagem", "b.png", {"x": 0, "y": 400, "w": 380, "h": 60}),
+            Camada("energiza", "texto", "a.png", {"x": 0, "y": 450, "w": 870, "h": 220},
+                   texto="energiza"),
+            Camada("2027", "texto", "c.png", {"x": 0, "y": 650, "w": 190, "h": 60},
+                   texto="2027"),
+        ])
+        ordens = {e["camada"]: e["ordem"] for e in como_elementos(L)}
+        assert ordens["logo"] == 0
+        assert ordens["energiza"] == ordens["2027"] == 1
+        assert ordens["assinatura"] == 2
+
+    def test_o_ano_nao_entra_junto_da_marca(self):
+        """O vocabulário de motion trata selo e marca como a mesma família; sem
+        ordem explícita o ano chegava antes do nome."""
+        from api.psd import ORDEM
+        assert ORDEM["selo"] > ORDEM["marca"]
+        assert ORDEM["selo"] == ORDEM["headline"]
+
+    def test_lettering_vira_uma_letra_por_elemento(self, tmp_path):
+        from PIL import ImageDraw
+        from api.psd import como_elementos
+        im = Image.new("RGBA", (300, 100), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        for x in (0, 110, 220):
+            d.rectangle((x, 10, x + 70, 90), fill=(255, 255, 255, 255))
+        im.save(tmp_path / "a.png")
+        L = self._leitura([Camada("energiza", "texto", "a.png",
+                                  {"x": 100, "y": 200, "w": 300, "h": 100}, texto="abc")])
+        els = como_elementos(L, tmp_path)
+        assert len(els) == 3
+        assert [e["letra"] for e in els] == [0, 1, 2]
+        # a caixa de cada letra é a da camada deslocada do recorte
+        assert els[1]["box"]["x"] == 100 + 110
+        assert all(e["de"] == "energiza" for e in els)
+
+    def test_frase_longa_entra_por_linha_e_nao_por_letra(self, tmp_path):
+        """Trinta letras a 0,075s levam mais tempo do que a peça tem, e letra
+        de 20px solta ninguém lê."""
+        from PIL import ImageDraw
+        from api.psd import LETRAS_DEMAIS, como_elementos
+        im = Image.new("RGBA", (600, 60), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        for i in range(LETRAS_DEMAIS + 6):
+            d.rectangle((i * 36, 10, i * 36 + 20, 50), fill=(255, 255, 255, 255))
+        im.save(tmp_path / "a.png")
+        L = self._leitura([Camada("assinatura", "texto", "a.png",
+                                  {"x": 0, "y": 0, "w": 600, "h": 60}, texto="x" * 20)])
+        assert len(como_elementos(L, tmp_path)) == 1      # uma linha só
+
+    def test_sem_pasta_a_camada_nao_e_fatiada(self):
+        """Quem não passa pasta não quer letra: devolve a camada inteira."""
+        from api.psd import como_elementos
+        L = self._leitura([Camada("energiza", "texto", "a.png",
+                                  {"x": 0, "y": 0, "w": 800, "h": 200}, texto="energiza")])
+        els = como_elementos(L)
+        assert len(els) == 1 and "letra" not in els[0]

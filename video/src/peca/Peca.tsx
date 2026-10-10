@@ -27,6 +27,7 @@ type El = {
   acento?: string; letterSpacing?: string;
   fundo?: string; raio?: number;        // só do botão: cor do corpo e o arredondamento
   ancorado?: boolean;                   // camada de PSD: entra e fica, sem deriva
+  ordem?: number; letra?: number; de?: string;   // ordem do lockup e posição da letra
   mesclagem?: string; camada?: string; conteudo?: string;
 };
 export type PecaProps = {
@@ -290,6 +291,25 @@ export const Peca: React.FC<PecaProps> = ({
   useFontesProntas();
   const cssFontes = cssDasFontes(base, fontes);
 
+  // Camada vinda de PSD traz `ordem`: o lockup se monta na ordem em que se lê
+  // — marca, nome, assinatura — e não na ordem em que as camadas estão
+  // empilhadas no arquivo. Cada bloco só começa depois que o anterior acabou
+  // de entrar, senão as letras de um atropelam as do outro.
+  const porLetra = P.revela === 'lettering' || P.revela === 'letra';
+  const RESPIRO_BLOCO = 0.38;
+  const inicioDe: Record<number, number> = {};
+  const ordens = [...new Set(elementos.filter((e) => e.ordem != null)
+    .map((e) => e.ordem as number))].sort((a, b) => a - b);
+  let quando = P.por.marca.atraso;
+  for (const o of ordens) {
+    inicioDe[o] = quando;
+    const bloco = elementos.filter((e) => e.ordem === o);
+    const unidades = porLetra
+      ? Math.max(...bloco.map((e) => (e.letra ?? 0))) + 1
+      : 1;
+    quando += (unidades - 1) * P.passo + RESPIRO_BLOCO;
+  }
+
   // cascata: cada papel conta os próprios irmãos, na ordem em que aparecem
   const contagem: Partial<Record<Papel, number>> = {};
   const jaVisto: Record<string, number> = {};
@@ -297,6 +317,9 @@ export const Peca: React.FC<PecaProps> = ({
     const nome = e.papel || e.tipo;
     const pap = papelDe(nome, e.tipo);
     const m = P.por[pap];
+    if (e.ordem != null) {
+      return { e, pap, t0: inicioDe[e.ordem] + (porLetra ? (e.letra ?? 0) * P.passo : 0), m };
+    }
     const g = `${pap}:${grupoDe(nome)}`;
     if (jaVisto[g] === undefined) {
       const i = contagem[pap] ?? 0;

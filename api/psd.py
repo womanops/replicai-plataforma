@@ -307,43 +307,77 @@ def _primeira_fonte(c) -> str:
     return ""
 
 
-def como_elementos(leitura: Leitura) -> list[dict]:
-    """As camadas soltas viram elementos da peça, com papel de motion.
+# acima disto a frase leva mais tempo do que a peça tem, e letra de 20px solta
+# não se lê: a assinatura entra linha a linha em vez de letra a letra
+LETRAS_DEMAIS = 14
 
-    O papel não é enfeite: é por ele que a linguagem de movimento decide quando
-    cada coisa entra. Sem papel, as quatro partes do lockup entram juntas, que
-    é o mesmo que não ter separado nada.
+# a ordem em que o lockup se monta. Veio de uma revisão: marca, depois o nome
+# com o ano, depois a assinatura — é a ordem em que se lê, não a ordem em que
+# as camadas estão empilhadas no arquivo.
+ORDEM = {"marca": 0, "headline": 1, "selo": 1, "apoio": 2, "cta": 3}
 
-    `ancorado` desliga a deriva lenta que a animação dá a imagem solta. Parte
-    de lockup não vagueia: ela foi desenhada naquela posição, e sair do lugar
-    desmonta o desenho.
+
+def _papel_de(c: Camada, maior: Camada | None) -> str:
+    if c.tipo != "texto":
+        return "marca"
+    if c is maior:
+        return "headline"
+    if c.texto.strip().isdigit():
+        return "selo"
+    return "apoio"
+
+
+def como_elementos(leitura: Leitura, pasta: Path | None = None) -> list[dict]:
+    """As camadas soltas viram elementos da peça, com papel e ordem de motion.
+
+    O papel decide **como** cada coisa entra; a ordem decide **quando**. Sem
+    ordem, o ano entra junto da marca porque o vocabulário de motion trata selo
+    e marca como a mesma família — e o lockup se monta fora de ordem.
+
+    Camada de texto grande é cortada em letras, para o preset de lettering
+    animar uma a uma. Sem isso a camada entra inteira, que é transição de
+    slide e não motion.
     """
+    from api.letras import fatiar
+
     textos = [c for c in leitura.camadas if c.tipo == "texto"]
     maior = max(textos, key=lambda c: c.box["w"] * c.box["h"], default=None)
 
     elementos = []
     for c in leitura.camadas:
-        if c.tipo != "texto":
-            papel = "marca"
-        elif c is maior:
-            papel = "headline"
-        elif c.texto.strip().isdigit():
-            papel = "selo"
-        else:
-            papel = "apoio"
-        e = {"tipo": "imagem", "papel": papel, "src": c.src, "box": dict(c.box),
-             "fit": "fill", "ancorado": True, "camada": c.nome}
-        if c.texto:
-            e["conteudo"] = c.texto        # o que está escrito, para o relatório
+        papel = _papel_de(c, maior)
+        ordem = ORDEM.get(papel, 9)
+        comum = {"tipo": "imagem", "papel": papel, "fit": "fill", "ancorado": True,
+                 "camada": c.nome, "ordem": ordem}
         if c.mesclagem:
-            e["mesclagem"] = c.mesclagem
+            comum["mesclagem"] = c.mesclagem
         if c.opacidade < 1:
-            e["opacidade"] = c.opacidade
-        elementos.append(e)
+            comum["opacidade"] = c.opacidade
+
+        pedacos = []
+        if c.tipo == "texto" and pasta is not None:
+            alvo = Path(pasta)
+            pedacos = fatiar(alvo / c.src, alvo, prefixo=Path(c.src).stem)
+            if len(pedacos) > LETRAS_DEMAIS:
+                pedacos = fatiar(alvo / c.src, alvo, prefixo=Path(c.src).stem,
+                                 modo="linha")
+
+        if not pedacos:
+            e = dict(comum, src=c.src, box=dict(c.box))
+            if c.texto:
+                e["conteudo"] = c.texto
+            elementos.append(e)
+            continue
+
+        for i, pe in enumerate(pedacos):
+            elementos.append(dict(comum, src=pe["src"], letra=i, de=c.nome, box={
+                "x": c.box["x"] + pe["dx"], "y": c.box["y"] + pe["dy"],
+                "w": pe["w"], "h": pe["h"]}))
     return elementos
 
 
-def como_peca(leitura: Leitura, formato_id: str, safe: dict | None = None) -> dict:
+def como_peca(leitura: Leitura, formato_id: str, safe: dict | None = None,
+              pasta: Path | None = None) -> dict:
     """A peça pronta para o motor, no tamanho nativo da prancheta."""
     return {
         "formato": formato_id,
@@ -353,5 +387,5 @@ def como_peca(leitura: Leitura, formato_id: str, safe: dict | None = None) -> di
         "via": "psd-camadas",
         "fundo": {"tipo": "imagem", "src": leitura.fundo, "fit": "cover"},
         "fontes": [],
-        "elementos": como_elementos(leitura),
+        "elementos": como_elementos(leitura, pasta),
     }
