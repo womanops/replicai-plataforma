@@ -16,11 +16,13 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 
-from api import trabalhos
+from api import ambiente, trabalhos
 from api.compositor import CompositorEmCadeia, CompositorModelo, CompositorSimples
 from api.fila import fila_do_ambiente
 from api.pipeline import desdobrar
 from motor.replica import formato_by_id, load_formatos
+
+ambiente.carregar()          # antes de qualquer coisa ler os.environ
 
 app = FastAPI(title="ReplicAI", version="0.1.0")
 WEB = Path(__file__).resolve().parent.parent / "web"
