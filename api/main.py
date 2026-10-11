@@ -162,7 +162,7 @@ def meu_uso(mes: str = "", c: contas.Conta = Depends(conta_atual)):
     """Quanto a conta consumiu, e quanto o plano permite."""
     valendo = cobranca.plano_valendo(c)
     lim = uso.limites(valendo)
-    r = uso.resumo(c.id, mes)
+    r = uso.resumo(c.id, mes, dia_do_ciclo=cobranca.dia_do_ciclo(c))
     return {**r, "plano": {"id": valendo, "contratado": c.plano, **lim},
             "em_atraso": c.em_atraso, "pago_ate": c.pago_ate,
             "resta": {"pecas": max(0, lim["pecas"] - r["pecas"]),
@@ -248,7 +248,8 @@ async def criar(
         raise HTTPException(422, f"formato desconhecido: {', '.join(desconhecidos)}. "
                                  f"Veja /formatos")
 
-    pode, porque = uso.cabe(c.id, cobranca.plano_valendo(c), pecas=len(pedidos))
+    pode, porque = uso.cabe(c.id, cobranca.plano_valendo(c), pecas=len(pedidos),
+                            dia_do_ciclo=cobranca.dia_do_ciclo(c))
     if not pode:
         # conferido antes de enfileirar: recusar um trabalho já renderizado é
         # gastar o custo e não poder cobrar
@@ -349,7 +350,8 @@ def animar(job: str, formatos: str = Form(""), preset: str = Form("editorial"),
                                  f"Use {', '.join(animacao.PRESETS)}")
     if not 1.0 <= segundos <= 20.0:
         raise HTTPException(422, "a duração vai de 1 a 20 segundos")
-    pode, porque = uso.cabe(c.id, cobranca.plano_valendo(c), videos=len(pedidos))
+    pode, porque = uso.cabe(c.id, cobranca.plano_valendo(c), videos=len(pedidos),
+                            dia_do_ciclo=cobranca.dia_do_ciclo(c))
     if not pode:
         raise HTTPException(402, porque)
 

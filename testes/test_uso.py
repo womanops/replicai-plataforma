@@ -154,3 +154,39 @@ class TestNaEsteira:
         tarefas.processar(CONTA, trabalhos.novo_id("x"), str(arte),
                           ["ig-feed-1x1", "ig-stories"], "Oi", "", "")
         assert uso.resumo(CONTA)["pecas"] == 1
+
+
+class TestOCicloDaFranquia:
+    """Mês de calendário estaria errado: quem assina dia 20 teria a franquia
+    zerada no dia 1º, nove dias depois de pagar."""
+
+    def test_o_ciclo_vai_de_dia_a_dia(self):
+        from datetime import date
+        i, f = uso.ciclo(20, date(2026, 10, 25))
+        assert (i, f) == (date(2026, 10, 20), date(2026, 11, 20))
+
+    def test_antes_do_dia_o_ciclo_e_o_anterior(self):
+        from datetime import date
+        i, f = uso.ciclo(20, date(2026, 10, 11))
+        assert (i, f) == (date(2026, 9, 20), date(2026, 10, 20))
+
+    def test_dia_29_30_31_viram_28(self):
+        """Fevereiro não tem 30: a franquia não pode pular um mês."""
+        from datetime import date
+        i, _ = uso.ciclo(31, date(2026, 3, 15))
+        assert i.day == 28
+
+    def test_o_consumo_do_ciclo_anterior_nao_conta(self, monkeypatch):
+        from datetime import datetime, timedelta, timezone
+        antigo = (datetime.now(timezone.utc) - timedelta(days=45)).isoformat()
+        with open(uso.arquivo(CONTA, (datetime.now(timezone.utc)
+                                      - timedelta(days=45)).strftime("%Y-%m")), "a") as f:
+            import json
+            f.write(json.dumps({"quando": antigo, "tipo": uso.PECA}) + "\n")
+        uso.registrar(CONTA, uso.PECA)
+        hoje = uso.resumo(CONTA, dia_do_ciclo=1)
+        assert hoje["pecas"] == 1          # só o deste ciclo
+
+    def test_sem_dia_do_ciclo_continua_por_mes(self):
+        uso.registrar(CONTA, uso.PECA)
+        assert uso.resumo(CONTA)["pecas"] == 1

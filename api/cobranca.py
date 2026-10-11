@@ -220,6 +220,21 @@ def _ate(pagamento: dict) -> str:
     return (venc + timedelta(days=30 + CARENCIA)).isoformat()
 
 
+def dia_do_ciclo(conta) -> int:
+    """Em que dia do mês a franquia zera.
+
+    O dia da assinatura, e não o dia 1º: quem assina dia 20 teria a franquia
+    zerada nove dias depois de pagar. Sem assinatura, vale o dia em que a
+    conta nasceu, para o teste também ter um ciclo próprio.
+    """
+    for bruto in (conta.pago_ate, conta.criada):
+        try:
+            return date.fromisoformat((bruto or "")[:10]).day
+        except ValueError:
+            continue
+    return 1
+
+
 def plano_valendo(conta) -> str:
     """O plano que vale agora, não o que foi contratado.
 

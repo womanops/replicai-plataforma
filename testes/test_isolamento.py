@@ -189,7 +189,7 @@ class TestPlanoNaPorta:
         r = c.post("/jobs", files={"arte": ("a.png", arte(), "image/png")},
                    data={"formatos": "ig-feed-1x1", "headline": "Oi"})
         assert r.status_code == 402
-        assert "peças por mês" in r.json()["detail"]
+        assert "peças por ciclo" in r.json()["detail"]
 
     def test_o_trabalho_recusado_nao_entra_na_fila(self, servidor):
         from api import uso
