@@ -54,6 +54,31 @@ jobs:
       - name: construir a imagem
         run: docker build -f infra/Dockerfile -t replicai:prova .
 
+      - name: a imagem leva a plataforma inteira
+        # Sem montar nada: é o conteúdo da própria imagem que está em prova.
+        # O passo seguinte monta o repositório em /app e esconde tudo isso —
+        # por isso esta conferência vem antes, e não depois.
+        run: |
+          docker run --rm replicai:prova sh -c '
+            set -e
+            test -f /app/web/index.html        || { echo "falta a tela";      exit 1; }
+            test -f /app/worker.py             || { echo "falta o worker";    exit 1; }
+            test -d /app/video/node_modules    || { echo "falta o Remotion";  exit 1; }
+            command -v higgsfield >/dev/null   || { echo "falta a CLI do fundo"; exit 1; }
+            command -v node >/dev/null         || { echo "falta o Node";      exit 1; }
+            echo "tudo no lugar"'
+
+      - name: a api sobe e enxerga o que precisa
+        # `anthropic` é importado dentro das funções: faltando, nada quebra e a
+        # plataforma inteira passa a compor pela régua, em silêncio. Foi assim
+        # que ele ficou de fora de requirements por meses.
+        run: |
+          docker run --rm replicai:prova python -c '
+          import anthropic, httpx, fastapi, rq
+          from api import main, tarefas, animacao
+          from api.contas import segredo_configurado
+          print("api ok; anthropic", anthropic.__version__)'
+
       - name: renderizar uma peça dentro do contêiner
         # O repositório entra montado em /app para o contêiner enxergar testes/
         # e para a peça gerada sobrar aqui fora, onde o passo seguinte a guarda.

@@ -226,6 +226,12 @@ def saude():
             "fila_porque": getattr(FILA, "porque", ""),
             "fila_tamanho": {n: q.count for n, q in getattr(FILA, "filas", {}).items()},
             "compositor": "modelo+regra" if modelo.disponivel() else "regra",
+            # sem segredo configurado o selo é sorteado ao subir: reiniciar
+            # desloga todo mundo, e duas réplicas atrás do mesmo endereço não
+            # reconhecem a sessão uma da outra. Serve para desenvolver, e em
+            # produção é defeito — que só aparece quando o cliente reclama
+            "sessao": "segredo configurado" if contas.segredo_configurado()
+                      else "segredo sorteado ao subir: reiniciar desloga todo mundo",
             "desenhando_com": desenhando_com()}
 
 

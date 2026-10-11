@@ -4,10 +4,13 @@
 #   worker  → processa as peças e os vídeos (Chromium + Node + motor)
 #   redis   → fila entre a api e o worker
 #
-# Antes de subir, um `.env` ao lado deste arquivo com:
+# As credenciais vêm do `.env` da raiz do projeto — o mesmo que a plataforma
+# usa fora do contêiner. Não há cópia a manter em dois lugares, e a chave não
+# passa pela linha de comando de ninguém:
 #   ANTHROPIC_API_KEY=...     sem ela a composição cai para a régua
 #   REPLICAI_SEGREDO=...      assina a sessão; sem ele, reiniciar desloga todo
-#                             mundo e duas réplicas da api não se reconhecem
+#                             mundo e duas réplicas da api não se reconhecem.
+#                             `/saude` diz quando falta.
 #
 # E uma vez só, para o fundo generativo:
 #   docker compose run --rm worker higgsfield auth login
@@ -20,18 +23,14 @@ services:
       dockerfile: infra/Dockerfile
     ports:
       - "8000:8000"
+    # o mesmo arquivo que a plataforma lê fora do contêiner: chave do modelo,
+    # segredo da sessão e, quando houver, as do Asaas. Sem ele o contêiner
+    # sobe compondo pela régua e deslogando todo mundo a cada reinício
+    env_file:
+      - ../.env
     environment:
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /dados
-      # sem repasse, o contêiner não enxerga a chave e cai para a regra
-      # determinística sem dizer nada. /saude denuncia: "compositor": "regra"
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      # a sessão é um selo assinado. Sorteado a cada subida, ele invalida toda
-      # sessão no reinício — e com mais de uma réplica da api, cada uma
-      # recusaria o selo emitido pela outra
-      REPLICAI_SEGREDO: ${REPLICAI_SEGREDO:?defina REPLICAI_SEGREDO no .env}
-      ASAAS_API_KEY: ${ASAAS_API_KEY:-}
-      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:-}
     volumes:
       - dados:/dados
       - ../fontes:/app/fontes:ro
@@ -46,11 +45,11 @@ services:
     # classe de worker por sistema e nomeia as duas filas num lugar só. Dois
     # jeitos de subir o mesmo worker é um jeito a mais de eles divergirem.
     command: python worker.py
+    env_file:
+      - ../.env
     environment:
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /dados
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      REPLICAI_SEGREDO: ${REPLICAI_SEGREDO:?defina REPLICAI_SEGREDO no .env}
     volumes:
       - dados:/dados
       - ../fontes:/app/fontes:ro

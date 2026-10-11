@@ -94,10 +94,21 @@ class TestOCompose:
     def test_repassa_a_chave_do_modelo(self, compose):
         assert "ANTHROPIC_API_KEY" in compose
 
-    def test_exige_o_segredo_da_sessao(self, compose):
-        """Sorteado a cada subida, ele desloga todo mundo no reinício — e com
-        duas réplicas da api, cada uma recusa o selo da outra."""
-        assert re.search(r"REPLICAI_SEGREDO:\s*\$\{REPLICAI_SEGREDO:\?", compose)
+    def test_le_as_credenciais_do_env_do_projeto(self, compose):
+        """Um lugar só para a chave e o segredo: o mesmo `.env` que a
+        plataforma usa fora do contêiner. Cópia em dois lugares é cópia que
+        diverge."""
+        assert compose.count("- ../.env") == 2       # api e worker
+
+    def test_a_saude_denuncia_segredo_sorteado(self):
+        """A garantia saiu do compose e foi para a aplicação, onde também vale
+        no Mac: sorteado a cada subida, o selo desloga todo mundo no reinício,
+        e com duas réplicas cada uma recusa o selo da outra."""
+        import inspect
+
+        from api import main
+        fonte = inspect.getsource(main.saude)
+        assert "segredo_configurado" in fonte
 
     def test_guarda_o_login_do_generativo(self, compose):
         """Sem volume, cada subida pede login de novo e o fundo cai para
