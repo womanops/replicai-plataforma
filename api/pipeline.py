@@ -124,8 +124,13 @@ def conferir_peca(peca: dict, pasta: Path, arte: Path) -> list[str]:
 
 
 def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
-              pasta: Path, brief: str = "", leitor=None, prancheta: str = "") -> Resultado:
+              pasta: Path, brief: str = "", leitor=None, prancheta: str = "",
+              progresso=None) -> Resultado:
     """Compõe e renderiza cada formato pedido dentro de `pasta`.
+
+    `progresso(dict)` é chamado a cada passo. Sem ele o trabalho fica minutos
+    em "rodando" sem dizer nada, e quem está do outro lado não distingue um
+    render demorado de um travamento.
 
     `leitor(arte) -> Leitura` diz onde a arte já tem tinta e o que ela diz. Com
     ele, o fundo de cada formato é montado antes de qualquer texto: a arte é
@@ -150,7 +155,8 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
         # não há o que perguntar ao modelo sobre onde está a tinta nem o que
         # assar. Entrava achatado antes, e a peça inteira não animava.
         with custo.medir() as conta:
-            _psd_e_render(r, formatos, copia, pasta, brief, compositor, prancheta)
+            _psd_e_render(r, formatos, copia, pasta, brief, compositor, prancheta,
+                          _passo(progresso, len(formatos)))
         r.custo = conta.resumo()
         (pasta / "resultado.json").write_text(
             json.dumps(r.para_json(), ensure_ascii=False, indent=1), encoding="utf-8")
@@ -159,8 +165,10 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
     with custo.medir() as conta:
         # a leitura é uma chamada por trabalho, não por formato: é a arte que
         # está sendo lida, e ela é a mesma para todos
+        aviso = _passo(progresso, len(formatos))
+        aviso("lendo a arte", 0)
         leitura = leitor(copia) if leitor else None
-        _compor_e_render(r, formatos, compositor, copia, pasta, brief, leitura)
+        _compor_e_render(r, formatos, compositor, copia, pasta, brief, leitura, aviso)
     # o custo entra mesmo quando o job falha: a chamada que não deu peça
     # foi cobrada igual, e é ela que explica a fatura no fim do mês
     r.custo = conta.resumo()
@@ -190,7 +198,7 @@ def _fonte_do_trabalho(pasta: Path) -> list[dict]:
 
 
 def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
-                  compositor, prancheta: str) -> None:
+                  compositor, prancheta: str, avisar=None) -> None:
     """A esteira do PSD: abre em camadas e desdobra cada formato.
 
     O fundo vem assado pelo próprio Photoshop, as camadas soltas vêm com
@@ -198,6 +206,8 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
     mude pouco ou muito. O que o modelo ainda faz é o texto novo — data,
     local, CTA — no espaço que sobrou.
     """
+    avisar = avisar or (lambda *a, **k: None)
+    avisar("abrindo o PSD em camadas", 0)
     try:
         leitura = leitor_psd.extrair(copia, pasta, nome_prancheta=prancheta)
     except Exception as e:
@@ -211,11 +221,12 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
              "notas": leitura.ignoradas}
     base_els = leitor_psd.como_elementos(leitura, pasta)
 
-    for fid in formatos:
+    for i, fid in enumerate(formatos):
         f = formato_by_id(fid)
         if not f:
             r.falhas[fid] = f"formato desconhecido: {fid}"
             continue
+        avisar("preparando o fundo", i, fid)
         try:
             peca = leitor_psd.desdobrar(leitura, f, pasta)
         except Exception as e:
@@ -228,18 +239,21 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
             r.avisos.setdefault(fid, []).append(
                 f"{info['caiu_para']} — o fundo saiu em bloco de cor")
 
+        avisar("compondo", i, fid)
         for a in _texto_novo(peca, f, pasta, leitura, brief, compositor, info):
             r.avisos.setdefault(fid, []).append(a)
 
         arq = pasta / "pecas" / f"{fid}.json"
         arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
         destino = pasta / (peca.get("saida") or f"{fid}.png")
+        avisar("desenhando", i, fid)
         try:
             render_peca(arq, destino)
         except Exception as e:
             r.falhas[fid] = f"não renderizou: {e}"
             continue
         r.prontas[fid] = destino
+        avisar("pronta", i + 1, fid)
 
 
 def _texto_novo(peca: dict, formato: dict, pasta: Path, leitura, brief: str,
@@ -330,9 +344,21 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | Non
                    tinta=info["protect_box"]), avisos
 
 
+def _passo(progresso, total: int):
+    """Avisa quem está esperando. Sem callback, não faz nada — a esteira não
+    pode depender de ter alguém ouvindo."""
+    def avisar(o_que: str, feito: int = 0, formato: str = "") -> None:
+        if progresso:
+            progresso({"etapa": o_que, "feito": feito, "total": total,
+                       "formato": formato})
+    return avisar
+
+
 def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Path,
-                     brief: str, leitura=None) -> None:
-    for fid in formatos:
+                     brief: str, leitura=None, avisar=None) -> None:
+    avisar = avisar or (lambda *a, **k: None)
+    for i, fid in enumerate(formatos):
+        avisar("preparando o fundo", i, fid)
         try:
             terreno, avisos_do_fundo = _terreno(copia, fid, pasta, leitura)
         except Exception as e:
@@ -345,6 +371,7 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
             # caminho completo, não o nome: o compositor do modelo precisa
             # abrir o arquivo para mandar a arte junto. Com o nome curto ele
             # compunha às cegas, só pelo brief, e nada denunciava isso.
+            avisar("compondo", i, fid)
             peca = compositor.compor(copia, fid, brief, terreno)
         except ComposicaoImpossivel as e:
             r.falhas[fid] = str(e)
@@ -376,6 +403,7 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
         arq = pasta / "pecas" / f"{fid}.json"
         arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
         destino = pasta / (peca.get("saida") or f"{fid}.png")
+        avisar("desenhando", i, fid)
         try:
             render_peca(arq, destino)
         except Exception as e:
@@ -384,3 +412,4 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
             r.falhas[fid] = f"não renderizou: {e}"
             continue
         r.prontas[fid] = destino
+        avisar("pronta", i + 1, fid)
