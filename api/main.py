@@ -16,7 +16,7 @@ from pathlib import Path
 from fastapi import Cookie, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
-from api import ambiente, contas, trabalhos
+from api import ambiente, contas, trabalhos, uso
 from api.tarefas import processar, processar_video
 from api.fila import FILA_VIDEO, fila_do_ambiente
 from motor.replica import formato_by_id, load_formatos
@@ -107,6 +107,23 @@ def meus_trabalhos(c: contas.Conta = Depends(conta_atual)):
     return {"trabalhos": trabalhos.do_cliente(c.id)}
 
 
+@app.get("/eu/uso")
+def meu_uso(mes: str = "", c: contas.Conta = Depends(conta_atual)):
+    """Quanto a conta consumiu, e quanto o plano permite."""
+    lim = uso.limites(c.plano)
+    r = uso.resumo(c.id, mes)
+    return {**r, "plano": {"id": c.plano, **lim},
+            "resta": {"pecas": max(0, lim["pecas"] - r["pecas"]),
+                      "videos": max(0, lim["videos"] - r["videos"])},
+            "meses": uso.meses(c.id)}
+
+
+@app.get("/eu/uso/eventos")
+def meus_eventos(mes: str = "", c: contas.Conta = Depends(conta_atual)):
+    """A lista, não o número: quando a fatura subir, a resposta é esta."""
+    return {"mes": mes or uso._mes(), "eventos": uso.eventos(c.id, mes)}
+
+
 @app.get("/", response_class=HTMLResponse)
 def tela():
     pagina = WEB / "index.html"
@@ -178,6 +195,12 @@ async def criar(
     if desconhecidos:
         raise HTTPException(422, f"formato desconhecido: {', '.join(desconhecidos)}. "
                                  f"Veja /formatos")
+
+    pode, porque = uso.cabe(c.id, c.plano, pecas=len(pedidos))
+    if not pode:
+        # conferido antes de enfileirar: recusar um trabalho já renderizado é
+        # gastar o custo e não poder cobrar
+        raise HTTPException(402, porque)
 
     job = trabalhos.novo_id(titulo or Path(arte.filename or "peca").stem)
     pasta = trabalhos.pasta_do(c.id, job)
@@ -268,6 +291,9 @@ def animar(job: str, formatos: str = Form(""), preset: str = Form("editorial"),
                                  f"Use {', '.join(animacao.PRESETS)}")
     if not 1.0 <= segundos <= 20.0:
         raise HTTPException(422, "a duração vai de 1 a 20 segundos")
+    pode, porque = uso.cabe(c.id, c.plano, videos=len(pedidos))
+    if not pode:
+        raise HTTPException(402, porque)
 
     trabalhos.gravar(c.id, job, {"video": {"status": "na fila", "preset": preset,
                                      "formatos": pedidos}})

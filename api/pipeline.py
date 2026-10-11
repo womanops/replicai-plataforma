@@ -34,6 +34,7 @@ class Resultado:
     avisos: dict[str, list[str]] = field(default_factory=dict)
     descartados: dict[str, dict] = field(default_factory=dict)
     psd: dict = field(default_factory=dict)       # prancheta usada e camadas soltas
+    generativo: int = 0                           # chamadas ao fundo generativo
     custo: dict = field(default_factory=dict)
 
     @property
@@ -52,6 +53,7 @@ class Resultado:
             "avisos": self.avisos,
             "descartados": self.descartados,
             "psd": self.psd,
+            "generativo": self.generativo,
             "custo": self.custo,
         }
 
@@ -233,6 +235,7 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
             r.falhas[fid] = f"o fundo não saiu: {e}"
             continue
         info = peca.pop("_fundo", {})
+        r.generativo += int(info.get("generativo") or 0)
         for a in info.get("avisos") or []:
             r.avisos.setdefault(fid, []).append(a)
         if info.get("caiu_para"):
@@ -304,7 +307,7 @@ def _texto_novo(peca: dict, formato: dict, pasta: Path, leitura, brief: str,
     return avisos
 
 
-def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | None, list[str]]:
+def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | None, list[str], int]:
     """O fundo do formato e o espaço que ele deixou. Sem leitura, sem terreno:
     quem compõe volta ao comportamento antigo em vez de receber meia verdade.
 
@@ -314,7 +317,7 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | Non
     """
     f = formato_by_id(fid)
     if not f or leitura is None:
-        return None, []
+        return None, [], 0
     from PIL import Image
     with Image.open(copia) as im:
         tinta = leitura.em_pixels(*im.size)
@@ -341,7 +344,7 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | Non
                    livres=livres,
                    ja_escrito=list(leitura.frases),
                    fontes=_fonte_do_trabalho(pasta),
-                   tinta=info["protect_box"]), avisos
+                   tinta=info["protect_box"]), avisos, int(info.get("generativo") or 0)
 
 
 def _passo(progresso, total: int):
@@ -360,7 +363,8 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
     for i, fid in enumerate(formatos):
         avisar("preparando o fundo", i, fid)
         try:
-            terreno, avisos_do_fundo = _terreno(copia, fid, pasta, leitura)
+            terreno, avisos_do_fundo, gastou = _terreno(copia, fid, pasta, leitura)
+            r.generativo += gastou
         except Exception as e:
             # fundo que não sai é falha do formato, não do trabalho inteiro
             r.falhas[fid] = f"o fundo não saiu: {e}"

@@ -72,6 +72,9 @@ TENTATIVAS = 2
 def _melhor_continuacao(base, ex: dict, espera: int, plano: dict, w: int, h: int):
     """Continua o fundo, repetindo enquanto inventar estrutura.
 
+    Devolve também quantas tentativas foram gastas: cada uma é cobrada pelo
+    serviço, inclusive a que foi refeita.
+
     A conferência já sabia acusar o traço inventado, mas acusar não conserta.
     Como o generativo é estocástico, insistir resolve na maior parte das
     vezes; quando não resolve, fica a tentativa menos ruim e o aviso vai junto.
@@ -81,10 +84,12 @@ def _melhor_continuacao(base, ex: dict, espera: int, plano: dict, w: int, h: int
     from PIL import Image as Im
 
     melhor, melhor_nota, motivo = None, None, ""
+    gastas = 0
     for _ in range(TENTATIVAS):
+        gastas += 1
         tela, motivo = _continuar(base, ex, espera)
         if tela is None:
-            return None, motivo
+            return None, motivo, gastas
         prova = Path(tempfile.mkstemp(suffix=".png", prefix="replicai-prova-")[1])
         try:
             pronta = tela.resize((w, h), Im.Resampling.LANCZOS) if tela.size != (w, h) else tela
@@ -94,10 +99,10 @@ def _melhor_continuacao(base, ex: dict, espera: int, plano: dict, w: int, h: int
         finally:
             prova.unlink(missing_ok=True)
         if nota == 0:
-            return tela, ""
+            return tela, "", gastas
         if melhor_nota is None or nota < melhor_nota:
             melhor, melhor_nota = tela, nota
-    return melhor, motivo
+    return melhor, motivo, gastas
 
 
 def _continuar(base, ex: dict, espera: int):
@@ -184,10 +189,10 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
     crop, ex = plano["crop"], plano["expand"]
     base = img.crop(tuple(crop))
 
-    caiu_para = ""
+    caiu_para, generativo = "", 0
     if modo == "outpaint":
         espera = max(30, int(os.environ.get("REPLICAI_FUNDO_ESPERA", ESPERA_PADRAO)))
-        tela, motivo = _melhor_continuacao(base, ex, espera, plano, w, h)
+        tela, motivo, generativo = _melhor_continuacao(base, ex, espera, plano, w, h)
         if tela is None:
             # o generativo é o único que continua o desenho do fundo, mas não
             # pode prender a entrega. Passou do prazo, a peça sai com o fundo
@@ -230,7 +235,9 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
     # regra em si não é sobre quem desenhou, é sobre o que apareceu
     avisos = inventou_estrutura(destino, plano["base_box"]) if any(ex.values()) else []
     return {"src": destino.name, "caminho": destino, "modo": modo, "caiu_para": caiu_para,
-            "avisos": avisos,
+            # cada tentativa do generativo é cobrada, inclusive a que foi
+            # refeita por ter inventado traço: quem paga é quem roda
+            "generativo": generativo, "avisos": avisos,
             # crop, expand e escala descrevem a transformação inteira: é com
             # eles que as camadas do PSD acompanham o fundo no reenquadramento
             "plano": {"crop": crop, "expand": ex, "escala": plano["escala"]},

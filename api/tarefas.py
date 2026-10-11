@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from api import trabalhos
+from api import trabalhos, uso
 from api.compositor import CompositorEmCadeia, CompositorModelo, CompositorSimples
 from api.pipeline import desdobrar
 
@@ -47,6 +47,29 @@ def leitor():
     return ler
 
 
+def _contar(conta: str, job: str, r) -> dict:
+    """Anota o que foi entregue, para a fatura.
+
+    Depois de pronto, e não antes: cobrar por peça que falhou é cobrar por
+    nada. O que não conseguir ser gravado vira aviso na entrega, porque
+    faturamento que some calado é pior do que entrega que falha alto.
+    """
+    perdidos = []
+    for fid in sorted(r.prontas):
+        e = uso.registrar(conta, uso.PECA, job=job, formato=fid)
+        if not e.get("gravado"):
+            perdidos.append(fid)
+    if r.custo.get("dolares"):
+        uso.registrar(conta, "modelo", job=job, dolares=r.custo["dolares"],
+                      chamadas=r.custo.get("chamadas", 0))
+    if getattr(r, "generativo", 0):
+        uso.registrar(conta, uso.FUNDO, job=job, quantas=r.generativo)
+    if not perdidos:
+        return {}
+    return {"_uso": [f"o consumo de {', '.join(perdidos)} não foi anotado: "
+                     f"confira antes de faturar"]}
+
+
 def processar(conta: str, job: str, arte: str, formatos: list[str], headline: str,
               cta: str, brief: str, prancheta: str = "") -> None:
     """O que o worker executa. Fora da API de propósito: é o pedaço pesado."""
@@ -64,7 +87,7 @@ def processar(conta: str, job: str, arte: str, formatos: list[str], headline: st
         trabalhos.gravar(conta, job, {"status": r.status, "progresso": None,
                                "prontas": sorted(r.prontas),
                                "falhas": r.falhas,
-                               "avisos": r.avisos,
+                               "avisos": {**r.avisos, **_contar(conta, job, r)},
                                "descartados": r.descartados,
                                "psd": r.psd,
                                "custo": r.custo})
@@ -86,6 +109,8 @@ def processar_video(conta: str, job: str, formatos: list[str], preset: str,
         prontos, falhas = animacao.animar(trabalhos.pasta_do(conta, job), formatos,
                                           preset, segundos)
         estado = "pronto" if prontos and not falhas else ("parcial" if prontos else "erro")
+        for fid in sorted(prontos):
+            uso.registrar(conta, uso.VIDEO, job=job, formato=fid, preset=preset)
         trabalhos.gravar(conta, job, {"video": {"status": estado, "preset": preset,
                                                 "prontos": sorted(prontos),
                                                 "falhas": falhas}})

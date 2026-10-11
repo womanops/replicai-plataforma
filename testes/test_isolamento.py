@@ -175,3 +175,54 @@ class TestSessaoDaTela:
         c.post("/entrar", data={"email": "dono@exemplo.com", "senha": "senha-bem-comprida"})
         c.post("/sair")
         assert c.get("/eu").status_code == 401
+
+
+class TestPlanoNaPorta:
+    """Barrar antes de enfileirar: recusar um trabalho já renderizado é gastar
+    o custo e não poder cobrar."""
+
+    def test_estourar_o_plano_recusa_o_trabalho(self, servidor):
+        from api import uso
+        c = cliente_de(servidor, "Dono", "dono@exemplo.com")
+        for _ in range(uso.limites("teste")["pecas"]):
+            uso.registrar(c.conta.id, uso.PECA)
+        r = c.post("/jobs", files={"arte": ("a.png", arte(), "image/png")},
+                   data={"formatos": "ig-feed-1x1", "headline": "Oi"})
+        assert r.status_code == 402
+        assert "peças por mês" in r.json()["detail"]
+
+    def test_o_trabalho_recusado_nao_entra_na_fila(self, servidor):
+        from api import uso
+        main, _ = servidor
+        c = cliente_de(servidor, "Dono", "dono@exemplo.com")
+        for _ in range(uso.limites("teste")["pecas"]):
+            uso.registrar(c.conta.id, uso.PECA)
+        c.post("/jobs", files={"arte": ("a.png", arte(), "image/png")},
+               data={"formatos": "ig-feed-1x1", "headline": "Oi"})
+        assert main.FILA.pedidos == []
+
+    def test_o_uso_de_um_nao_conta_para_o_outro(self, servidor):
+        from api import uso
+        um = cliente_de(servidor, "Um", "um@exemplo.com")
+        dois = cliente_de(servidor, "Dois", "dois@exemplo.com")
+        for _ in range(uso.limites("teste")["pecas"]):
+            uso.registrar(um.conta.id, uso.PECA)
+        assert um.get("/eu/uso").json()["resta"]["pecas"] == 0
+        assert dois.get("/eu/uso").json()["resta"]["pecas"] == uso.limites("teste")["pecas"]
+        r = dois.post("/jobs", files={"arte": ("a.png", arte(), "image/png")},
+                      data={"formatos": "ig-feed-1x1", "headline": "Oi"})
+        assert r.status_code == 202
+
+    def test_o_uso_so_sai_para_o_dono(self, servidor):
+        from api import uso
+        um = cliente_de(servidor, "Um", "um@exemplo.com")
+        uso.registrar(um.conta.id, uso.PECA, job="segredo-do-um")
+        dois = cliente_de(servidor, "Dois", "dois@exemplo.com")
+        assert dois.get("/eu/uso/eventos").json()["eventos"] == []
+
+    def test_o_relatorio_traz_a_lista_e_nao_so_o_numero(self, servidor):
+        from api import uso
+        c = cliente_de(servidor, "Um", "um@exemplo.com")
+        uso.registrar(c.conta.id, uso.PECA, job="j1", formato="ig-stories")
+        eventos = c.get("/eu/uso/eventos").json()["eventos"]
+        assert eventos[0]["formato"] == "ig-stories" and eventos[0]["job"] == "j1"
