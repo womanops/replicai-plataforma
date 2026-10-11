@@ -145,3 +145,32 @@ class TestOConteudoCentraEAFiguraFicaNoChao:
         assert saida[0]["box"]["y"] == 10          # conteúdo não se move
         assert saida[1]["box"]["y"] == 300 - 60    # figura desce até o chão
         assert saida[1]["box"]["x"] == 20          # e o eixo livre fica
+
+
+class TestQuemEhAAssinatura:
+    """O vídeo fecha levando a assinatura ao centro. Chamar toda imagem de
+    `marca` fez o mascote da Consigaz ser eleito a assinatura: ele voava para
+    o meio da tela, cortado pela borda, enquanto a logo de verdade ficava
+    assada no fundo e nunca aparecia no fecho."""
+
+    def _camada(self, nome, tipo="imagem"):
+        from api.psd import Camada
+        return Camada(nome=nome, tipo=tipo, src="x.png",
+                      box={"x": 0, "y": 0, "w": 10, "h": 10})
+
+    def test_imagem_com_logo_no_nome_e_marca(self):
+        from api.psd import _papel_de
+        assert _papel_de(self._camada("Consigaz-logo_branco-02"), None) == "marca"
+
+    def test_mascote_nao_e_marca(self):
+        from api.psd import _papel_de
+        assert _papel_de(self._camada("Consigaz-Nino-Poses-Pose-5"), None) == "figura"
+
+    def test_o_motion_trata_figura_como_objeto(self):
+        """`figura` não pode cair no vocabulário de marca do movimento."""
+        import re
+        from pathlib import Path
+        fonte = Path("video/src/peca/movimento.ts").read_text(encoding="utf-8")
+        regra = re.search(r"if \(/(.+?)/\.test\(n\)\) return 'marca'", fonte)
+        assert regra, "não achei a regra de marca no movimento"
+        assert not re.search(regra.group(1), "figura")

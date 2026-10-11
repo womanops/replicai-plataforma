@@ -18,6 +18,8 @@ Duas coisas que o arquivo real ensinou, e que um leitor ingênuo erra:
 """
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -210,6 +212,25 @@ def separaveis(raiz, prancheta=None) -> list:
                 continue
             if figura not in soltas:
                 soltas.append(figura)
+        # a assinatura também sai do fundo: é ela que fecha o vídeo no centro,
+        # e assada no fundo nunca chegava lá. A logo bordada na manga do
+        # personagem fica onde está — ela é arte dele, não assinatura da peça
+        dentro = [c.bbox for c, _ in _figuras_plantadas(raiz, prancheta)]
+        for _, c in _plano(raiz):
+            if c in soltas or not getattr(c, "visible", True):
+                continue
+            if getattr(c, "kind", "") in AJUSTES or not MARCA.search(c.name or ""):
+                continue
+            try:
+                bb = c.bbox
+            except Exception:
+                continue
+            if not bb or bb == (0, 0, 0, 0):
+                continue
+            if any(bb[0] >= f[0] and bb[1] >= f[1] and bb[2] <= f[2] and bb[3] <= f[3]
+                   for f in dentro):
+                continue
+            soltas.append(c)
     # na ordem da pilha do arquivo: é ela que diz quem cobre quem, e o braço
     # do mascote passa por cima do CTA porque no PSD ele está acima do texto
     pilha = {id(c): i for i, (_, c) in enumerate(_plano(raiz))}
@@ -378,12 +399,20 @@ LETRAS_DEMAIS = 14
 # a ordem em que o lockup se monta. Veio de uma revisão: marca, depois o nome
 # com o ano, depois a assinatura — é a ordem em que se lê, não a ordem em que
 # as camadas estão empilhadas no arquivo.
-ORDEM = {"marca": 0, "headline": 1, "selo": 1, "apoio": 2, "cta": 3}
+ORDEM = {"figura": 0, "marca": 0, "headline": 1, "selo": 1, "apoio": 2, "cta": 3}
+
+
+# o que, pelo nome da camada, é assinatura de marca
+MARCA = re.compile(r"logo|marca|assinatura|lockup|wordmark", re.I)
 
 
 def _papel_de(c: Camada, maior: Camada | None) -> str:
     if c.tipo != "texto":
-        return "marca"
+        # nem toda imagem é marca. Chamar o mascote de `marca` fez o vídeo
+        # tratá-lo como assinatura da peça: ele voava para o centro da tela,
+        # cortado pela borda, enquanto a logo de verdade ficava assada no
+        # fundo e nunca aparecia no fecho
+        return "marca" if MARCA.search(c.nome or "") else "figura"
     if c is maior:
         return "headline"
     if c.texto.strip().isdigit():

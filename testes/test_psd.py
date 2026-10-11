@@ -107,11 +107,24 @@ class TestExtrair:
     comportamento certo, e o que estes PSD de teste exercitam — pytoshop não
     escreve camada de texto, então a separação é pedida pelo nome."""
 
-    def test_sem_texto_tudo_vai_para_o_fundo(self, arquivo, tmp_path):
+    def test_sem_texto_so_a_assinatura_sai_do_fundo(self, arquivo, tmp_path):
+        """A regra era "sem texto, nada se solta". Mudou por causa do vídeo: a
+        assinatura é o que fecha a peça no centro, e assada no fundo ela nunca
+        chegava lá — quem voava para o meio era o mascote, cortado pela borda.
+
+        O resto continua assado: fidelidade contra o composite do Photoshop."""
         L = extrair(arquivo, tmp_path / "camadas")
-        assert L.camadas == []
+        assert [c.nome for c in L.camadas] == ["marca"]
         assert (tmp_path / "camadas" / L.fundo).exists()
         assert any("assadas no fundo" in i for i in L.ignoradas)
+
+    def test_imagem_que_nao_e_assinatura_continua_assada(self, tmp_path):
+        arte = psd_de(tmp_path, [
+            ("fundo", (10, 20, 80, 255), (0, 0, 400, 300)),
+            ("mascote", (255, 0, 0, 255), (20, 30, 120, 40)),
+        ])
+        L = extrair(arte, tmp_path / "camadas")
+        assert L.camadas == []
 
     def test_o_fundo_sai_do_tamanho_da_prancheta(self, arquivo, tmp_path):
         L = extrair(arquivo, tmp_path / "camadas")
@@ -129,7 +142,7 @@ class TestExtrair:
         """O fundo é a prancheta com as soltas desligadas: se a marca
         aparecesse nos dois, sairia dobrada na peça."""
         import numpy as np
-        com = extrair(arquivo, tmp_path / "a")
+        com = extrair(arquivo, tmp_path / "a", nomes_separados=[])
         sem = extrair(arquivo, tmp_path / "b", nomes_separados=["marca"])
         a = np.asarray(Image.open(tmp_path / "a" / com.fundo).convert("RGB"), dtype=float)
         b = np.asarray(Image.open(tmp_path / "b" / sem.fundo).convert("RGB"), dtype=float)
