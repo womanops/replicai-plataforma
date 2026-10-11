@@ -264,3 +264,34 @@ class TestComOQueDesenha:
         f.write_text("isto não é json")
         monkeypatch.setattr(main, "VERSOES", f)
         assert cliente.get("/saude").status_code == 200
+
+
+class TestPranchetasNaResposta:
+    def test_a_lista_traz_onde_cada_prancheta_fica(self, cliente, monkeypatch):
+        """A tela recorta a miniatura do PSD por prancheta: sem x e y, a
+        escolha vira adivinhar entre "Prancheta 1" e "Prancheta 7"."""
+        from api import main, psd
+        monkeypatch.setattr(psd, "pranchetas", lambda a: [
+            psd.Prancheta("Prancheta 1", 0, 0, 1920, 1080),
+            psd.Prancheta("Prancheta 4", 4040, 0, 1920, 1080)])
+        r = cliente.post("/jobs", files={"arte": ("a.psd", b"8BPS" + b"\0" * 60,
+                                                  "application/octet-stream")},
+                         data={"formatos": "ig-feed-1x1", "headline": "Oi"})
+        assert r.status_code == 200
+        lista = r.json()["pranchetas"]
+        assert lista[1] == {"nome": "Prancheta 4", "x": 4040, "y": 0,
+                            "w": 1920, "h": 1080}
+
+
+class TestRespostaDaEscolha:
+    def test_esperar_escolha_nao_e_aceito(self, cliente, monkeypatch):
+        """202 diz "entrou na fila". Esperando escolha, nada entrou."""
+        from api import psd
+        monkeypatch.setattr(psd, "pranchetas", lambda a: [
+            psd.Prancheta("Prancheta 1", 0, 0, 1920, 1080),
+            psd.Prancheta("Prancheta 4", 4040, 0, 1920, 1080)])
+        r = cliente.post("/jobs", files={"arte": ("a.psd", b"8BPS" + b"\0" * 60,
+                                                  "application/octet-stream")},
+                         data={"formatos": "ig-feed-1x1", "headline": "Oi"})
+        assert r.status_code == 200
+        assert cliente.fila.pedidos == []

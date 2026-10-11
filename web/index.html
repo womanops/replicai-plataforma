@@ -42,7 +42,10 @@ body.recebendo::after{content:'Solte em qualquer lugar';position:fixed;inset:10p
 label.campo{display:block;margin:18px 0 0}
 label.campo span{display:block;font:500 10.5px var(--mono);letter-spacing:.12em;
   text-transform:uppercase;color:var(--mut);margin-bottom:6px}
-input[type=text],textarea{width:100%;background:var(--painel);color:var(--fg);
+/* todos os campos de digitar, e não só os de texto: e-mail e senha ficavam
+   do tamanho padrão do navegador ao lado de um campo de largura inteira */
+input[type=text],input[type=email],input[type=password],textarea{
+  width:100%;background:var(--painel);color:var(--fg);
   border:1px solid var(--linha);border-radius:9px;padding:10px 12px;font:400 14px var(--corpo)}
 input:focus,textarea:focus{outline:2px solid var(--rosa);outline-offset:1px}
 textarea{resize:vertical;min-height:70px}
@@ -93,10 +96,100 @@ button.secund{background:transparent;color:var(--fg);border:1px solid var(--linh
   padding:11px 16px;border-radius:9px;font-size:13.5px;max-width:560px;box-shadow:0 14px 40px rgba(0,0,0,.6)}
 .aviso.ok{border-left-color:var(--sinal)}
 .aviso.hidden{display:none}
+
+/* ---------- entrada ---------- */
+#porta{position:fixed;inset:0;z-index:200;display:grid;place-items:center;background:var(--bg)}
+#porta.hidden{display:none}
+.cartao{width:min(380px,92vw);background:var(--painel);border:1px solid var(--linha);
+  border-radius:16px;padding:28px}
+.cartao h1{font:400 34px/1 var(--disp);letter-spacing:.06em;margin:0 0 4px}
+.cartao p.sub{margin:0 0 20px;color:var(--mut);font-size:13px}
+.abas{display:flex;gap:4px;margin-bottom:18px}
+.abas button{flex:1;background:none;border:0;border-bottom:2px solid var(--linha);
+  color:var(--mut);padding:8px 0;font:500 12px var(--mono);letter-spacing:.1em;
+  text-transform:uppercase;cursor:pointer}
+.abas button.ativa{color:var(--fg);border-color:var(--rosa)}
+.cartao .campo{display:block;margin-bottom:12px}
+/* `hidden` tem que vencer o `display:block` da classe, senão o campo Nome
+   aparece na aba de entrar */
+[hidden]{display:none !important}
+.cartao button.acao{width:100%;margin-top:6px}
+
+/* ---------- escolher a prancheta ---------- */
+#pranchetas{position:fixed;inset:0;z-index:150;background:rgba(0,0,0,.72);
+  display:grid;place-items:center;padding:24px}
+#pranchetas.hidden{display:none}
+.folha{background:var(--painel);border:1px solid var(--linha);border-radius:16px;
+  padding:24px;max-width:min(980px,94vw);max-height:88vh;overflow:auto}
+.folha h2{font:400 24px/1 var(--disp);letter-spacing:.04em;margin:0 0 4px}
+.folha p{margin:0 0 18px;color:var(--mut);font-size:13px}
+.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+.pr{background:var(--painel2);border:1px solid var(--linha);border-radius:12px;padding:10px;
+  cursor:pointer;text-align:left}
+.pr:hover{border-color:var(--rosa)}
+.pr canvas{width:100%;border-radius:7px;display:block;background:#000}
+.pr b{display:block;font:500 12px var(--mono);margin-top:9px;letter-spacing:.04em}
+.pr span{color:var(--mut);font-size:11.5px}
+
+/* ---------- animar ---------- */
+#animar{position:fixed;inset:0;z-index:150;background:rgba(0,0,0,.72);
+  display:grid;place-items:center;padding:24px}
+#animar.hidden{display:none}
+.presets{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 18px}
+.presets button{background:var(--painel2);border:1px solid var(--linha);border-radius:999px;
+  color:var(--mut);padding:7px 15px;font:500 11.5px var(--mono);cursor:pointer;
+  letter-spacing:.06em}
+.presets button.ativa{border-color:var(--rosa);color:var(--fg)}
+.f video{width:100%;border-radius:7px;display:block}
+
+/* ---------- plano ---------- */
+header .plano{color:var(--mut);font:500 11px var(--mono);letter-spacing:.1em;
+  text-transform:uppercase}
+header .plano.apertado{color:var(--err)}
+header .sair{background:none;border:0;color:var(--mut);cursor:pointer;font:500 11px var(--mono);
+  letter-spacing:.1em;text-transform:uppercase;padding:0}
+header .sair:hover{color:var(--fg)}
 </style>
 
+<div id="porta">
+  <form class="cartao" id="formPorta">
+    <h1>ReplicAI</h1>
+    <p class="sub">uma peça aprovada, todos os formatos</p>
+    <div class="abas">
+      <button type="button" class="ativa" data-modo="entrar">Entrar</button>
+      <button type="button" data-modo="criar">Criar conta</button>
+    </div>
+    <label class="campo nome" hidden><span>Nome</span>
+      <input type="text" id="pNome" autocomplete="name"></label>
+    <label class="campo"><span>E-mail</span>
+      <input type="email" id="pEmail" autocomplete="email" required></label>
+    <label class="campo"><span>Senha</span>
+      <input type="password" id="pSenha" autocomplete="current-password" required></label>
+    <button class="acao" id="btnPorta">Entrar</button>
+  </form>
+</div>
+
+<div id="pranchetas" class="hidden">
+  <div class="folha">
+    <h2>Qual arte deste arquivo</h2>
+    <p id="prTexto">O PSD tem mais de uma prancheta. Escolha a que vai ser adaptada.</p>
+    <div class="grade" id="prGrade"></div>
+  </div>
+</div>
+
+<div id="animar" class="hidden">
+  <div class="folha">
+    <h2>Animar</h2>
+    <p>O movimento entra sobre a peça pronta: o layout não muda.</p>
+    <div class="presets" id="presets"></div>
+    <button class="acao" id="btnAnimarOk">Animar as peças prontas</button>
+  </div>
+</div>
+
 <header><b>ReplicAI</b><span>uma peça aprovada, todos os formatos</span>
-  <span id="quemCompoe" class="quem"></span></header>
+  <span id="quemCompoe" class="quem"></span>
+  <span class="plano" id="plano"></span>
+  <button class="sair" id="btnSair" hidden>sair</button></header>
 
 <main>
   <section>
@@ -128,6 +221,7 @@ button.secund{background:transparent;color:var(--fg);border:1px solid var(--linh
 
 <footer>
   <div class="estado"><b id="conta">Comece pela peça</b><span id="detalhe">Arraste a arte aprovada em qualquer lugar da tela.</span></div>
+  <button class="secund" id="btnAnimar" style="display:none">Animar</button>
   <button class="secund" id="btnZip" style="display:none">Baixar tudo</button>
   <button class="acao" id="btnIr" disabled>Replicar</button>
 </footer>
@@ -282,6 +376,8 @@ $('#btnIr').onclick = async () => {
   if (!r.job){ aviso(r.detail || 'O envio falhou.'); $('#btnIr').disabled=false; pintarRodape(); return; }
   job = r.job;
   $('#btnIr').style.display='none';
+  // PSD com várias pranchetas não entrou na fila: está parado esperando escolha
+  if (r.status === 'escolha a prancheta'){ escolherPrancheta(r.pranchetas); return; }
   acompanhar();
 };
 
@@ -309,18 +405,46 @@ async function acompanhar(){
         b.title = falhas[id];
       } else if (!prontas.has(id)) b.classList.add('pulsa');
     }
+    // o vídeo de cada formato, quando houver
+    for (const fid of ((d.video||{}).prontos || [])){
+      const b = document.querySelector(`.f[data-id="${fid}"]`); if (!b) continue;
+      const cx = b.querySelector('.cx');
+      if (cx.querySelector('video')) continue;
+      const arq = (d.entregas||[]).find(e => e.nome.startsWith('video/') && e.nome.includes(fid));
+      if (arq) cx.innerHTML = `<video src="/jobs/${job}/arquivos/${encodeURIComponent(arq.nome)}"`
+        + ` autoplay muted loop playsinline></video>`;
+    }
+
     const feitas = prontas.size, erradas = Object.keys(falhas).length, total = escolhidos.size;
-    $('#conta').textContent = d.status === 'rodando' || d.status === 'na fila' ? 'Replicando'
+    const andando = d.status === 'rodando' || d.status === 'na fila';
+    const v = d.video || {};
+    $('#conta').textContent = v.status === 'rodando' || v.status === 'na fila' ? 'Animando'
+      : andando ? 'Replicando'
       : d.status === 'pronto' ? 'Pronto' : d.status === 'parcial' ? 'Pronto com ressalvas' : 'Deu erro';
-    $('#detalhe').textContent = d.status === 'rodando' || d.status === 'na fila'
-      ? `${feitas} de ${total}`
+
+    // o passo em que está, e não só quantas saíram: render demorado e
+    // travamento são iguais de fora, e a diferença é esta linha
+    const p = d.progresso;
+    $('#detalhe').textContent =
+        v.status === 'rodando' ? `${(v.prontos||[]).length} de ${(v.formatos||[]).length} vídeos`
+      : v.status === 'na fila' ? 'na fila do vídeo'
+      : andando && p && p.etapa ? `${p.etapa}${p.formato ? ' · ' + p.formato : ''} · ${p.feito} de ${p.total}`
+      : andando ? `${feitas} de ${total}`
       : erradas ? `${feitas} entregue${feitas>1?'s':''}, ${erradas} não saiu. Passe o mouse para ver por quê.`
       : `${feitas} peça${feitas>1?'s':''} entregue${feitas>1?'s':''}.`;
-    if (['pronto','parcial','erro'].includes(d.status)){
+
+    const parado = ['pronto','parcial','erro'].includes(d.status)
+                && !['rodando','na fila'].includes(v.status || '');
+    if (parado){
       clearInterval(pulso);
-      if (feitas){ const z=$('#btnZip'); z.style.display=''; z.onclick=()=>location.href=`/jobs/${job}/zip`; }
+      if (feitas){
+        const z=$('#btnZip'); z.style.display=''; z.onclick=()=>location.href=`/jobs/${job}/zip`;
+        const a=$('#btnAnimar'); a.style.display=''; a.onclick=abrirAnimar;
+      }
       document.querySelectorAll('.pulsa').forEach(b => b.classList.remove('pulsa'));
       if (d.erro) aviso(d.erro);
+      if (v.status === 'erro') aviso(v.erro || 'O vídeo não saiu.');
+      verPlano();
     }
   };
   await ver();
@@ -340,5 +464,128 @@ async function quemCompoe(){
   } catch(e){}
 }
 
-carregarFormatos(); pintarRodape(); quemCompoe();
+/* ---------- entrada ---------- */
+let modo = 'entrar';
+for (const b of document.querySelectorAll('.abas button')) b.onclick = () => {
+  modo = b.dataset.modo;
+  document.querySelectorAll('.abas button').forEach(x => x.classList.toggle('ativa', x===b));
+  $('#formPorta .nome').hidden = modo === 'entrar';
+  $('#btnPorta').textContent = modo === 'entrar' ? 'Entrar' : 'Criar conta';
+  $('#pSenha').autocomplete = modo === 'entrar' ? 'current-password' : 'new-password';
+};
+
+$('#formPorta').onsubmit = async e => {
+  e.preventDefault();
+  const fd = new FormData();
+  fd.set('email', $('#pEmail').value.trim());
+  fd.set('senha', $('#pSenha').value);
+  if (modo === 'criar') fd.set('nome', $('#pNome').value.trim());
+  $('#btnPorta').disabled = true;
+  try {
+    if (modo === 'criar'){
+      const r = await fetch('/contas', { method:'POST', body:fd });
+      if (!r.ok){ aviso((await r.json()).detail || 'Não deu para criar a conta.');
+                  $('#btnPorta').disabled=false; return; }
+    }
+    const r = await fetch('/entrar', { method:'POST', body:fd });
+    if (!r.ok){ aviso('E-mail ou senha não conferem.'); $('#btnPorta').disabled=false; return; }
+    $('#pSenha').value = '';
+    abrir(await r.json());
+  } catch(e){ aviso('Não consegui falar com o servidor.'); }
+  $('#btnPorta').disabled = false;
+};
+
+$('#btnSair').onclick = async () => { await fetch('/sair', { method:'POST' }); location.reload(); };
+
+function abrir(conta){
+  $('#porta').classList.add('hidden');
+  $('#btnSair').hidden = false;
+  carregarFormatos(); pintarRodape(); quemCompoe(); verPlano();
+}
+
+async function verPlano(){
+  try {
+    const u = await (await fetch('/eu/uso')).json();
+    const el = $('#plano');
+    el.textContent = `${u.plano.nome} · ${u.resta.pecas} peças, ${u.resta.videos} vídeos`;
+    el.classList.toggle('apertado', u.resta.pecas <= 0);
+    el.title = `${u.pecas} de ${u.plano.pecas} peças e ${u.videos} de ${u.plano.videos} `
+             + `vídeos usados em ${u.mes}.`;
+  } catch(e){}
+}
+
+/* ---------- escolher a prancheta ----------
+   A miniatura do PSD já foi lida no navegador; recortá-la por prancheta deixa
+   a escolha visual. Escolher entre "Prancheta 1" e "Prancheta 7" pelo nome é
+   adivinhar — e no arquivo real as seis têm a mesma proporção. */
+function escolherPrancheta(lista){
+  const grade = $('#prGrade'); grade.innerHTML = '';
+  const capa = $('#zona img');
+  for (const pr of lista){
+    const cartao = document.createElement('button');
+    cartao.className = 'pr';
+    cartao.innerHTML = `<canvas width="380" height="${Math.round(380*pr.h/pr.w)}"></canvas>`
+      + `<b>${pr.nome || 'a arte'}</b><span>${pr.w}×${pr.h}</span>`;
+    const cv = cartao.querySelector('canvas');
+    if (capa && capa.naturalWidth && peca.w){
+      const k = capa.naturalWidth / peca.w;       // a miniatura é menor que o PSD
+      cv.getContext('2d').drawImage(capa, pr.x*k, pr.y*k, pr.w*k, pr.h*k,
+                                    0, 0, cv.width, cv.height);
+    }
+    cartao.onclick = () => mandarPrancheta(pr.nome);
+    grade.appendChild(cartao);
+  }
+  $('#pranchetas').classList.remove('hidden');
+}
+
+async function mandarPrancheta(nome){
+  $('#pranchetas').classList.add('hidden');
+  $('#conta').textContent = 'Enviando'; $('#detalhe').textContent = `Usando ${nome}.`;
+  const fd = new FormData(); fd.set('nome', nome);
+  try {
+    const r = await fetch(`/jobs/${job}/prancheta`, { method:'POST', body:fd });
+    if (!r.ok){ aviso((await r.json()).detail || 'Não deu para escolher.'); return; }
+  } catch(e){ aviso('Não consegui falar com o servidor.'); return; }
+  acompanhar();
+}
+
+/* ---------- animar ---------- */
+let presetEscolhido = 'editorial';
+async function abrirAnimar(){
+  const p = await (await fetch('/presets')).json();
+  if (!p.disponivel){ aviso('A animação não está instalada neste servidor.'); return; }
+  const caixa = $('#presets'); caixa.innerHTML = '';
+  presetEscolhido = p.padrao;
+  for (const nome of p.presets){
+    const b = document.createElement('button');
+    b.textContent = nome;
+    b.classList.toggle('ativa', nome === presetEscolhido);
+    b.onclick = () => { presetEscolhido = nome;
+      caixa.querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x===b)); };
+    caixa.appendChild(b);
+  }
+  $('#animar').classList.remove('hidden');
+}
+$('#animar').onclick = e => { if (e.target.id === 'animar') $('#animar').classList.add('hidden'); };
+$('#pranchetas').onclick = e => { if (e.target.id === 'pranchetas') aviso('Escolha uma prancheta para seguir.'); };
+
+$('#btnAnimarOk').onclick = async () => {
+  $('#animar').classList.add('hidden');
+  const fd = new FormData(); fd.set('preset', presetEscolhido);
+  try {
+    const r = await fetch(`/jobs/${job}/animar`, { method:'POST', body:fd });
+    if (!r.ok){ aviso((await r.json()).detail || 'Não deu para animar.'); return; }
+  } catch(e){ aviso('Não consegui falar com o servidor.'); return; }
+  $('#conta').textContent = 'Animando';
+  $('#detalhe').textContent = 'O vídeo leva mais tempo que a peça parada.';
+  acompanhar();
+};
+
+/* ---------- começa fechado ---------- */
+(async () => {
+  try {
+    const r = await fetch('/eu');
+    if (r.ok) abrir(await r.json());
+  } catch(e){}
+})();
 </script>

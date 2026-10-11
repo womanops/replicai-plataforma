@@ -222,11 +222,17 @@ async def criar(
         except Exception as e:
             raise HTTPException(422, f"não consegui abrir o PSD: {e}")
         if len(achadas) > 1 and not prancheta:
-            lista = [{"nome": p.nome, "w": p.w, "h": p.h} for p in achadas]
+            # x e y vão junto: a tela recorta a miniatura do PSD por prancheta
+            # e a pessoa escolhe vendo, em vez de adivinhar por "Prancheta 4"
+            lista = [{"nome": p.nome, "x": p.x, "y": p.y, "w": p.w, "h": p.h}
+                     for p in achadas]
             trabalhos.gravar(c.id, job, {**comum, "status": "escolha a prancheta",
                                    "pranchetas": lista})
-            return {"job": job, "status": "escolha a prancheta", "pranchetas": lista,
-                    "como": f"POST /jobs/{job}/prancheta com o nome"}
+            # 200, e não o 202 da rota: nada entrou na fila, o trabalho está
+            # parado esperando uma escolha
+            return JSONResponse(status_code=200, content={
+                "job": job, "status": "escolha a prancheta", "pranchetas": lista,
+                "como": f"POST /jobs/{job}/prancheta com o nome"})
         if prancheta and prancheta not in {p.nome for p in achadas}:
             raise HTTPException(422, f"não existe prancheta `{prancheta}` nesse arquivo. "
                                      f"Tem: {', '.join(p.nome for p in achadas)}")
