@@ -47,21 +47,21 @@ def leitor():
     return ler
 
 
-def processar(job: str, arte: str, formatos: list[str], headline: str,
+def processar(conta: str, job: str, arte: str, formatos: list[str], headline: str,
               cta: str, brief: str, prancheta: str = "") -> None:
     """O que o worker executa. Fora da API de propósito: é o pedaço pesado."""
-    trabalhos.gravar(job, {"status": "rodando"})
+    trabalhos.gravar(conta, job, {"status": "rodando"})
 
     def contar(p: dict) -> None:
         # grava a cada passo: é o que distingue, de fora, um render demorado
         # de um travamento
-        trabalhos.gravar(job, {"progresso": p})
+        trabalhos.gravar(conta, job, {"progresso": p})
 
     try:
         r = desdobrar(Path(arte), formatos, compositor(arte, headline, cta),
-                      trabalhos.pasta_do(job), brief, leitor(), prancheta,
+                      trabalhos.pasta_do(conta, job), brief, leitor(), prancheta,
                       progresso=contar)
-        trabalhos.gravar(job, {"status": r.status, "progresso": None,
+        trabalhos.gravar(conta, job, {"status": r.status, "progresso": None,
                                "prontas": sorted(r.prontas),
                                "falhas": r.falhas,
                                "avisos": r.avisos,
@@ -70,24 +70,27 @@ def processar(job: str, arte: str, formatos: list[str], headline: str,
                                "custo": r.custo})
     except Exception as e:
         # sem isto o trabalho fica "rodando" para sempre e ninguém sabe por quê
-        trabalhos.gravar(job, {"status": "erro", "erro": str(e)})
+        trabalhos.gravar(conta, job, {"status": "erro", "erro": str(e)})
         raise
 
 
-def processar_video(job: str, formatos: list[str], preset: str, segundos: float) -> None:
+def processar_video(conta: str, job: str, formatos: list[str], preset: str,
+                    segundos: float) -> None:
     """O que o worker executa para animar. Separado de `processar` porque é
     outra ferramenta e outro tempo: a peça parada leva segundos, o vídeo leva
     minutos, e quem quer só a peça não deve esperar pelo vídeo."""
     from api import animacao
-    trabalhos.gravar(job, {"video": {"status": "rodando", "preset": preset,
-                                     "formatos": formatos}})
+    trabalhos.gravar(conta, job, {"video": {"status": "rodando", "preset": preset,
+                                            "formatos": formatos}})
     try:
-        prontos, falhas = animacao.animar(trabalhos.pasta_do(job), formatos, preset, segundos)
+        prontos, falhas = animacao.animar(trabalhos.pasta_do(conta, job), formatos,
+                                          preset, segundos)
         estado = "pronto" if prontos and not falhas else ("parcial" if prontos else "erro")
-        trabalhos.gravar(job, {"video": {"status": estado, "preset": preset,
-                                         "prontos": sorted(prontos), "falhas": falhas}})
+        trabalhos.gravar(conta, job, {"video": {"status": estado, "preset": preset,
+                                                "prontos": sorted(prontos),
+                                                "falhas": falhas}})
     except Exception as e:
-        trabalhos.gravar(job, {"video": {"status": "erro", "erro": str(e)}})
+        trabalhos.gravar(conta, job, {"video": {"status": "erro", "erro": str(e)}})
         raise
 
 

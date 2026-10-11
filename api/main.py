@@ -13,10 +13,10 @@ import shutil
 import zipfile
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi import Cookie, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
-from api import ambiente, trabalhos
+from api import ambiente, contas, trabalhos
 from api.tarefas import processar, processar_video
 from api.fila import FILA_VIDEO, fila_do_ambiente
 from motor.replica import formato_by_id, load_formatos
@@ -28,6 +28,83 @@ WEB = Path(__file__).resolve().parent.parent / "web"
 FILA = fila_do_ambiente()
 
 ACEITOS = {".png", ".jpg", ".jpeg", ".webp", ".psd", ".psb", ".pdf"}
+
+
+BISCOITO = "replicai_sessao"
+
+
+def conta_atual(authorization: str | None = Header(default=None),
+                replicai_sessao: str | None = Cookie(default=None)) -> contas.Conta:
+    """De quem é a requisição.
+
+    Dois caminhos: chave de API, para quem integra pelo programa, e selo de
+    sessão, para quem usa a tela. Sem um dos dois não há conta, e sem conta
+    não há trabalho — antes disto, quem alcançasse a porta criava peça.
+    """
+    if authorization and authorization.lower().startswith("bearer "):
+        c = contas.da_chave(authorization.split(None, 1)[1].strip())
+        if c:
+            return c
+    if replicai_sessao:
+        ident = contas.abrir_selo(replicai_sessao)
+        c = contas.por_id(ident) if ident else None
+        if c and c.ativa:
+            return c
+    raise HTTPException(401, "entre com a sua chave ou faça login",
+                        headers={"WWW-Authenticate": "Bearer"})
+
+
+@app.post("/contas", status_code=201)
+def abrir_conta(nome: str = Form(""), email: str = Form(...), senha: str = Form(...)):
+    try:
+        c = contas.criar(nome, email, senha)
+    except contas.ContaInvalida as e:
+        raise HTTPException(422, str(e))
+    return c.em_json()
+
+
+@app.post("/entrar")
+def entrar(email: str = Form(...), senha: str = Form(...)):
+    c = contas.autenticar(email, senha)
+    if c is None:
+        # a mesma resposta para e-mail que não existe e senha errada: dizer
+        # qual dos dois errou conta quais e-mails têm conta
+        raise HTTPException(401, "e-mail ou senha não conferem")
+    r = JSONResponse(c.em_json())
+    r.set_cookie(BISCOITO, contas.selar(c.id), httponly=True, samesite="lax",
+                 max_age=contas.SELO_VALE)
+    return r
+
+
+@app.post("/sair")
+def sair():
+    r = JSONResponse({"ok": True})
+    r.delete_cookie(BISCOITO)
+    return r
+
+
+@app.get("/eu")
+def eu(c: contas.Conta = Depends(conta_atual)):
+    return c.em_json()
+
+
+@app.post("/eu/chaves", status_code=201)
+def criar_chave(apelido: str = Form(""), c: contas.Conta = Depends(conta_atual)):
+    """A chave aparece aqui e nunca mais: do lado de cá fica só o resumo."""
+    return {"chave": contas.nova_chave(c, apelido),
+            "aviso": "guarde agora: esta é a única vez que ela aparece"}
+
+
+@app.delete("/eu/chaves/{ident}")
+def revogar_chave(ident: str, c: contas.Conta = Depends(conta_atual)):
+    if not contas.revogar(c, ident):
+        raise HTTPException(404, "não existe chave ativa com esse identificador")
+    return {"ok": True}
+
+
+@app.get("/jobs")
+def meus_trabalhos(c: contas.Conta = Depends(conta_atual)):
+    return {"trabalhos": trabalhos.do_cliente(c.id)}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -88,6 +165,7 @@ async def criar(
     titulo: str = Form(""),
     brief: str = Form(""),
     prancheta: str = Form(""),
+    c: contas.Conta = Depends(conta_atual),
 ):
     ext = Path(arte.filename or "").suffix.lower()
     if ext not in ACEITOS:
@@ -102,7 +180,7 @@ async def criar(
                                  f"Veja /formatos")
 
     job = trabalhos.novo_id(titulo or Path(arte.filename or "peca").stem)
-    pasta = trabalhos.pasta_do(job)
+    pasta = trabalhos.pasta_do(c.id, job)
     pasta.mkdir(parents=True, exist_ok=True)
     destino = pasta / f"arte{ext}"
     with destino.open("wb") as f:
@@ -122,7 +200,7 @@ async def criar(
             raise HTTPException(422, f"não consegui abrir o PSD: {e}")
         if len(achadas) > 1 and not prancheta:
             lista = [{"nome": p.nome, "w": p.w, "h": p.h} for p in achadas]
-            trabalhos.gravar(job, {**comum, "status": "escolha a prancheta",
+            trabalhos.gravar(c.id, job, {**comum, "status": "escolha a prancheta",
                                    "pranchetas": lista})
             return {"job": job, "status": "escolha a prancheta", "pranchetas": lista,
                     "como": f"POST /jobs/{job}/prancheta com o nome"}
@@ -130,18 +208,19 @@ async def criar(
             raise HTTPException(422, f"não existe prancheta `{prancheta}` nesse arquivo. "
                                      f"Tem: {', '.join(p.nome for p in achadas)}")
 
-    trabalhos.gravar(job, {**comum, "status": "na fila", "prancheta": prancheta})
-    na_fila = FILA.enfileirar(processar, job, str(destino), pedidos, headline, cta,
+    trabalhos.gravar(c.id, job, {**comum, "status": "na fila", "prancheta": prancheta})
+    na_fila = FILA.enfileirar(processar, c.id, job, str(destino), pedidos, headline, cta,
                               brief, prancheta)
-    trabalhos.gravar(job, {"id_na_fila": na_fila})
-    return {"job": job, "status": trabalhos.ler(job)["status"]}
+    trabalhos.gravar(c.id, job, {"id_na_fila": na_fila})
+    return {"job": job, "status": trabalhos.ler(c.id, job)["status"]}
 
 
 @app.post("/jobs/{job}/prancheta", status_code=202)
-def escolher_prancheta(job: str, nome: str = Form(...)):
+def escolher_prancheta(job: str, nome: str = Form(...),
+                       c: contas.Conta = Depends(conta_atual)):
     """Escolhe a prancheta de um PSD e põe o trabalho na fila."""
     try:
-        estado = trabalhos.ler(job)
+        estado = trabalhos.ler(c.id, job)
     except ValueError:
         raise HTTPException(400, "identificador inválido")
     if estado is None:
@@ -153,22 +232,22 @@ def escolher_prancheta(job: str, nome: str = Form(...)):
         raise HTTPException(422, f"não existe prancheta `{nome}`. "
                                  f"Tem: {', '.join(sorted(nomes))}")
 
-    arte = trabalhos.pasta_do(job) / estado["arte"]
-    trabalhos.gravar(job, {"status": "na fila", "prancheta": nome})
-    trabalhos.gravar(job, {"id_na_fila": FILA.enfileirar(
-        processar, job, str(arte), estado["formatos"], estado.get("headline", ""),
+    arte = trabalhos.pasta_do(c.id, job) / estado["arte"]
+    trabalhos.gravar(c.id, job, {"status": "na fila", "prancheta": nome})
+    trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
+        processar, c.id, job, str(arte), estado["formatos"], estado.get("headline", ""),
         estado.get("cta", ""), estado.get("brief", ""), nome)})
-    return {"job": job, "status": trabalhos.ler(job)["status"], "prancheta": nome}
+    return {"job": job, "status": trabalhos.ler(c.id, job)["status"], "prancheta": nome}
 
 
 @app.post("/jobs/{job}/animar", status_code=202)
 def animar(job: str, formatos: str = Form(""), preset: str = Form("editorial"),
-           segundos: float = Form(5.0)):
+           segundos: float = Form(5.0), c: contas.Conta = Depends(conta_atual)):
     """Anima formatos que já viraram peça. Só esses: animar o que não foi
     composto não é pedido válido, é engano."""
     from api import animacao
     try:
-        estado = trabalhos.ler(job)
+        estado = trabalhos.ler(c.id, job)
     except ValueError:
         raise HTTPException(400, "identificador inválido")
     if estado is None:
@@ -190,26 +269,26 @@ def animar(job: str, formatos: str = Form(""), preset: str = Form("editorial"),
     if not 1.0 <= segundos <= 20.0:
         raise HTTPException(422, "a duração vai de 1 a 20 segundos")
 
-    trabalhos.gravar(job, {"video": {"status": "na fila", "preset": preset,
+    trabalhos.gravar(c.id, job, {"video": {"status": "na fila", "preset": preset,
                                      "formatos": pedidos}})
-    trabalhos.gravar(job, {"id_na_fila": FILA.enfileirar(
-        processar_video, job, pedidos, preset, float(segundos), fila=FILA_VIDEO)})
-    return {"job": job, "video": trabalhos.ler(job)["video"]}
+    trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
+        processar_video, c.id, job, pedidos, preset, float(segundos), fila=FILA_VIDEO)})
+    return {"job": job, "video": trabalhos.ler(c.id, job)["video"]}
 
 
 @app.get("/jobs/{job}")
-def ver(job: str):
+def ver(job: str, c: contas.Conta = Depends(conta_atual)):
     try:
-        estado = trabalhos.ler(job)
+        estado = trabalhos.ler(c.id, job)
     except ValueError:
         raise HTTPException(400, "identificador inválido")
     if estado is None:
         raise HTTPException(404, "trabalho não existe")
-    estado = perdido(job, estado)
-    return {"job": job, **estado, "entregas": trabalhos.entregas(job)}
+    estado = perdido(c.id, job, estado)
+    return {"job": job, **estado, "entregas": trabalhos.entregas(c.id, job)}
 
 
-def perdido(job: str, estado: dict) -> dict:
+def perdido(conta: str, job: str, estado: dict) -> dict:
     """Trabalho que a fila perdeu não pode ficar esperando para sempre.
 
     O worker pode morrer entre tirar o trabalho da fila e começar a gravar
@@ -240,19 +319,19 @@ def perdido(job: str, estado: dict) -> dict:
         return estado                 # diagnóstico nunca derruba a consulta
     novo = {"status": "erro", "erro": motivo.strip().splitlines()[-1][:300],
             "progresso": None}
-    trabalhos.gravar(job, novo)
+    trabalhos.gravar(conta, job, novo)
     return {**estado, **novo}
 
 
 @app.get("/jobs/{job}/zip")
-def zip_do_trabalho(job: str):
+def zip_do_trabalho(job: str, c: contas.Conta = Depends(conta_atual)):
     """Tudo num arquivo só. Baixar peça por peça é o que mais irrita quem
     entrega para cliente, e são oito, dez arquivos por campanha."""
     try:
-        pasta = trabalhos.pasta_do(job)
+        pasta = trabalhos.pasta_do(c.id, job)
     except ValueError:
         raise HTTPException(400, "identificador inválido")
-    itens = trabalhos.entregas(job)
+    itens = trabalhos.entregas(c.id, job)
     if not itens:
         raise HTTPException(404, "este trabalho ainda não tem entregas")
     buf = io.BytesIO()
@@ -266,9 +345,9 @@ def zip_do_trabalho(job: str):
 
 
 @app.get("/jobs/{job}/arquivos/{nome:path}")
-def baixar(job: str, nome: str):
+def baixar(job: str, nome: str, c: contas.Conta = Depends(conta_atual)):
     try:
-        pasta = trabalhos.pasta_do(job)
+        pasta = trabalhos.pasta_do(c.id, job)
     except ValueError:
         raise HTTPException(400, "identificador inválido")
     alvo = (pasta / nome).resolve()

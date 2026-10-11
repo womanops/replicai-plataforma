@@ -76,8 +76,8 @@ class TestNoEstadoDoTrabalho:
         monkeypatch.setattr(tarefas, "compositor", lambda *a: Serve())
         monkeypatch.setattr(tarefas, "leitor", lambda: None)
 
-        job = trabalhos.novo_id("teste")
-        tarefas.processar(job, str(arte), ["ig-feed-1x1"], "Oi", "", "")
-        estado = trabalhos.ler(job)
+        conta, job = "conta-de-teste", trabalhos.novo_id("teste")
+        tarefas.processar(conta, job, str(arte), ["ig-feed-1x1"], "Oi", "", "")
+        estado = trabalhos.ler(conta, job)
         assert estado["status"] == "pronto"
         assert estado["progresso"] is None

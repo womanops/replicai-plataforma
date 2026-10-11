@@ -28,15 +28,31 @@ class FilaEspia:
 
 @pytest.fixture
 def cliente(tmp_path, monkeypatch):
+    """Um cliente já autenticado: desde que a plataforma tem contas, nenhum
+    endereço de trabalho responde sem conta."""
     monkeypatch.setenv("STORAGE_DIR", str(tmp_path))
+    monkeypatch.setenv("REPLICAI_SEGREDO", "segredo-de-teste")
     monkeypatch.delenv("REDIS_URL", raising=False)
     import importlib
-    from api import main
+    from api import contas, main, trabalhos
+    # `contas` não é recarregado de propósito: recarregar troca a classe da
+    # exceção, e outro teste que a importou passa a comparar com a antiga
+    importlib.reload(trabalhos)
     importlib.reload(main)
     main.FILA = FilaEspia()
-    c = TestClient(main.app)
+    conta = contas.criar("Teste", "teste@exemplo.com", "senha-bem-comprida")
+    chave = contas.nova_chave(conta, "testes")
+    c = TestClient(main.app, headers={"Authorization": f"Bearer {chave}"})
     c.fila = main.FILA
+    c.conta = conta
     return c
+
+
+@pytest.fixture
+def anonimo(cliente):
+    """O mesmo servidor, sem credencial nenhuma."""
+    from api import main
+    return TestClient(main.app)
 
 
 def arte_png(w=1200, h=1200):
@@ -104,8 +120,10 @@ class TestEnvio:
         assert a != b
 
     def test_a_arte_fica_guardada_no_trabalho(self, cliente, tmp_path):
+        """Dentro da pasta da conta: isolar por pasta é o que impede um
+        cliente de alcançar o arquivo do outro."""
         job = enviar(cliente).json()["job"]
-        assert (tmp_path / job / "arte.png").is_file()
+        assert (tmp_path / cliente.conta.id / job / "arte.png").is_file()
 
 
 class TestAcompanhar:
@@ -149,9 +167,10 @@ class TestOQueVaiParaAFila:
         assert len(cliente.fila.pedidos) == 1
         nome, args = cliente.fila.pedidos[0]
         assert nome == "processar"
-        assert args[0] == job
-        assert args[2] == ["ig-stories", "gdn-300x250"]
-        assert args[3] == "Chegamos" and args[4] == "Vem"
+        assert args[0] == cliente.conta.id      # de quem é o trabalho vem primeiro
+        assert args[1] == job
+        assert args[3] == ["ig-stories", "gdn-300x250"]
+        assert args[4] == "Chegamos" and args[5] == "Vem"
 
     def test_pedido_recusado_nao_enfileira_nada(self, cliente):
         enviar(cliente, formatos="nao-existe")
