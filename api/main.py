@@ -548,7 +548,9 @@ def para_entregar(estado: dict, itens: list[dict]) -> list[dict]:
     pediu duas peças tinha de garimpar as duas no meio.
     """
     prontas = list(estado.get("prontas") or [])
-    quero = {f"{fid}.png" for fid in prontas}
+    # o PDF entra: é ele que se manda para o cliente aprovar, e sem ele o
+    # pacote volta a ser oito arquivos soltos para quem recebe adivinhar
+    quero = {f"{fid}.png" for fid in prontas} | {"apresentacao.pdf"}
     fica = []
     for it in itens:
         nome = it["nome"]

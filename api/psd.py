@@ -235,6 +235,16 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
         fundo_nome = "fundo.png"
         chapado.convert("RGB").save(destino / fundo_nome)
 
+    # a prancheta inteira, com texto e tudo: é a peça que foi aprovada. O
+    # `fundo.png` tem as camadas de texto desligadas, e mostrá-lo como "peça
+    # original" na apresentação entregava ao cliente a arte sem a chamada
+    try:
+        inteira = raiz.composite()
+        if inteira is not None:
+            inteira.convert("RGB").save(destino / "arte-mae.png")
+    except Exception as e:
+        ignoradas.append(f"a composição da arte-mãe não saiu: {type(e).__name__}")
+
     camadas = []
     for i, c in enumerate(soltas):
         nome = _nome_limpo(c.name)

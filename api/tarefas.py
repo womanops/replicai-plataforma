@@ -89,6 +89,24 @@ def _contar(conta: str, job: str, r) -> dict:
                      f"confira antes de faturar"]}
 
 
+def _apresentar(conta: str, job: str, prontas: list[str]) -> str:
+    """Monta o PDF de apresentação. Devolve o motivo quando não dá.
+
+    Nunca derruba a entrega: as peças já estão no disco e valem sozinhas. Mas
+    também não some calado — mandar oito PNGs soltos para o cliente é o que a
+    apresentação existe para evitar, e descobrir que ela não saiu só na hora
+    de enviar é tarde.
+    """
+    from api import apresentacao
+    estado = trabalhos.ler(conta, job) or {}
+    try:
+        apresentacao.montar(trabalhos.pasta_do(conta, job),
+                            {**estado, "prontas": prontas})
+    except Exception as e:
+        return f"as peças saíram, mas o PDF de apresentação não: {e}"
+    return ""
+
+
 def processar(conta: str, job: str, arte: str, formatos: list[str], headline: str,
               cta: str, brief: str, prancheta: str = "", final: bool = False,
               modo: str = MODO_PADRAO) -> None:
@@ -110,10 +128,18 @@ def processar(conta: str, job: str, arte: str, formatos: list[str], headline: st
         r = desdobrar(Path(arte), formatos, compositor(arte, headline, cta, modo),
                       trabalhos.pasta_do(conta, job), brief, leitor(), prancheta,
                       progresso=contar, final=final)
+        avisos = {**r.avisos, **_contar(conta, job, r)}
+        if r.prontas:
+            contar({"etapa": "montando a apresentação", "feito": len(formatos),
+                    "total": len(formatos), "formato": "",
+                    "prontas": sorted(r.prontas)})
+            falhou = _apresentar(conta, job, sorted(r.prontas))
+            if falhou:
+                avisos.setdefault("_apresentacao", []).append(falhou)
         trabalhos.gravar(conta, job, {"status": r.status, "progresso": None,
                                "prontas": sorted(r.prontas),
                                "falhas": r.falhas,
-                               "avisos": {**r.avisos, **_contar(conta, job, r)},
+                               "avisos": avisos,
                                "descartados": r.descartados,
                                "psd": r.psd,
                                "custo": r.custo})
@@ -171,4 +197,8 @@ def redesenhar(conta: str, job: str, formato: str) -> None:
         trabalhos.gravar(conta, job, {"ajuste": {"status": "erro", "formato": formato,
                                                  "erro": str(e)}})
         raise
-    trabalhos.gravar(conta, job, {"ajuste": {"status": "pronto", "formato": formato}})
+    # o PDF mostrava a peça de antes do ajuste: refazê-lo é o que impede de
+    # mandar ao cliente a versão que ela acabou de corrigir
+    falhou = _apresentar(conta, job, list((trabalhos.ler(conta, job) or {}).get("prontas") or []))
+    trabalhos.gravar(conta, job, {"ajuste": {"status": "pronto", "formato": formato,
+                                             **({"aviso": falhou} if falhou else {})}})

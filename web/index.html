@@ -413,6 +413,8 @@ header .saldo.apertado .fio i{background:var(--err)}
   <button class="secund" id="btnFinal" style="display:none"
     title="Refaz só os fundos que saíram com ressalva, insistindo no generativo. Mantém a diagramação que você ajustou.">Refazer fundos</button>
   <button class="secund" id="btnAnimar" style="display:none">Animar</button>
+  <button class="secund" id="btnPdf" style="display:none"
+    title="Capa, a arte aprovada e uma página por formato">Apresentação</button>
   <button class="secund" id="btnZip" style="display:none">Baixar tudo</button>
   <button class="acao" id="btnIr" disabled>Replicar</button>
 </footer>
@@ -643,7 +645,8 @@ $('#btnIr').onclick = async () => {
    formato e pulava de uma vez — que é como se parece com um travamento. */
 // quanto do formato já está feito quando cada etapa começa
 const PESO = {'lendo a arte':0, 'abrindo o PSD em camadas':0, 'preparando o fundo':.05,
-              'compondo':.62, 'desenhando':.82, 'pronta':0};
+              'compondo':.62, 'desenhando':.82, 'pronta':0,
+              'montando a apresentação':0};
 function fracao(d){
   const v = d.video || {};
   if (['rodando','na fila'].includes(v.status||''))
@@ -767,6 +770,11 @@ async function acompanhar(){
       }
       if (feitas){
         const z=$('#btnZip'); z.style.display=''; z.onclick=()=>location.href=`/jobs/${job}/zip`;
+        // o PDF só aparece quando existe: prometer botão que não abre nada é
+        // pior do que não ter botão
+        const temPdf = (d.entregas||[]).some(e => e.nome === 'apresentacao.pdf');
+        const pf=$('#btnPdf'); pf.style.display = temPdf ? '' : 'none';
+        pf.onclick = () => open(`/jobs/${job}/arquivos/apresentacao.pdf`, '_blank');
         const a=$('#btnAnimar'); a.style.display=''; a.onclick=abrirAnimar;
         // a exportação final só aparece enquanto o trabalho ainda é rascunho
         const f=$('#btnFinal'); f.style.display = d.final ? 'none' : '';
