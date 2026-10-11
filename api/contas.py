@@ -55,11 +55,19 @@ class Conta:
     ativa: bool = True
     senha: str = ""
     chaves: list[dict] = field(default_factory=list)
+    # cobrança: `plano` é o que foi comprado, `pago_ate` é até quando vale
+    asaas_cliente: str = ""
+    asaas_assinatura: str = ""
+    plano_pedido: str = ""
+    pago_ate: str = ""
+    em_atraso: bool = False
 
     def em_json(self) -> dict:
         """Sem segredo: é isto que pode sair da API."""
         return {"id": self.id, "nome": self.nome, "email": self.email,
                 "criada": self.criada, "plano": self.plano, "ativa": self.ativa,
+                "pago_ate": self.pago_ate, "em_atraso": self.em_atraso,
+                "assinatura": bool(self.asaas_assinatura),
                 "chaves": [{"id": c["id"], "apelido": c.get("apelido", ""),
                             "criada": c.get("criada", ""), "fim": c.get("fim", "")}
                            for c in self.chaves]}
@@ -103,7 +111,10 @@ def _gravar(c: Conta) -> None:
     _arquivo(c.id).write_text(
         json.dumps({"id": c.id, "nome": c.nome, "email": c.email, "criada": c.criada,
                     "plano": c.plano, "ativa": c.ativa, "senha": c.senha,
-                    "chaves": c.chaves}, ensure_ascii=False, indent=1),
+                    "chaves": c.chaves, "asaas_cliente": c.asaas_cliente,
+                    "asaas_assinatura": c.asaas_assinatura,
+                    "plano_pedido": c.plano_pedido, "pago_ate": c.pago_ate,
+                    "em_atraso": c.em_atraso}, ensure_ascii=False, indent=1),
         encoding="utf-8")
 
 
@@ -115,7 +126,15 @@ def _ler(ident: str) -> Conta | None:
         d = json.loads(f.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
         return None
-    return Conta(**d)
+    # a pasta guarda também índices — chaves, eventos do meio de pagamento — e
+    # listar contas tentava lê-los como conta. Quebrava o login depois do
+    # primeiro pagamento, que é a pior hora para quebrar.
+    if not isinstance(d, dict) or "id" not in d or "email" not in d:
+        return None
+    try:
+        return Conta(**d)
+    except TypeError:
+        return None          # conta gravada por uma versão com outros campos
 
 
 def por_id(ident: str) -> Conta | None:
@@ -128,8 +147,6 @@ def por_id(ident: str) -> Conta | None:
 def todas() -> list[Conta]:
     saida = []
     for f in sorted(pasta().glob("*.json")):
-        if f.name == "chaves.json":
-            continue
         c = por_id(f.stem)
         if c:
             saida.append(c)

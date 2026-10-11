@@ -162,3 +162,29 @@ class TestSessao:
     def test_sem_segredo_configurado_a_plataforma_avisa(self, monkeypatch):
         monkeypatch.delenv("REPLICAI_SEGREDO", raising=False)
         assert contas.segredo_configurado() is False
+
+
+class TestAPastaTemMaisQueContas:
+    """A pasta guarda também os índices — chaves e eventos de cobrança.
+    Listar contas tentava lê-los como conta, e isso quebrava o login depois do
+    primeiro pagamento: a pior hora possível."""
+
+    def test_indice_de_chaves_nao_vira_conta(self, conta):
+        contas.nova_chave(conta)
+        assert [c.id for c in contas.todas()] == [conta.id]
+
+    def test_arquivo_de_eventos_nao_vira_conta(self, conta):
+        (contas.pasta() / "eventos.json").write_text('["evt_1","evt_2"]')
+        assert [c.id for c in contas.todas()] == [conta.id]
+        assert contas.autenticar("ligia@exemplo.com", "senha-bem-comprida")
+
+    def test_json_de_outra_forma_nao_quebra(self, conta):
+        (contas.pasta() / "lixo.json").write_text('{"algo": 1}')
+        assert [c.id for c in contas.todas()] == [conta.id]
+
+    def test_conta_com_campo_desconhecido_nao_derruba_a_lista(self, conta):
+        import json as j
+        f = contas.pasta() / "antiga-aaaaaa.json"
+        f.write_text(j.dumps({"id": "antiga-aaaaaa", "nome": "x", "email": "a@b.co",
+                              "campo_que_nao_existe_mais": 1}))
+        assert conta.id in [c.id for c in contas.todas()]

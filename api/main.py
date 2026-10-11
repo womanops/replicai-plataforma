@@ -13,10 +13,14 @@ import shutil
 import zipfile
 from pathlib import Path
 
-from fastapi import Cookie, Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+import hmac
+import os
+
+from fastapi import (Cookie, Depends, FastAPI, File, Form, Header, HTTPException,
+                     Request, UploadFile)
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
-from api import ambiente, contas, trabalhos, uso
+from api import ambiente, cobranca, contas, trabalhos, uso
 from api.tarefas import processar, processar_video
 from api.fila import FILA_VIDEO, fila_do_ambiente
 from motor.replica import formato_by_id, load_formatos
@@ -107,12 +111,60 @@ def meus_trabalhos(c: contas.Conta = Depends(conta_atual)):
     return {"trabalhos": trabalhos.do_cliente(c.id)}
 
 
+@app.get("/planos")
+def planos():
+    """O que cada plano permite e quanto custa."""
+    return {"planos": [{"id": i, **uso.PLANOS[i],
+                        "preco": cobranca.PRECOS.get(i, 0.0)}
+                       for i in uso.PLANOS],
+            "cobranca": cobranca.configurada()}
+
+
+@app.post("/eu/assinar")
+def assinar(plano: str = Form(...), forma: str = Form("PIX"),
+            cpf_cnpj: str = Form(""), c: contas.Conta = Depends(conta_atual)):
+    """Contrata um plano. Não libera nada: quem libera é o aviso de pagamento."""
+    try:
+        return cobranca.assinar(c, plano, forma, cpf_cnpj)
+    except cobranca.CobrancaIndisponivel as e:
+        raise HTTPException(502, str(e))
+
+
+@app.delete("/eu/assinar")
+def cancelar_assinatura(c: contas.Conta = Depends(conta_atual)):
+    try:
+        if not cobranca.cancelar(c):
+            raise HTTPException(404, "não há assinatura para cancelar")
+    except cobranca.CobrancaIndisponivel as e:
+        raise HTTPException(502, str(e))
+    return {"ok": True, "aviso": "o plano vale até o fim do período já pago"}
+
+
+@app.post("/cobranca/aviso")
+async def aviso_de_cobranca(request: Request,
+                            asaas_access_token: str | None = Header(default=None)):
+    """O que o Asaas avisa quando alguém paga ou atrasa.
+
+    Autenticado por segredo combinado: sem isso, qualquer um na internet
+    libera plano mandando um JSON. Responde 200 mesmo para evento que não é
+    nosso — senão o Asaas reenvia para sempre.
+    """
+    esperado = os.environ.get("ASAAS_AVISO_TOKEN")
+    if not esperado:
+        raise HTTPException(503, "ASAAS_AVISO_TOKEN não está configurado")
+    if not asaas_access_token or not hmac.compare_digest(asaas_access_token, esperado):
+        raise HTTPException(401, "aviso sem credencial")
+    return cobranca.aplicar_evento(await request.json())
+
+
 @app.get("/eu/uso")
 def meu_uso(mes: str = "", c: contas.Conta = Depends(conta_atual)):
     """Quanto a conta consumiu, e quanto o plano permite."""
-    lim = uso.limites(c.plano)
+    valendo = cobranca.plano_valendo(c)
+    lim = uso.limites(valendo)
     r = uso.resumo(c.id, mes)
-    return {**r, "plano": {"id": c.plano, **lim},
+    return {**r, "plano": {"id": valendo, "contratado": c.plano, **lim},
+            "em_atraso": c.em_atraso, "pago_ate": c.pago_ate,
             "resta": {"pecas": max(0, lim["pecas"] - r["pecas"]),
                       "videos": max(0, lim["videos"] - r["videos"])},
             "meses": uso.meses(c.id)}
@@ -196,7 +248,7 @@ async def criar(
         raise HTTPException(422, f"formato desconhecido: {', '.join(desconhecidos)}. "
                                  f"Veja /formatos")
 
-    pode, porque = uso.cabe(c.id, c.plano, pecas=len(pedidos))
+    pode, porque = uso.cabe(c.id, cobranca.plano_valendo(c), pecas=len(pedidos))
     if not pode:
         # conferido antes de enfileirar: recusar um trabalho já renderizado é
         # gastar o custo e não poder cobrar
@@ -297,7 +349,7 @@ def animar(job: str, formatos: str = Form(""), preset: str = Form("editorial"),
                                  f"Use {', '.join(animacao.PRESETS)}")
     if not 1.0 <= segundos <= 20.0:
         raise HTTPException(422, "a duração vai de 1 a 20 segundos")
-    pode, porque = uso.cabe(c.id, c.plano, videos=len(pedidos))
+    pode, porque = uso.cabe(c.id, cobranca.plano_valendo(c), videos=len(pedidos))
     if not pode:
         raise HTTPException(402, porque)
 
