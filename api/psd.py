@@ -83,6 +83,7 @@ class Leitura:
     fundo: str = ""                # tudo que não anima, assado numa imagem só
     camadas: list[Camada] = field(default_factory=list)
     ignoradas: list[str] = field(default_factory=list)
+    plantada_em: list[str] = field(default_factory=list)   # bordas com figura cortada
 
 
 def _abrir(caminho: Path):
@@ -275,9 +276,15 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
         ignoradas.append(f"{assadas} camadas foram assadas no fundo: não animam, mas "
                          f"saem exatas como o Photoshop as mostra")
 
+    plantada = sorted(_bordas_com_figura(raiz, alvo))
+    if plantada:
+        ignoradas.append(
+            f"figura encostada em {', '.join(plantada)}: a faixa nova vai para o outro "
+            f"lado, senão ela solta no ar e o corpo sai cortado no meio")
+
     return Leitura(pranchetas=lista, escolhida=alvo.nome, ambigua=ambigua,
                    canvas={"w": alvo.w, "h": alvo.h}, fundo=fundo_nome,
-                   camadas=camadas, ignoradas=ignoradas)
+                   camadas=camadas, ignoradas=ignoradas, plantada_em=plantada)
 
 
 def _mesclagem(c) -> str:
@@ -449,9 +456,13 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
     if not base or not tinta:
         raise ValueError("não há lockup separado para recompor")
 
+    # a faixa desce para abrir rodapé ao texto novo — mas não quando há figura
+    # plantada embaixo: ali descer é cortar o corpo dela no meio
+    ancora = (0.5, 0.0) if "baixo" not in leitura.plantada_em else \
+             ancora_das_bordas(set(leitura.plantada_em))
     info = pf.preparar(pasta / leitura.fundo, formato, None,
                        pasta / f"fundo-{formato['id']}.png",
-                       estrategia="contain", ancora=(0.5, 0.0),
+                       estrategia="contain", ancora=ancora,
                        insistir=final, reaproveitar=final)
 
     W, H, s = formato["w"], formato["h"], formato["safe"]
@@ -489,6 +500,74 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
     }
 
 
+# uma camada cortada pela borda que ocupa mais do que isso da largura dela é
+# faixa ou textura de fundo, não figura. O KV da Consigaz tem as duas: o
+# mascote corta 40% da borda de baixo (figura) e uma textura corta 91% da de
+# cima (faixa)
+FIGURA_ATE = 0.70
+
+
+def _bordas_com_figura(raiz, prancheta) -> set[str]:
+    """Bordas da prancheta onde uma figura é cortada pelo quadro.
+
+    Quem desenhou a peça encostou a figura ali de propósito: o mascote está
+    plantado no rodapé e sai pela direita. Abrir faixa desse lado solta a
+    figura no ar e corta o corpo dela no meio — foi exatamente o que saiu no
+    Stories, com o Nino amputado flutuando sobre um rodapé vazio.
+
+    Não é régua de pixel, é o que o arquivo diz: a camada tem bbox, e bbox que
+    passa da borda é figura cortada pelo quadro.
+    """
+    x0p, y0p = prancheta.x, prancheta.y
+    x1p, y1p = x0p + prancheta.w, y0p + prancheta.h
+    bordas: set[str] = set()
+
+    def olhar(no):
+        for c in no:
+            if c.is_group():
+                olhar(c)
+                continue
+            try:
+                bb = c.bbox
+            except Exception:
+                continue
+            if not bb or bb == (0, 0, 0, 0):
+                continue
+            x0, y0, x1, y1 = bb
+            larg, alt = x1 - x0, y1 - y0
+            if larg <= 0 or alt <= 0:
+                continue
+            if y1 > y1p and larg <= prancheta.w * FIGURA_ATE:
+                bordas.add("baixo")
+            if y0 < y0p and larg <= prancheta.w * FIGURA_ATE:
+                bordas.add("cima")
+            if x1 > x1p and alt <= prancheta.h * FIGURA_ATE:
+                bordas.add("direita")
+            if x0 < x0p and alt <= prancheta.h * FIGURA_ATE:
+                bordas.add("esquerda")
+
+    olhar(raiz)
+    return bordas
+
+
+def ancora_das_bordas(bordas: set[str]) -> tuple[float, float]:
+    """Para que lado a arte encosta quando sobra quadro.
+
+    Melhor prática de diagramação, e não preferência: o que está plantado numa
+    borda continua plantado nela. A faixa nova vai para o lado onde a
+    composição tem ar. Empate — figura cortada nos dois lados, ou em nenhum —
+    volta ao centro, que é o comportamento antigo.
+    """
+    def eixo(a: str, b: str) -> float:
+        if a in bordas and b not in bordas:
+            return 0.0                 # encosta no começo do eixo
+        if b in bordas and a not in bordas:
+            return 1.0
+        return 0.5
+
+    return (eixo("esquerda", "direita"), eixo("cima", "baixo"))
+
+
 def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
                 elementos: list[dict] | None = None, final: bool = False) -> dict:
     """Desdobra mantendo o lockup colado no fundo.
@@ -503,6 +582,7 @@ def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
     base = elementos if elementos is not None else como_elementos(leitura, pasta)
     info = pf.preparar(pasta / leitura.fundo, formato, tinta_de(leitura),
                        pasta / f"fundo-{formato['id']}.png",
+                       ancora=ancora_das_bordas(set(leitura.plantada_em)),
                        insistir=final, reaproveitar=final)
     return {
         "formato": formato["id"],
