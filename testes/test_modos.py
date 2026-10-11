@@ -229,3 +229,43 @@ class TestOMotivoDoFundo:
         base = Image.new("RGB", (100, 100), (0, 0, 0))
         _, motivo = fundo._continuar(base, {"left": 0, "right": 0, "top": 0, "bottom": 10}, 180)
         assert "não respondeu em 180s" in motivo
+
+
+class TestOAjusteSobreviveAExportacao:
+    """A exportação final refaz o trabalho inteiro — é assim que ela insiste
+    no fundo generativo. Refazendo, ela reescrevia a peça por cima do ajuste:
+    a pessoa movia o CTA, clicava em exportar e o CTA voltava sozinho."""
+
+    def _peca(self, pasta, via, x):
+        import json as _j
+        (pasta / "pecas").mkdir(parents=True, exist_ok=True)
+        (pasta / "pecas" / "gdn-300x250.json").write_text(_j.dumps({
+            "formato": "gdn-300x250", "via": via,
+            "elementos": [{"tipo": "texto", "papel": "cta", "texto": "Oi",
+                           "box": {"x": x, "y": 5, "w": 50, "h": 20}}]}), encoding="utf-8")
+
+    def test_a_montagem_feita_a_mao_volta_para_a_peca(self, tmp_path):
+        from api.pipeline import manter_a_mao
+        self._peca(tmp_path, "psd-reenquadra+mao", 99)
+        nova = {"via": "psd-reenquadra", "elementos": [{"tipo": "texto", "papel": "cta",
+                                                        "box": {"x": 5, "y": 5, "w": 50, "h": 20}}]}
+        avisos = manter_a_mao(nova, tmp_path, "gdn-300x250")
+        assert nova["elementos"][0]["box"]["x"] == 99
+        assert "+mao" in nova["via"]
+        assert avisos and "à mão" in avisos[0]
+
+    def test_peca_que_ninguem_ajustou_e_recomposta_normalmente(self, tmp_path):
+        from api.pipeline import manter_a_mao
+        self._peca(tmp_path, "psd-reenquadra", 99)
+        nova = {"via": "psd-reenquadra", "elementos": [{"box": {"x": 5, "y": 5, "w": 1, "h": 1}}]}
+        assert manter_a_mao(nova, tmp_path, "gdn-300x250") == []
+        assert nova["elementos"][0]["box"]["x"] == 5
+
+    def test_so_a_montagem_volta_o_fundo_novo_fica(self, tmp_path):
+        """O fundo refeito é justamente o que a exportação final foi buscar."""
+        from api.pipeline import manter_a_mao
+        self._peca(tmp_path, "psd-reenquadra+mao", 99)
+        nova = {"via": "psd-reenquadra", "elementos": [],
+                "fundo": {"tipo": "imagem", "src": "fundo-novo.png"}}
+        manter_a_mao(nova, tmp_path, "gdn-300x250")
+        assert nova["fundo"]["src"] == "fundo-novo.png"

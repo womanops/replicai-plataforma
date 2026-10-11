@@ -125,6 +125,34 @@ def conferir_peca(peca: dict, pasta: Path, arte: Path) -> list[str]:
     return avisos
 
 
+MARCA_DA_MAO = "+mao"
+
+
+def manter_a_mao(peca: dict, pasta: Path, fid: str) -> list[str]:
+    """Devolve à peça recomposta a montagem que a pessoa fez na mão.
+
+    A exportação final refaz o trabalho inteiro — é assim que ela consegue
+    insistir no fundo generativo. Refazendo, ela reescrevia a peça por cima do
+    ajuste manual: a pessoa movia o CTA, clicava em exportar e o CTA voltava
+    para onde o motor o tinha posto, sem nada dizendo por quê.
+
+    O que volta é só a lista de elementos. O fundo é o novo, que é justamente
+    o que a exportação final foi buscar.
+    """
+    arq = pasta / "pecas" / f"{fid}.json"
+    if not arq.exists():
+        return []
+    try:
+        antes = json.loads(arq.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return []
+    if MARCA_DA_MAO not in (antes.get("via") or ""):
+        return []
+    peca["elementos"] = antes.get("elementos", [])
+    peca["via"] = (peca.get("via") or "") + MARCA_DA_MAO
+    return ["a montagem que você fez à mão foi mantida; só o fundo foi refeito"]
+
+
 def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
               pasta: Path, brief: str = "", leitor=None, prancheta: str = "",
               progresso=None, final: bool = False) -> Resultado:
@@ -258,6 +286,9 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
         avisar("compondo", i, fid)
         for a in _texto_novo(peca, f, pasta, leitura, brief, compositor, info):
             r.avisos.setdefault(fid, []).append(a)
+        if final:
+            for a in manter_a_mao(peca, pasta, fid):
+                r.avisos.setdefault(fid, []).append(a)
 
         arq = pasta / "pecas" / f"{fid}.json"
         arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -425,6 +456,9 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
 
         for a in conferir_peca(peca, pasta, copia):
             r.avisos.setdefault(fid, []).append(a)
+        if final:
+            for a in manter_a_mao(peca, pasta, fid):
+                r.avisos.setdefault(fid, []).append(a)
 
         arq = pasta / "pecas" / f"{fid}.json"
         arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")

@@ -21,6 +21,7 @@ from fastapi import (Cookie, Depends, FastAPI, File, Form, Header, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
 from api import ambiente, cobranca, contas, trabalhos, uso
+from api.pipeline import MARCA_DA_MAO
 from api.tarefas import (MODOS, MODO_PADRAO, TEXTO_NOVO, processar, processar_video,
                          redesenhar)
 from api.fila import FILA_VIDEO, fila_do_ambiente
@@ -475,8 +476,10 @@ async def ajustar_peca(job: str, formato: str, request: Request,
         base.update({k: v for k, v in e.items() if k in AJUSTAVEL})
         novos.append(base)
     peca["elementos"] = novos
-    peca["via"] = (peca.get("via") or "") + "+mao" if "+mao" not in (peca.get("via") or "") \
-                  else peca["via"]
+    # a marca é o que faz a exportação final devolver esta montagem em vez de
+    # recompor por cima dela
+    via = peca.get("via") or ""
+    peca["via"] = via if MARCA_DA_MAO in via else via + MARCA_DA_MAO
     arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
 
     trabalhos.gravar(c.id, job, {"ajuste": {"status": "na fila", "formato": formato}})
