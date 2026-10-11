@@ -179,15 +179,24 @@ class TestOQueVaiParaAFila:
 
 @pytest.mark.lento
 class TestDePontaAPonta:
-    """Uma vez só, com a fila de verdade: sobe, processa e baixa a peça."""
+    """Uma vez só, com a fila de verdade: sobe, processa e baixa a peça.
+
+    Entra com credencial, como qualquer cliente entra. Escrito antes de a
+    plataforma ter contas, este teste postava sem nenhuma — levava 401 desde
+    então, e só a esteira rodava os lentos para perceber.
+    """
 
     def test_sobe_processa_e_entrega(self, tmp_path, monkeypatch):
         monkeypatch.setenv("STORAGE_DIR", str(tmp_path))
+        monkeypatch.setenv("REPLICAI_SEGREDO", "segredo-de-teste")
         monkeypatch.delenv("REDIS_URL", raising=False)
         import importlib
-        from api import main
+        from api import contas, main, trabalhos
+        importlib.reload(trabalhos)
         importlib.reload(main)
-        c = TestClient(main.app)
+        conta = contas.criar("Ponta a ponta", "ponta@exemplo.com", "senha-bem-comprida")
+        chave = contas.nova_chave(conta, "ponta a ponta")
+        c = TestClient(main.app, headers={"Authorization": f"Bearer {chave}"})
         job = c.post("/jobs", files={"arte": ("arte.png", arte_png(), "image/png")},
                      data={"formatos": "gdn-300x250", "headline": "Chegamos a Porto Belo"}
                      ).json()["job"]
