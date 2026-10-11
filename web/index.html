@@ -142,9 +142,37 @@ button.secund{background:transparent;color:var(--fg);border:1px solid var(--linh
 .presets button.ativa{border-color:var(--rosa);color:var(--fg)}
 .f video{width:100%;border-radius:7px;display:block}
 
-/* ---------- plano ---------- */
+/* ---------- planos ---------- */
+#planos{position:fixed;inset:0;z-index:160;background:rgba(0,0,0,.76);overflow:auto;
+  padding:30px 20px}
+#planos.hidden{display:none}
+#planos .folha{margin:0 auto}
+.barra{height:6px;border-radius:4px;background:var(--painel2);overflow:hidden;margin:6px 0 2px}
+.barra i{display:block;height:100%;background:var(--rosa)}
+.barra.cheia i{background:var(--err)}
+.hoje{background:var(--painel2);border:1px solid var(--linha);border-radius:12px;
+  padding:14px 16px;margin-bottom:18px}
+.hoje b{font:500 12px var(--mono);letter-spacing:.08em;text-transform:uppercase}
+.hoje .linha{display:flex;justify-content:space-between;font-size:12.5px;color:var(--mut);
+  margin-top:10px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:14px}
+.plano-card{background:var(--painel2);border:1px solid var(--linha);border-radius:14px;
+  padding:18px;display:flex;flex-direction:column;gap:4px}
+.plano-card.atual{border-color:var(--sinal)}
+.plano-card h3{font:400 26px/1 var(--disp);letter-spacing:.04em;margin:0}
+.plano-card .preco{font:500 20px var(--corpo);margin:6px 0 2px}
+.plano-card .preco small{font:500 11px var(--mono);color:var(--mut)}
+.plano-card ul{list-style:none;margin:10px 0 16px;padding:0;font-size:13px;color:var(--mut)}
+.plano-card li{padding:3px 0}
+.plano-card button{margin-top:auto}
+.regra{margin:18px 0 0;font-size:12.5px;color:var(--mut);line-height:1.5;
+  border-top:1px solid var(--linha);padding-top:14px}
+.regra b{color:var(--fg);font-weight:500}
+
+/* ---------- plano no cabeçalho ---------- */
 header .plano{color:var(--mut);font:500 11px var(--mono);letter-spacing:.1em;
-  text-transform:uppercase}
+  text-transform:uppercase;cursor:pointer}
+header .plano:hover{color:var(--fg)}
 header .plano.apertado{color:var(--err)}
 header .sair{background:none;border:0;color:var(--mut);cursor:pointer;font:500 11px var(--mono);
   letter-spacing:.1em;text-transform:uppercase;padding:0}
@@ -174,6 +202,26 @@ header .sair:hover{color:var(--fg)}
     <h2>Qual arte deste arquivo</h2>
     <p id="prTexto">O PSD tem mais de uma prancheta. Escolha a que vai ser adaptada.</p>
     <div class="grade" id="prGrade"></div>
+  </div>
+</div>
+
+<div id="planos" class="hidden">
+  <div class="folha">
+    <h2>Planos</h2>
+    <p>A franquia vale por ciclo e zera na data da sua assinatura.</p>
+    <div class="hoje" id="hoje"></div>
+    <div class="cards" id="cards"></div>
+    <p class="regra">
+      <b>A franquia não acumula.</b> O que não for usado num ciclo não passa para
+      o seguinte — o custo aqui é por peça produzida, e guardar franquia criaria
+      um pico que a fila não absorve.<br>
+      <b>O ciclo é o seu, não o do calendário.</b> Quem assina dia 20 tem a
+      franquia renovada todo dia 20.<br>
+      <b>Ao chegar no limite, a produção para.</b> Nada é cobrado a mais sem você
+      pedir: é só subir de plano, e a franquia nova vale na hora.<br>
+      <b>Atrasou o pagamento?</b> A conta volta ao plano de teste. Nada do que já
+      foi produzido se perde.
+    </p>
   </div>
 </div>
 
@@ -494,6 +542,67 @@ $('#formPorta').onsubmit = async e => {
   } catch(e){ aviso('Não consegui falar com o servidor.'); }
   $('#btnPorta').disabled = false;
 };
+
+$('#plano').onclick = abrirPlanos;
+$('#planos').onclick = e => { if (e.target.id === 'planos') $('#planos').classList.add('hidden'); };
+
+const dinheiro = v => v ? v.toLocaleString('pt-BR', {style:'currency', currency:'BRL'})
+                        : 'sem custo';
+
+async function abrirPlanos(){
+  let cat, u;
+  try {
+    cat = await (await fetch('/planos')).json();
+    u = await (await fetch('/eu/uso')).json();
+  } catch(e){ aviso('Não consegui ler os planos.'); return; }
+
+  const pct = (a, b) => Math.min(100, Math.round(100 * a / Math.max(1, b)));
+  $('#hoje').innerHTML = `<b>Seu ciclo · ${u.mes}</b>`
+    + `<div class="linha"><span>${u.pecas} de ${u.plano.pecas} peças</span>`
+    + `<span>${u.resta.pecas} restam</span></div>`
+    + `<div class="barra ${u.resta.pecas?'':'cheia'}"><i style="width:${pct(u.pecas,u.plano.pecas)}%"></i></div>`
+    + `<div class="linha"><span>${u.videos} de ${u.plano.videos} vídeos</span>`
+    + `<span>${u.resta.videos} restam</span></div>`
+    + `<div class="barra ${u.resta.videos?'':'cheia'}"><i style="width:${pct(u.videos,u.plano.videos)}%"></i></div>`
+    + (u.em_atraso ? `<div class="linha" style="color:var(--err)">`
+        + `<span>pagamento em atraso — a conta está no plano de teste</span></div>` : '')
+    + (u.pago_ate ? `<div class="linha"><span>pago até ${u.pago_ate}</span></div>` : '');
+
+  const cards = $('#cards'); cards.innerHTML = '';
+  for (const p of cat.planos){
+    const atual = p.id === u.plano.id;
+    const el = document.createElement('div');
+    el.className = 'plano-card' + (atual ? ' atual' : '');
+    el.innerHTML = `<h3>${p.nome}</h3>`
+      + `<div class="preco">${dinheiro(p.preco)}<small>${p.preco?' /mês':''}</small></div>`
+      + `<ul><li>${p.pecas} peças por ciclo</li><li>${p.videos} vídeos por ciclo</li>`
+      + `<li>todos os formatos e presets</li></ul>`
+      + (atual ? `<button class="secund" disabled>plano atual</button>`
+         : p.preco ? `<button class="acao">Assinar</button>`
+         : `<button class="secund" disabled>plano de entrada</button>`);
+    const b = el.querySelector('button:not([disabled])');
+    if (b) b.onclick = () => assinarPlano(p);
+    cards.appendChild(el);
+  }
+  if (!cat.cobranca) aviso('A cobrança ainda não está ligada neste servidor.');
+  $('#planos').classList.remove('hidden');
+}
+
+async function assinarPlano(p){
+  const doc = prompt(`Assinar ${p.nome} por ${dinheiro(p.preco)} por mês.\n\n`
+    + 'CPF ou CNPJ para a nota fiscal:');
+  if (!doc) return;
+  const fd = new FormData();
+  fd.set('plano', p.id); fd.set('forma', 'PIX'); fd.set('cpf_cnpj', doc);
+  try {
+    const r = await fetch('/eu/assinar', { method:'POST', body:fd });
+    const d = await r.json();
+    if (!r.ok){ aviso(d.detail || 'Não deu para assinar.'); return; }
+    aviso('Assinatura criada. O plano vale assim que o pagamento for confirmado.', true);
+    $('#planos').classList.add('hidden');
+    verPlano();
+  } catch(e){ aviso('Não consegui falar com o servidor.'); }
+}
 
 $('#btnSair').onclick = async () => { await fetch('/sair', { method:'POST' }); location.reload(); };
 
