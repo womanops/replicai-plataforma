@@ -641,7 +641,8 @@ $('#btnIr').onclick = async () => {
    Dentro de um formato o trabalho não é linear: preparar o fundo é a maior
    parte, desenhar é o fim. Sem esses pesos a barra ficava parada minutos num
    formato e pulava de uma vez — que é como se parece com um travamento. */
-const PESO = {'lendo a arte':0, 'abrindo o PSD em camadas':0, 'preparando o fundo':.15,
+// quanto do formato já está feito quando cada etapa começa
+const PESO = {'lendo a arte':0, 'abrindo o PSD em camadas':0, 'preparando o fundo':.05,
               'compondo':.62, 'desenhando':.82, 'pronta':0};
 function fracao(d){
   const v = d.video || {};
@@ -659,9 +660,12 @@ function emTempo(seg){
 }
 function falta(d, f){
   // o relógio é o do servidor dos dois lados: comparar com o do navegador
-  // erraria pelo fuso e pelo atraso de cada máquina
-  if (!d.inicio || !d.agora || !f || f < .04) return '';
-  const correu = d.agora - d.inicio;
+  // erraria pelo fuso e pelo atraso de cada máquina.
+  // `desde` é quando o trabalho por formato começou; `inicio` incluiria o
+  // minuto de abrir um PSD grande, que não se repete, e a conta estourava
+  const zero = (d.progresso || {}).desde || d.inicio;
+  if (!zero || !d.agora || !f || f < .04) return '';
+  const correu = d.agora - zero;
   if (correu < 3) return '';
   return `~${emTempo(correu * (1 - f) / f)} restando`;
 }

@@ -269,3 +269,154 @@ class TestOAjusteSobreviveAExportacao:
                 "fundo": {"tipo": "imagem", "src": "fundo-novo.png"}}
         manter_a_mao(nova, tmp_path, "gdn-300x250")
         assert nova["fundo"]["src"] == "fundo-novo.png"
+
+
+class TestOTempoEstimado:
+    """Abrir um PSD de 60 MB em camadas leva quase um minuto, e esse minuto
+    não se repete por formato. Contado como ritmo, ele anunciava catorze
+    minutos restantes num trabalho de um."""
+
+    def test_o_relogio_so_comeca_no_primeiro_formato(self):
+        from api.pipeline import _passo
+        vistos = []
+        avisar = _passo(vistos.append, 3)
+        avisar("abrindo o PSD em camadas", 0)
+        assert vistos[-1]["desde"] is None
+        avisar("preparando o fundo", 0, "ig-stories")
+        assert vistos[-1]["desde"] is not None
+
+    def test_o_relogio_nao_reinicia_a_cada_formato(self):
+        from api.pipeline import _passo
+        vistos = []
+        avisar = _passo(vistos.append, 2)
+        avisar("preparando o fundo", 0, "a")
+        primeiro = vistos[-1]["desde"]
+        avisar("preparando o fundo", 1, "b")
+        assert vistos[-1]["desde"] == primeiro
+
+
+class TestAsPecasAparecemUmaAUma:
+    def test_o_passo_leva_o_que_ja_ficou_pronto(self):
+        """Sem isso o estado só ganhava `prontas` no fim, e quem pediu oito
+        formatos ficava minutos olhando quadro vazio com a primeira peça já
+        desenhada no disco."""
+        from api.pipeline import Resultado, _passo
+        from pathlib import Path
+        r = Resultado(pasta=Path("."))
+        vistos = []
+        avisar = _passo(vistos.append, 3, r)
+        avisar("preparando o fundo", 0, "a")
+        assert vistos[-1]["prontas"] == []
+        r.prontas["a"] = Path("a.png")
+        avisar("pronta", 1, "a")
+        assert vistos[-1]["prontas"] == ["a"]
+
+    def test_a_esteira_grava_prontas_antes_de_terminar(self, tmp_path):
+        from api.compositor import CompositorPreserva
+        from api.pipeline import desdobrar
+        base = tmp_path / "arte.png"
+        Image.new("RGB", (1200, 1200), (12, 42, 102)).save(base)
+        passos = []
+        desdobrar(base, ["gdn-300x250", "gdn-320x50"], CompositorPreserva(),
+                  tmp_path / "saida", progresso=passos.append)
+        # houve pelo menos um passo anunciando a primeira peça com a segunda
+        # ainda por fazer
+        parciais = [p for p in passos if len(p["prontas"]) == 1 and p["total"] == 2]
+        assert parciais, [p.get("prontas") for p in passos]
+
+
+class TestCorDeFora:
+    """Um bloco chapado não inventa traço nenhum e passava na conferência,
+    mesmo sendo magenta num fundo azul. Aconteceu de verdade: o generativo
+    devolveu faixas magenta num KV da Consigaz, com `limpo: true` e sem aviso,
+    e a peça foi entregue assim."""
+
+    def _peca(self, cor_da_faixa):
+        """Arte azul no meio, faixa da cor dada em cima e embaixo."""
+        import numpy as np
+        alto = Image.new("RGB", (200, 400), cor_da_faixa)
+        arte = Image.new("RGB", (200, 200))
+        px = arte.load()
+        for y in range(200):          # um degradê azul, com variação
+            for x in range(200):
+                px[x, y] = (20 + x // 4, 90 + y // 3, 200)
+        alto.paste(arte, (0, 100))
+        return alto, arte
+
+    def test_faixa_magenta_num_fundo_azul_e_acusada(self, tmp_path):
+        from api.fundo import cor_estranha
+        peca, arte = self._peca((236, 24, 244))
+        peca.save(tmp_path / "f.png")
+        avisos = cor_estranha(tmp_path / "f.png", [0, 100, 200, 300], arte)
+        assert len(avisos) == 2
+        assert "não existe na arte" in avisos[0]
+
+    def test_faixa_tirada_da_propria_paleta_passa(self, tmp_path):
+        from api.fundo import cor_estranha
+        peca, arte = self._peca((30, 120, 200))
+        peca.save(tmp_path / "f.png")
+        assert cor_estranha(tmp_path / "f.png", [0, 100, 200, 300], arte) == []
+
+    def test_sem_extensao_nao_ha_o_que_conferir(self, tmp_path):
+        from api.fundo import cor_estranha
+        peca, arte = self._peca((236, 24, 244))
+        peca.save(tmp_path / "f.png")
+        assert cor_estranha(tmp_path / "f.png", [0, 0, 200, 400], arte) == []
+
+    def test_a_esteira_avisa_em_vez_de_entregar_calada(self, tmp_path, monkeypatch):
+        """O aviso tem que chegar na entrega: foi a falta dele que deixou a
+        peça magenta passar por boa."""
+        from api import fundo as pf
+        from motor.replica import formato_by_id
+        arte = tmp_path / "arte.png"
+        base = Image.new("RGB", (200, 200))
+        px = base.load()
+        for y in range(200):
+            for x in range(200):
+                px[x, y] = (20 + x // 4, 90 + y // 3, 200)
+        base.save(arte)
+
+        def magenta(b, ex, espera):
+            alvo = (b.width + ex["left"] + ex["right"], b.height + ex["top"] + ex["bottom"])
+            tela = Image.new("RGB", alvo, (236, 24, 244))
+            tela.paste(b, (ex["left"], ex["top"]))
+            return tela, ""
+
+        monkeypatch.setattr(pf, "_continuar", magenta)
+        info = pf.preparar(arte, formato_by_id("ig-stories"), None,
+                           tmp_path / "fundo.png", modo="outpaint")
+        assert info["avisos"], "a faixa magenta saiu sem aviso nenhum"
+        assert any("não existe na arte" in a for a in info["avisos"])
+        # e não pode ser reaproveitado na exportação final
+        import json as _j
+        assinatura = _j.loads((tmp_path / "fundo.png.origem.json").read_text())
+        assert assinatura["limpo"] is False
+
+
+class TestOPacoteSoLevaAsPecas:
+    """A pasta do trabalho guarda a arte original, o fundo preparado e cada
+    recorte de letra do PSD. Num PSD de 60 MB o pacote saía com 118 MB e 88
+    arquivos, e quem pediu duas peças tinha de garimpar as duas no meio."""
+
+    def test_deixa_de_fora_a_oficina(self):
+        from api.main import para_entregar
+        itens = [{"nome": n} for n in (
+            "arte.psd", "base.psd", "fundo.png", "fundo-ig-stories.png",
+            "fundo-ig-stories.png.origem.json", "00-chegamos-0003.png",
+            "grotesk.ttf", "ig-stories.png", "gdn-300x250.png",
+            "video/ig-stories.mp4")]
+        fica = {i["nome"] for i in para_entregar(
+            {"prontas": ["ig-stories", "gdn-300x250"]}, itens)}
+        assert fica == {"ig-stories.png", "gdn-300x250.png", "video/ig-stories.mp4"}
+
+    def test_formato_que_nao_saiu_nao_entra(self):
+        from api.main import para_entregar
+        itens = [{"nome": "ig-stories.png"}, {"nome": "gdn-300x250.png"}]
+        fica = {i["nome"] for i in para_entregar({"prontas": ["ig-stories"]}, itens)}
+        assert fica == {"ig-stories.png"}
+
+    def test_sem_nada_reconhecido_manda_tudo(self):
+        """Melhor um pacote gordo do que um pacote vazio."""
+        from api.main import para_entregar
+        itens = [{"nome": "coisa.png"}]
+        assert para_entregar({"prontas": []}, itens) == itens

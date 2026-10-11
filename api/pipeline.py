@@ -14,7 +14,8 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from api import contraste, custo, fundo as prep_fundo, psd as leitor_psd, sossego
+from api import (contraste, custo, fundo as prep_fundo, psd as leitor_psd,
+                 sobreposicao, sossego)
 from api.compositor import ComposicaoImpossivel, Compositor, Terreno
 from PIL import Image
 
@@ -122,6 +123,15 @@ def conferir_peca(peca: dict, pasta: Path, arte: Path) -> list[str]:
                     f"Recorte com transparência")
         except Exception:
             pass
+
+    # a regra de sobreposição: a adaptação não inventa encosto que a arte-mãe
+    # não fazia, e texto novo não cai sobre o desenho. Estava escrita no motor
+    # desde 09/10/2026 e a esteira nunca a chamava — o mesmo defeito do
+    # lettering fantasma, que é o que este arquivo inteiro existe para evitar
+    try:
+        avisos += sobreposicao.conferir(peca, pasta)
+    except Exception:
+        pass                          # conferência não pode derrubar entrega
     return avisos
 
 
@@ -190,7 +200,7 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
         # assar. Entrava achatado antes, e a peça inteira não animava.
         with custo.medir() as conta:
             _psd_e_render(r, formatos, copia, pasta, brief, compositor, prancheta,
-                          _passo(progresso, len(formatos)), final)
+                          _passo(progresso, len(formatos), r), final)
         r.custo = conta.resumo()
         (pasta / "resultado.json").write_text(
             json.dumps(r.para_json(), ensure_ascii=False, indent=1), encoding="utf-8")
@@ -199,7 +209,7 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
     with custo.medir() as conta:
         # a leitura é uma chamada por trabalho, não por formato: é a arte que
         # está sendo lida, e ela é a mesma para todos
-        aviso = _passo(progresso, len(formatos))
+        aviso = _passo(progresso, len(formatos), r)
         preserva = getattr(compositor, "preserva", False)
         leitura = None
         if leitor and not preserva:
@@ -289,6 +299,11 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
         if final:
             for a in manter_a_mao(peca, pasta, fid):
                 r.avisos.setdefault(fid, []).append(a)
+
+        # a mesma régua do outro caminho: o PSD não passa por `conferir_peca`,
+        # e foi por aí que a peça com a chamada escrita em cima da foto saiu
+        for a in sobreposicao.conferir(peca, pasta):
+            r.avisos.setdefault(fid, []).append(a)
 
         arq = pasta / "pecas" / f"{fid}.json"
         arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -398,13 +413,35 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura,
                    tinta=info["protect_box"]), avisos, int(info.get("generativo") or 0)
 
 
-def _passo(progresso, total: int):
+# o que acontece uma vez só, antes do primeiro formato. Abrir um PSD de 60 MB
+# em camadas leva quase um minuto, e esse minuto não se repete por formato
+PRELUDIO = ("lendo a arte", "abrindo o PSD em camadas")
+
+
+def _passo(progresso, total: int, r: "Resultado | None" = None):
     """Avisa quem está esperando. Sem callback, não faz nada — a esteira não
-    pode depender de ter alguém ouvindo."""
+    pode depender de ter alguém ouvindo.
+
+    `desde` marca quando o trabalho por formato começou de verdade. Sem ele a
+    tela dividia o tempo de abrir o PSD pelo primeiro pedaço do primeiro
+    formato e anunciava catorze minutos num trabalho de um.
+
+    A lista do que já ficou pronto vai junto a cada passo. Sem ela o estado só
+    ganhava `prontas` no fim, e as peças apareciam todas de uma vez: quem pediu
+    oito formatos ficava minutos olhando quadro vazio com a primeira peça já
+    desenhada no disco.
+    """
+    from time import time
+    quando = {"desde": None}
+
     def avisar(o_que: str, feito: int = 0, formato: str = "") -> None:
-        if progresso:
-            progresso({"etapa": o_que, "feito": feito, "total": total,
-                       "formato": formato})
+        if not progresso:
+            return
+        if quando["desde"] is None and o_que not in PRELUDIO:
+            quando["desde"] = time()
+        progresso({"etapa": o_que, "feito": feito, "total": total,
+                   "formato": formato, "desde": quando["desde"],
+                   "prontas": sorted(r.prontas) if r is not None else []})
     return avisar
 
 

@@ -539,15 +539,34 @@ def perdido(conta: str, job: str, estado: dict) -> dict:
     return {**estado, **novo}
 
 
+def para_entregar(estado: dict, itens: list[dict]) -> list[dict]:
+    """Só as peças, não a oficina.
+
+    A pasta do trabalho guarda a arte original, o fundo preparado, cada recorte
+    de letra do PSD e as assinaturas de cada fundo. Isso é material de
+    trabalho: num PSD de 60 MB o pacote saía com 118 MB e 88 arquivos, e quem
+    pediu duas peças tinha de garimpar as duas no meio.
+    """
+    prontas = list(estado.get("prontas") or [])
+    quero = {f"{fid}.png" for fid in prontas}
+    fica = []
+    for it in itens:
+        nome = it["nome"]
+        if nome in quero or (nome.startswith("video/") and nome.endswith((".mp4", ".webm"))):
+            fica.append(it)
+    return fica or itens          # nada reconhecido: melhor tudo do que nada
+
+
 @app.get("/jobs/{job}/zip")
 def zip_do_trabalho(job: str, c: contas.Conta = Depends(conta_atual)):
-    """Tudo num arquivo só. Baixar peça por peça é o que mais irrita quem
+    """As peças num arquivo só. Baixar peça por peça é o que mais irrita quem
     entrega para cliente, e são oito, dez arquivos por campanha."""
     try:
         pasta = trabalhos.pasta_do(c.id, job)
+        estado = trabalhos.ler(c.id, job) or {}
     except ValueError:
         raise HTTPException(400, "identificador inválido")
-    itens = trabalhos.entregas(c.id, job)
+    itens = para_entregar(estado, trabalhos.entregas(c.id, job))
     if not itens:
         raise HTTPException(404, "este trabalho ainda não tem entregas")
     buf = io.BytesIO()

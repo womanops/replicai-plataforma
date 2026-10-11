@@ -96,7 +96,9 @@ def _melhor_continuacao(base, ex: dict, espera: int, plano: dict, w: int, h: int
             pronta = tela.resize((w, h), Im.Resampling.LANCZOS) if tela.size != (w, h) else tela
             pronta.save(prova)
             caixa = _to_target_coords(plano, 0, 0, w, h)["base_box"]
-            nota = len(inventou_estrutura(prova, caixa))
+            # cor fora da paleta pesa como traço inventado: as duas tornam a
+            # tentativa inútil, e insistir é mais barato do que entregar
+            nota = len(inventou_estrutura(prova, caixa)) + len(cor_estranha(prova, caixa, base))
         finally:
             prova.unlink(missing_ok=True)
         if nota == 0:
@@ -252,7 +254,12 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
     # ao modo deixava o teste da entrega dependendo de serviço externo, e a
     # regra em si não é sobre quem desenhou, é sobre o que apareceu. Vem antes
     # da assinatura porque é ela que diz se o fundo pode ser reaproveitado.
-    avisos = inventou_estrutura(destino, plano["base_box"]) if any(ex.values()) else []
+    avisos = []
+    if any(ex.values()):
+        avisos = (inventou_estrutura(destino, plano["base_box"])
+                  # e a pergunta oposta: um bloco chapado não inventa traço
+                  # nenhum e passava, mesmo sendo magenta num KV azul
+                  + cor_estranha(destino, plano["base_box"], img))
 
     # a assinatura guarda o plano e se a conferência passou: é com ela que a
     # exportação final sabe o que reaproveitar e o que precisa refazer
@@ -361,6 +368,76 @@ def inventou_estrutura(caminho, base_box) -> list[str]:
                 f"não tem (linha {linha}, {razao:.1f}x mais marcado que a arte ao lado). "
                 f"Vale rodar de novo ou escolher outro enquadramento")
     return avisos
+
+
+# quanto a cor da faixa pode se afastar da paleta da arte, em distância RGB
+# ponderada. Medido nos dois lados: a continuação boa de um degradê azul ficou
+# em 12, o bloco de cor tirado da própria paleta em 7, e a faixa magenta que o
+# generativo devolveu num KV azul ficou em 193.
+COR_ESTRANHA = 45
+
+
+def _paleta(img, quantas: int = 48):
+    """As cores que a arte usa, poucas e representativas."""
+    from PIL import Image
+    pequena = img.convert("RGB").resize((96, 96), Image.Resampling.BILINEAR)
+    reduzida = pequena.quantize(colors=quantas, method=Image.Quantize.FASTOCTREE)
+    tabela = reduzida.getpalette() or []
+    import numpy as np
+    usadas = {i for _, i in reduzida.convert("P").getcolors(96 * 96) or []}
+    cores = [tabela[i * 3:i * 3 + 3] for i in sorted(usadas) if tabela[i * 3:i * 3 + 3]]
+    return np.asarray(cores, dtype=float) if cores else None
+
+
+# o olho pesa verde mais que azul; distância crua em RGB chama de perto um
+# magenta que ninguém confundiria com o azul ao lado
+PESO = (0.30, 0.59, 0.11)
+
+
+def _longe_da_paleta(cores, paleta) -> float:
+    import numpy as np
+    pesos = np.asarray(PESO) * 3
+    d = ((cores[:, None, :] - paleta[None, :, :]) ** 2 * pesos).sum(axis=2) ** 0.5
+    return float(np.median(d.min(axis=1)))
+
+
+def cor_estranha(caminho, base_box, arte=None) -> list[str]:
+    """A faixa continuada usa cor que não existe na arte?
+
+    `inventou_estrutura` pergunta se apareceu desenho demais. Esta pergunta é a
+    oposta e faltava: um bloco chapado não inventa traço nenhum e passa — mesmo
+    quando é magenta num KV azul. Foi o que o generativo devolveu numa peça
+    real, com `limpo: true` e sem aviso, e só apareceu quando alguém olhou.
+    """
+    import numpy as np
+    from PIL import Image
+
+    caminho = Path(caminho)
+    if not caminho.exists() or not base_box:
+        return []
+    with Image.open(caminho) as im:
+        peca = im.convert("RGB")
+        W, H = peca.size
+        dentro = peca.crop(tuple(int(v) for v in base_box))
+        paleta = _paleta(arte if arte is not None else dentro)
+        if paleta is None or not len(paleta):
+            return []
+        x0, y0, x1, y1 = (int(v) for v in base_box)
+        faixas = {"topo": (0, 0, W, y0), "rodapé": (0, y1, W, H),
+                  "esquerda": (0, y0, x0, y1), "direita": (x1, y0, W, y1)}
+        avisos = []
+        for nome, caixa in faixas.items():
+            if caixa[2] - caixa[0] < 8 or caixa[3] - caixa[1] < 8:
+                continue
+            amostra = peca.crop(caixa).resize((24, 24), Image.Resampling.BILINEAR)
+            cores = np.asarray(amostra, dtype=float).reshape(-1, 3)
+            d = _longe_da_paleta(cores, paleta)
+            if d >= COR_ESTRANHA:
+                avisos.append(
+                    f"a continuação do fundo no {nome} saiu numa cor que não existe na "
+                    f"arte (distância {d:.0f} da paleta dela). Isso não é continuação, "
+                    f"é outra peça: vale rodar de novo")
+        return avisos
 
 
 def _ja_feito(destino, plano: dict, modo: str) -> dict | None:

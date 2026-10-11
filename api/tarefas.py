@@ -101,8 +101,10 @@ def processar(conta: str, job: str, arte: str, formatos: list[str], headline: st
 
     def contar(p: dict) -> None:
         # grava a cada passo: é o que distingue, de fora, um render demorado
-        # de um travamento
-        trabalhos.gravar(conta, job, {"progresso": p})
+        # de um travamento. E a lista do que já saiu vai junto, senão as peças
+        # só aparecem na tela quando a última terminar
+        trabalhos.gravar(conta, job, {"progresso": p,
+                                      "prontas": p.get("prontas") or []})
 
     try:
         r = desdobrar(Path(arte), formatos, compositor(arte, headline, cta, modo),
