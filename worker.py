@@ -14,6 +14,7 @@ este arquivo duas vezes.
 """
 from __future__ import annotations
 
+import platform
 import sys
 
 from api import ambiente
@@ -35,7 +36,7 @@ def main(argv: list[str]) -> int:
               file=sys.stderr)
         return 2
 
-    nomes = argv[1:] or [FILA_PECA, FILA_VIDEO]
+    nomes = [a for a in argv[1:] if not a.startswith("--")] or [FILA_PECA, FILA_VIDEO]
     conexao = Redis.from_url(url)
     try:
         conexao.ping()
@@ -43,8 +44,20 @@ def main(argv: list[str]) -> int:
         print(f"o Redis em {url} não respondeu: {e}", file=sys.stderr)
         return 2
 
+    # No macOS o worker normal morre com signal 6 ao executar: ele bifurca um
+    # processo para cada trabalho, e o sistema proíbe fork() depois que certas
+    # bibliotecas foram carregadas. O trabalho some da fila sem explicação.
+    # Em Linux, que é onde isto roda em produção, a bifurcação fica — é ela que
+    # isola um render que trave do worker que o atende.
+    from rq import SimpleWorker
+    bifurca = platform.system() != "Darwin" and "--sem-fork" not in argv
+    classe = Worker if bifurca else SimpleWorker
+    if not bifurca:
+        print("sem bifurcação: no macOS ela morre com signal 6. Em Linux o worker "
+              "bifurca e um render travado não derruba o atendimento.")
+
     print(f"atendendo {', '.join(nomes)} em {url}")
-    Worker([Queue(n, connection=conexao) for n in nomes], connection=conexao).work()
+    classe([Queue(n, connection=conexao) for n in nomes], connection=conexao).work()
     return 0
 
 

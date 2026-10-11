@@ -62,6 +62,7 @@ def saude():
     from api import modelo
     return {"ok": True, "fila": type(FILA).__name__,
             "fila_porque": getattr(FILA, "porque", ""),
+            "fila_tamanho": {n: q.count for n, q in getattr(FILA, "filas", {}).items()},
             "compositor": "modelo+regra" if modelo.disponivel() else "regra",
             "desenhando_com": desenhando_com()}
 
@@ -130,7 +131,9 @@ async def criar(
                                      f"Tem: {', '.join(p.nome for p in achadas)}")
 
     trabalhos.gravar(job, {**comum, "status": "na fila", "prancheta": prancheta})
-    FILA.enfileirar(processar, job, str(destino), pedidos, headline, cta, brief, prancheta)
+    na_fila = FILA.enfileirar(processar, job, str(destino), pedidos, headline, cta,
+                              brief, prancheta)
+    trabalhos.gravar(job, {"id_na_fila": na_fila})
     return {"job": job, "status": trabalhos.ler(job)["status"]}
 
 
@@ -152,9 +155,9 @@ def escolher_prancheta(job: str, nome: str = Form(...)):
 
     arte = trabalhos.pasta_do(job) / estado["arte"]
     trabalhos.gravar(job, {"status": "na fila", "prancheta": nome})
-    FILA.enfileirar(processar, job, str(arte), estado["formatos"],
-                    estado.get("headline", ""), estado.get("cta", ""),
-                    estado.get("brief", ""), nome)
+    trabalhos.gravar(job, {"id_na_fila": FILA.enfileirar(
+        processar, job, str(arte), estado["formatos"], estado.get("headline", ""),
+        estado.get("cta", ""), estado.get("brief", ""), nome)})
     return {"job": job, "status": trabalhos.ler(job)["status"], "prancheta": nome}
 
 
@@ -189,8 +192,8 @@ def animar(job: str, formatos: str = Form(""), preset: str = Form("editorial"),
 
     trabalhos.gravar(job, {"video": {"status": "na fila", "preset": preset,
                                      "formatos": pedidos}})
-    FILA.enfileirar(processar_video, job, pedidos, preset, float(segundos),
-                    fila=FILA_VIDEO)
+    trabalhos.gravar(job, {"id_na_fila": FILA.enfileirar(
+        processar_video, job, pedidos, preset, float(segundos), fila=FILA_VIDEO)})
     return {"job": job, "video": trabalhos.ler(job)["video"]}
 
 
@@ -202,7 +205,43 @@ def ver(job: str):
         raise HTTPException(400, "identificador inválido")
     if estado is None:
         raise HTTPException(404, "trabalho não existe")
+    estado = perdido(job, estado)
     return {"job": job, **estado, "entregas": trabalhos.entregas(job)}
+
+
+def perdido(job: str, estado: dict) -> dict:
+    """Trabalho que a fila perdeu não pode ficar esperando para sempre.
+
+    O worker pode morrer entre tirar o trabalho da fila e começar a gravar
+    estado — num desligamento, num estouro de memória. O arquivo fica em "na
+    fila" e, de fora, isso é indistinguível de uma fila comprida. Aconteceu
+    duas vezes aqui, e levou meia hora para eu entender que não era lentidão.
+    """
+    if estado.get("status") not in ("na fila", "rodando"):
+        return estado
+    ident = estado.get("id_na_fila")
+    if not ident or not hasattr(FILA, "filas"):
+        return estado
+    try:
+        from rq.job import Job
+        conexao = next(iter(FILA.filas.values())).connection
+        try:
+            vaga = Job.fetch(ident, connection=conexao)
+        except Exception:
+            vaga = None
+        if vaga is None:
+            motivo = "o trabalho sumiu da fila sem ser executado"
+        elif vaga.is_failed:
+            motivo = (vaga.latest_result().exc_string if vaga.latest_result()
+                      else "falhou sem deixar mensagem")
+        else:
+            return estado
+    except Exception:
+        return estado                 # diagnóstico nunca derruba a consulta
+    novo = {"status": "erro", "erro": motivo.strip().splitlines()[-1][:300],
+            "progresso": None}
+    trabalhos.gravar(job, novo)
+    return {**estado, **novo}
 
 
 @app.get("/jobs/{job}/zip")
