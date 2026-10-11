@@ -27,6 +27,10 @@ from motor.replica import invasao_ret
 # abaixo disto é encosto de borda, não sobreposição. Mesmo piso do motor.
 PISO = 0.02
 
+# folga sobre o que a arte-mãe já fazia, igual à do motor: medir é aproximado
+# e acusar por um ponto de diferença vira ruído
+TOLERANCIA = 0.03
+
 # papéis que carregam leitura: no caminho do PSD o texto chega como recorte de
 # letra, então olhar só `tipo == "texto"` deixaria passar justamente a peça
 # reconstruída, que é a maioria
@@ -158,6 +162,28 @@ def _tinta_de(el: dict, medido: dict):
             float(b.get("w", 0)), float(b.get("h", 0)))
 
 
+def _linhas(els: list[dict], pasta: Path) -> dict:
+    """A tinta de cada linha de texto, somando os recortes de letra dela."""
+    linhas: dict = {}
+    for i, el in enumerate(els):
+        camada = el.get("camada")
+        if not camada:
+            continue
+        r = _tinta(el, pasta, {})
+        if not r:
+            continue
+        atual = linhas.get(camada)
+        if atual is None:
+            linhas[camada] = {"em": i, "ret": r}
+            continue
+        a, b = atual["ret"], r
+        x0, y0 = min(a[0], b[0]), min(a[1], b[1])
+        x1 = max(a[0] + a[2], b[0] + b[2])
+        y1 = max(a[1] + a[3], b[1] + b[3])
+        atual["ret"] = (x0, y0, x1 - x0, y1 - y0)
+    return linhas
+
+
 def conferir(peca: dict, pasta: Path, permitido: dict | None = None) -> list[str]:
     """O que, na peça montada, cobre o texto mais do que devia — e o texto que
     caiu em cima do desenho.
@@ -176,20 +202,31 @@ def conferir(peca: dict, pasta: Path, permitido: dict | None = None) -> list[str
     medido = _por_papel(pasta, peca.get("formato", ""))
     avisos: list[str] = []
     pior: dict[tuple, float] = {}
+    # a linha é a unidade, não a letra: um lettering do PSD vira trinta e cinco
+    # recortes, e medir letra a letra dá 100% para a letra que ficou atrás da
+    # figura e 0% para a vizinha. A régua da casa é a largura da linha inteira
+    por_camada = _linhas(els, pasta)
     for i, el in enumerate(els):
         papel = el.get("papel") or ""
         ehtexto = el.get("tipo") in ("texto", "botao") or papel in PAPEIS_DE_TEXTO
         if not ehtexto:
             continue
-        crua = medido.get(papel, "")
-        ret = None
-        if el.get("tipo") in ("texto", "botao") and crua:
-            try:
-                ret = tuple(float(v) for v in crua.split(","))
-            except ValueError:
-                ret = None
-        if ret is None:
-            ret = _tinta(el, pasta, {})
+        camada = el.get("camada")
+        if camada:
+            # só uma vez por linha, no primeiro recorte dela
+            if por_camada.get(camada, {}).get("em") != i:
+                continue
+            ret = por_camada[camada]["ret"]
+        else:
+            crua = medido.get(papel, "")
+            ret = None
+            if el.get("tipo") in ("texto", "botao") and crua:
+                try:
+                    ret = tuple(float(v) for v in crua.split(","))
+                except ValueError:
+                    ret = None
+            if ret is None:
+                ret = _tinta(el, pasta, {})
         if not ret or ret[2] < 1 or ret[3] < 1:
             continue
         # os dois sentidos: o que está por cima do texto, e — quando o texto é
@@ -207,7 +244,10 @@ def conferir(peca: dict, pasta: Path, permitido: dict | None = None) -> list[str
                 continue
             cb = cima.get("box") or {}
             fatia = invasao_ret(ret, m, (cb.get("x", 0), cb.get("y", 0)))
-            folga = max(PISO, float(permitido.get(papel, 0.0)))
+            # a linha de base é por camada quando ela existe: é o nome que a
+            # arte-mãe conhece. `papel` repete entre camadas e misturaria duas
+            na_mae = float(permitido.get(el.get("camada") or papel, 0.0))
+            folga = max(PISO, na_mae + TOLERANCIA)
             if fatia <= folga:
                 continue
             quem = cima.get("camada") or cima.get("papel") or Path(cima["src"]).stem
@@ -217,10 +257,13 @@ def conferir(peca: dict, pasta: Path, permitido: dict | None = None) -> list[str
             # trinta e cinco recortes e a entrega saía com trinta e cinco
             # avisos do mesmo problema
             chave = (quem, oque, encostou)
-            pior[chave] = max(pior.get(chave, 0.0), fatia)
-    for (quem, oque, encostou), fatia in sorted(pior.items(), key=lambda kv: -kv[1]):
+            if fatia > pior.get(chave, (0.0, 0.0))[0]:
+                pior[chave] = (fatia, na_mae)
+    for (quem, oque, encostou), (fatia, na_mae) in sorted(pior.items(),
+                                                          key=lambda kv: -kv[1][0]):
+        antes = (f"na arte-mãe eram {na_mae*100:.0f}%" if na_mae
+                 else "a arte-mãe não encostava")
         avisos.append(
-            f"`{quem}` {encostou} {fatia*100:.0f}% da largura de \"{oque}\". A "
-            f"arte-mãe não fazia isso: sobreposição que a adaptação inventou não "
-            f"entra. Mova um dos dois em Ajustar")
+            f"`{quem}` {encostou} {fatia*100:.0f}% da largura de \"{oque}\"; {antes}. "
+            f"Em Ajustar dá para diminuir o corpo do texto até ele sair de perto")
     return avisos + sobre_desenho(peca, pasta)

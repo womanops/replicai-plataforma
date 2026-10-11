@@ -95,3 +95,53 @@ class TestAEsteiraUsaAAncora:
     def test_a_leitura_carrega_as_bordas(self):
         from api.psd import Leitura
         assert Leitura().plantada_em == []
+
+
+class TestNaoMostrarOQueAPranchetaEsconde:
+    """A prancheta corta o que não foi aprovado. O mascote da Consigaz tem,
+    na perna que ela esconde, uma logo espelhada ao contrário: mostrar isso
+    num formato mais alto não é desdobrar a peça, é publicar o que o designer
+    tinha escondido."""
+
+    def test_a_camada_e_aparada_na_prancheta(self, tmp_path):
+        from PIL import Image
+        from api import psd
+        import inspect
+        fonte = inspect.getsource(psd.extrair)
+        assert "im.crop((cx0 - x0, cy0 - y0, cx1 - x0, cy1 - y0))" in fonte
+
+    def test_caixa_cortada_vira_a_caixa_visivel(self):
+        """O bbox guardado é o aparado, senão o elemento é desenhado maior do
+        que a arte mostrava."""
+        x0, y0, x1, y1 = 718, 748, 1240, 1586
+        px, py, pw, ph = 0, 0, 1200, 1200
+        cx0, cy0 = max(x0, px), max(y0, py)
+        cx1, cy1 = min(x1, px + pw), min(y1, py + ph)
+        assert (cx0, cy0, cx1, cy1) == (718, 748, 1200, 1200)
+
+
+class TestOConteudoCentraEAFiguraFicaNoChao:
+    def test_o_bloco_centra_na_altura_util(self):
+        """Útil, não o quadro cru: o Stories tem 250 px no topo e 340 no
+        rodapé que o aplicativo cobre."""
+        import inspect
+
+        from api import psd
+        fonte = inspect.getsource(psd._ancora_centrada)
+        assert 'sv["top"]' in fonte and 'sv["bottom"]' in fonte
+
+    def test_sem_figura_plantada_a_ancora_nao_muda(self):
+        from api.psd import Leitura, _ancora_centrada
+        from pathlib import Path
+        vazia = Leitura()
+        assert _ancora_centrada(vazia, {"w": 1, "h": 1, "safe": {}}, Path("."), (0.5, 0.3)) \
+            == (0.5, 0.3)
+
+    def test_plantar_encosta_so_o_lado_que_o_quadro_cortava(self):
+        from api.psd import _plantar
+        els = [{"box": {"x": 10, "y": 10, "w": 50, "h": 50}},
+               {"plantado": ["baixo"], "box": {"x": 20, "y": 20, "w": 40, "h": 60}}]
+        saida = _plantar(els, {"w": 200, "h": 300})
+        assert saida[0]["box"]["y"] == 10          # conteúdo não se move
+        assert saida[1]["box"]["y"] == 300 - 60    # figura desce até o chão
+        assert saida[1]["box"]["x"] == 20          # e o eixo livre fica

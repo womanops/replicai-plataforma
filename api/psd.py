@@ -72,6 +72,7 @@ class Camada:
     fonte: str = ""
     mesclagem: str = ""            # valor de CSS, vazio quando é normal
     opacidade: float = 1.0
+    plantada: tuple[str, ...] = ()     # bordas da prancheta que cortam a figura
 
 
 @dataclass
@@ -174,12 +175,20 @@ def _tem_texto(camada) -> bool:
     return False
 
 
-def separaveis(raiz) -> list:
-    """Quais camadas valem separar para animar.
+def separaveis(raiz, prancheta=None) -> list:
+    """Quais camadas valem separar.
 
-    A regra é o texto: onde há palavra há hierarquia, e hierarquia é o que a
-    animação revela. Então o grupo que contém texto é aberto, e o resto do
-    arquivo — fundo, textura, grade, grain — vira uma imagem só.
+    Duas razões para soltar uma camada. A primeira é o texto: onde há palavra
+    há hierarquia, e hierarquia é o que a animação revela. Então o grupo que
+    contém texto é aberto, e o resto do arquivo — fundo, textura, grade,
+    grain — vira uma imagem só.
+
+    A segunda é a figura que a prancheta corta. Ela está plantada numa borda,
+    e num quadro mais alto precisa continuar plantada **sem arrastar o
+    conteúdo junto**: assada no fundo, ou o boneco flutua cortado no meio, ou
+    a peça inteira desce atrás dele. Solta, o conteúdo centra e ele fica no
+    chão — que foi o que a Ligia pediu, e é o que o arquivo permite, porque o
+    corpo inteiro está lá.
 
     Assar o resto não é preguiça, é fidelidade. Remontar a pilha inteira de
     mesclagens e camadas de ajuste no navegador deu 11,6 de diferença média
@@ -190,7 +199,21 @@ def separaveis(raiz) -> list:
         if not c.visible or c.kind in AJUSTES or not _tem_texto(c):
             continue
         escolhidas.extend(list(_plano(c)) if c.is_group() else [(None, c)])
-    return [c for _, c in escolhidas]
+    soltas = [c for _, c in escolhidas]
+    if prancheta is not None:
+        for figura, lados in _figuras_plantadas(raiz, prancheta):
+            # só o eixo vertical solta a camada. Amputar é o que acontece
+            # quando se abre faixa sob quem está em pé; foto que sangra pela
+            # lateral é grade de colagem, e soltá-la trouxe de volta o caso da
+            # máscara de recorte, em que o PNG sai vazio
+            if "baixo" not in lados and "cima" not in lados:
+                continue
+            if figura not in soltas:
+                soltas.append(figura)
+    # na ordem da pilha do arquivo: é ela que diz quem cobre quem, e o braço
+    # do mascote passa por cima do CTA porque no PSD ele está acima do texto
+    pilha = {id(c): i for i, (_, c) in enumerate(_plano(raiz))}
+    return sorted(soltas, key=lambda c: pilha.get(id(c), 0))
 
 
 def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
@@ -210,8 +233,9 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
             raise ValueError(f"a prancheta `{alvo.nome}` sumiu do arquivo")
 
     todas = [c for _, c in _plano(raiz)]
+    plantadas = {id(c): lados for c, lados in _figuras_plantadas(raiz, alvo)}
     if nomes_separados is None:
-        soltas = separaveis(raiz)
+        soltas = separaveis(raiz, alvo)
     else:
         pedidos = {n for n in nomes_separados}
         soltas = [c for c in todas if _nome_limpo(c.name) in pedidos]
@@ -257,9 +281,21 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
         if im is None or not im.getbbox():
             ignoradas.append(f"`{nome}` saiu vazia")
             continue
+        # aparado na prancheta: o que ela corta não foi aprovado. O mascote da
+        # Consigaz tem, na perna que a prancheta esconde, uma logo espelhada
+        # ao contrário — mostrar isso num formato mais alto não é desdobrar a
+        # peça, é publicar o que o designer tinha escondido
+        x0, y0, x1, y1 = c.bbox
+        cx0, cy0 = max(x0, alvo.x), max(y0, alvo.y)
+        cx1, cy1 = min(x1, alvo.x + alvo.w), min(y1, alvo.y + alvo.h)
+        if (cx0, cy0, cx1, cy1) != (x0, y0, x1, y1):
+            if cx1 <= cx0 or cy1 <= cy0:
+                ignoradas.append(f"`{nome}` está toda fora da prancheta")
+                continue
+            im = im.crop((cx0 - x0, cy0 - y0, cx1 - x0, cy1 - y0))
+            x0, y0, x1, y1 = cx0, cy0, cx1, cy1
         arq = destino / f"{i:02d}-{_apelido(nome)}.png"
         im.save(arq)
-        x0, y0, x1, y1 = c.bbox
         camadas.append(Camada(
             nome=nome,
             tipo="texto" if c.kind == "type" else "imagem",
@@ -269,6 +305,7 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
             fonte=_primeira_fonte(c) if c.kind == "type" else "",
             mesclagem=_mesclagem(c),
             opacidade=_opacidade(c),
+            plantada=plantadas.get(id(c), ()),
         ))
 
     assadas = len(todas) - len(soltas)
@@ -276,11 +313,21 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
         ignoradas.append(f"{assadas} camadas foram assadas no fundo: não animam, mas "
                          f"saem exatas como o Photoshop as mostra")
 
-    plantada = sorted(_bordas_com_figura(raiz, alvo))
+    # só o que ficou assado prende o quadro. Figura solta é reposicionada
+    # sozinha, e prender o quadro por causa dela arrastaria o conteúdo junto
+    soltos = {id(c) for c in soltas}
+    assadas_plantadas = sorted({lado for c, lados in _figuras_plantadas(raiz, alvo)
+                                if id(c) not in soltos for lado in lados})
+    plantada = assadas_plantadas
+    livres = sorted({lado for c in camadas for lado in c.plantada})
+    if livres:
+        ignoradas.append(
+            f"figura encostada em {', '.join(livres)}: ela sai do fundo e vai plantada "
+            f"na borda do quadro novo, com o conteúdo centrado")
     if plantada:
         ignoradas.append(
-            f"figura encostada em {', '.join(plantada)}: a faixa nova vai para o outro "
-            f"lado, senão ela solta no ar e o corpo sai cortado no meio")
+            f"figura assada encostada em {', '.join(plantada)}: a faixa nova vai para o "
+            f"outro lado, senão ela solta no ar e o corpo sai cortado no meio")
 
     return Leitura(pranchetas=lista, escolhida=alvo.nome, ambigua=ambigua,
                    canvas={"w": alvo.w, "h": alvo.h}, fundo=fundo_nome,
@@ -366,6 +413,8 @@ def como_elementos(leitura: Leitura, pasta: Path | None = None) -> list[dict]:
         ordem = ORDEM.get(papel, 9)
         comum = {"tipo": "imagem", "papel": papel, "fit": "fill", "ancorado": True,
                  "camada": c.nome, "ordem": ordem}
+        if c.plantada:
+            comum["plantado"] = list(c.plantada)
         if c.mesclagem:
             comum["mesclagem"] = c.mesclagem
         if c.opacidade < 1:
@@ -415,12 +464,16 @@ def tinta_de(leitura: Leitura) -> tuple[int, int, int, int] | None:
     lettering com reflexo. Com PSD é conta: as camadas soltas são exatamente a
     tinta, e as caixas delas vêm do arquivo.
     """
-    if not leitura.camadas:
+    # a figura plantada fica de fora: a caixa dela passa da prancheta de
+    # propósito (o corpo inteiro está no arquivo), e somá-la à tinta inflaria
+    # a área protegida para além do próprio quadro
+    camadas = [c for c in leitura.camadas if not c.plantada] or leitura.camadas
+    if not camadas:
         return None
-    xs0 = min(c.box["x"] for c in leitura.camadas)
-    ys0 = min(c.box["y"] for c in leitura.camadas)
-    xs1 = max(c.box["x"] + c.box["w"] for c in leitura.camadas)
-    ys1 = max(c.box["y"] + c.box["h"] for c in leitura.camadas)
+    xs0 = min(c.box["x"] for c in camadas)
+    ys0 = min(c.box["y"] for c in camadas)
+    xs1 = max(c.box["x"] + c.box["w"] for c in camadas)
+    ys1 = max(c.box["y"] + c.box["h"] for c in camadas)
     return (xs0, ys0, xs1, ys1)
 
 
@@ -507,25 +560,23 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
 FIGURA_ATE = 0.70
 
 
-def _bordas_com_figura(raiz, prancheta) -> set[str]:
-    """Bordas da prancheta onde uma figura é cortada pelo quadro.
+def _figuras_plantadas(raiz, prancheta) -> list[tuple[object, tuple[str, ...]]]:
+    """As figuras que a prancheta corta, e em que bordas.
 
     Quem desenhou a peça encostou a figura ali de propósito: o mascote está
-    plantado no rodapé e sai pela direita. Abrir faixa desse lado solta a
-    figura no ar e corta o corpo dela no meio — foi exatamente o que saiu no
-    Stories, com o Nino amputado flutuando sobre um rodapé vazio.
-
-    Não é régua de pixel, é o que o arquivo diz: a camada tem bbox, e bbox que
-    passa da borda é figura cortada pelo quadro.
+    plantado no rodapé e sai pela direita. O arquivo tem o corpo inteiro —
+    na Consigaz a prancheta o corta no joelho, e os pés estão lá.
     """
     x0p, y0p = prancheta.x, prancheta.y
     x1p, y1p = x0p + prancheta.w, y0p + prancheta.h
-    bordas: set[str] = set()
+    achadas: list[tuple[object, tuple[str, ...]]] = []
 
     def olhar(no):
         for c in no:
-            if c.is_group():
+            if getattr(c, "is_group", lambda: False)():
                 olhar(c)
+                continue
+            if not getattr(c, "visible", True) or getattr(c, "kind", "") in AJUSTES:
                 continue
             try:
                 bb = c.bbox
@@ -537,16 +588,27 @@ def _bordas_com_figura(raiz, prancheta) -> set[str]:
             larg, alt = x1 - x0, y1 - y0
             if larg <= 0 or alt <= 0:
                 continue
+            bordas = []
             if y1 > y1p and larg <= prancheta.w * FIGURA_ATE:
-                bordas.add("baixo")
+                bordas.append("baixo")
             if y0 < y0p and larg <= prancheta.w * FIGURA_ATE:
-                bordas.add("cima")
+                bordas.append("cima")
             if x1 > x1p and alt <= prancheta.h * FIGURA_ATE:
-                bordas.add("direita")
+                bordas.append("direita")
             if x0 < x0p and alt <= prancheta.h * FIGURA_ATE:
-                bordas.add("esquerda")
+                bordas.append("esquerda")
+            if bordas:
+                achadas.append((c, tuple(bordas)))
 
     olhar(raiz)
+    return achadas
+
+
+def _bordas_com_figura(raiz, prancheta) -> set[str]:
+    """Só as bordas, sem as camadas. Usada pela âncora do quadro."""
+    bordas: set[str] = set()
+    for _, lados in _figuras_plantadas(raiz, prancheta):
+        bordas.update(lados)
     return bordas
 
 
@@ -580,10 +642,15 @@ def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
 
     pasta = Path(pasta)
     base = elementos if elementos is not None else como_elementos(leitura, pasta)
-    info = pf.preparar(pasta / leitura.fundo, formato, tinta_de(leitura),
-                       pasta / f"fundo-{formato['id']}.png",
-                       ancora=ancora_das_bordas(set(leitura.plantada_em)),
+    arte = pasta / leitura.fundo
+    ancora = _ancora_centrada(leitura, formato, arte,
+                              ancora_das_bordas(set(leitura.plantada_em)))
+    info = pf.preparar(arte, formato, tinta_de(leitura),
+                       pasta / f"fundo-{formato['id']}.png", ancora=ancora,
                        insistir=final, reaproveitar=final)
+    movidos = _plantar([dict(e, box=pf.mover(e["box"], info["plano"])) for e in base],
+                       formato)
+    elementos_finais, encolheu = _afastar(movidos, leitura, pasta, formato)
     return {
         "formato": formato["id"],
         "canvas": {"w": formato["w"], "h": formato["h"]},
@@ -592,9 +659,247 @@ def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
         "via": "psd-reenquadra",
         "fundo": {"tipo": "imagem", "src": info["src"], "fit": "cover"},
         "fontes": [],
-        "elementos": [dict(e, box=pf.mover(e["box"], info["plano"])) for e in base],
-        "_fundo": info,
+        "elementos": elementos_finais,
+        "_fundo": {**info, "avisos": list(info.get("avisos") or []) + encolheu},
     }
+
+
+def _cobertura(textos: list[tuple], figura: tuple) -> float:
+    """Quanto a figura cobre do texto, pela régua da casa: fatia da largura do
+    retângulo justo de tinta, tinta contra tinta."""
+    from motor.replica import _ret_da_tinta, invasao_ret
+    fm, fx, fy = figura
+    pior = 0.0
+    for tm, tx, ty in textos:
+        ret = _ret_da_tinta(tm, tx, ty)
+        if not ret:
+            continue
+        pior = max(pior, invasao_ret(ret, fm, (fx, fy)))
+    return pior
+
+
+def _mascaras(camadas, pasta: Path, escala: float = 1.0):
+    """Alfa de cada camada, no tamanho em que ela vai aparecer."""
+    from motor.replica import _alfa
+    saida = []
+    for c in camadas:
+        arq = Path(pasta) / c.src
+        if not arq.exists():
+            continue
+        w = max(1, round(c.box["w"] * escala))
+        h = max(1, round(c.box["h"] * escala))
+        try:
+            saida.append((_alfa(arq, w, h), c))
+        except Exception:
+            continue
+    return saida
+
+
+def cobertura_na_mae(leitura: Leitura, pasta: Path) -> dict[str, float]:
+    """Quanto a figura já cobria cada linha de texto no arquivo.
+
+    É a linha de base da regra da casa: a adaptação não pode cobrir mais do
+    que a arte-mãe cobria naquele mesmo par. No KV da Consigaz o braço do
+    mascote cobre 16% do CANDIDATE-SE de propósito — é gesto de apresentar, e
+    acusar isso como defeito seria acusar o desenho.
+    """
+    figuras = [c for c in leitura.camadas if c.plantada]
+    textos = [c for c in leitura.camadas if c.tipo == "texto"]
+    if not figuras or not textos:
+        return {}
+    mascaras = {c.nome: m for m, c in _mascaras(figuras + textos, pasta)}
+    saida: dict[str, float] = {}
+    for fig in figuras:
+        if fig.nome not in mascaras:
+            continue
+        for t in textos:
+            if t.nome not in mascaras:
+                continue
+            f = _cobertura([(mascaras[t.nome], t.box["x"], t.box["y"])],
+                           (mascaras[fig.nome], fig.box["x"], fig.box["y"]))
+            if f > 0:
+                saida[t.nome] = max(saida.get(t.nome, 0.0), f)
+    return saida
+
+
+def _ancora_centrada(leitura: Leitura, formato: dict, arte: Path,
+                     ancora: tuple[float, float]) -> tuple[float, float]:
+    """Centra o bloco de conteúdo na altura útil da peça.
+
+    Útil, e não o quadro cru: o Stories tem 250 px no topo e 340 no rodapé que
+    o aplicativo cobre. Centrar no quadro inteiro joga o conteúdo para dentro
+    da faixa que ninguém vê.
+
+    Só vale quando há figura plantada no chão — é ela que ocupa o rodapé e
+    sustenta a peça. Sem figura, centrar deixaria a arte boiando, e a âncora
+    continua a de antes.
+    """
+    from api import fundo as pf
+    from motor.replica import open_rgb, plan_fit
+
+    if not any("baixo" in c.plantada for c in leitura.camadas):
+        return ancora
+
+    with open_rgb(arte) as img:
+        W, H = img.size
+    w, h = formato["w"], formato["h"]
+    margem = pf._com_respiro(tinta_de(leitura), formato, W, H)
+    estrategia, _ = pf.escolher_estrategia(W, H, w, h, margem)
+    plano = plan_fit(W, H, w, h, margem, estrategia, (ancora[0], 0.5), 0.0)
+    ex = plano["expand"]
+    faixa = round((ex["top"] + ex["bottom"]) * plano["escala"])
+    if faixa <= 0:
+        return ancora
+
+    sv = formato["safe"]
+    bloco = h - faixa
+    util = h - sv["top"] - sv["bottom"]
+    topo = sv["top"] + max(0, (util - bloco)) / 2
+    return (ancora[0], min(1.0, max(0.0, topo / faixa)))
+
+
+# até onde vale encolher uma linha para ela sair de perto da figura. Abaixo
+# disto o texto deixa de ser o que foi aprovado e vira outra tipografia
+ENCOLHE_ATE = 0.78
+
+
+def _afastar(elementos: list[dict], leitura: Leitura, pasta: Path,
+             formato: dict) -> tuple[list[dict], list[str]]:
+    """Diminui o corpo da linha que a figura passou a cobrir.
+
+    Plantar a figura no chão e centrar o conteúdo afasta um do outro, e um
+    pedaço mais largo do corpo dela cai sobre o fim da linha. Entregar assim
+    seria entregar de qualquer jeito: a regra da casa é que a adaptação não
+    cobre texto mais do que a arte-mãe cobria.
+
+    Então a linha encolhe — ancorada na esquerda e na base, que é como ela
+    está alinhada — até a conta voltar para dentro da regra. Encolher é a
+    mexida menos invasiva disponível: não troca palavra, não muda de lugar e
+    não corta nada.
+    """
+    from api.sobreposicao import PISO, TOLERANCIA
+    from motor.replica import _ret_da_tinta, invasao_ret
+
+    figuras = [e for e in elementos if e.get("plantado")]
+    if not figuras:
+        return elementos, []
+    permitido = cobertura_na_mae(leitura, pasta)
+
+    linhas: dict[str, list[int]] = {}
+    for i, e in enumerate(elementos):
+        if e.get("plantado") or not e.get("camada"):
+            continue
+        if e.get("papel") not in ("headline", "apoio", "cta", "selo"):
+            continue
+        linhas.setdefault(e["camada"], []).append(i)
+
+    mascaras: dict[int, object] = {}
+
+    def mascara(i: int, escala: float = 1.0):
+        from motor.replica import _alfa
+        e = elementos[i]
+        arq = pasta / e["src"] if e.get("src") else None
+        if arq is None or not arq.exists():
+            return None
+        try:
+            return _alfa(arq, max(1, round(e["box"]["w"] * escala)),
+                         max(1, round(e["box"]["h"] * escala)))
+        except Exception:
+            return None
+
+    def cobertura(indices, k):
+        """Quanto a figura cobre da linha, com ela encolhida em `k`."""
+        caixas = [_caixa_encolhida(elementos, indices, i, k) for i in indices]
+        x0 = min(b["x"] for b in caixas); y0 = min(b["y"] for b in caixas)
+        x1 = max(b["x"] + b["w"] for b in caixas)
+        y1 = max(b["y"] + b["h"] for b in caixas)
+        pior = 0.0
+        for fig in figuras:
+            m = mascaras.get(id(fig))
+            if m is None:
+                continue
+            fb = fig["box"]
+            pior = max(pior, invasao_ret((x0, y0, x1 - x0, y1 - y0), m, (fb["x"], fb["y"])))
+        return pior
+
+    for fig in figuras:
+        from motor.replica import _alfa
+        arq = pasta / fig["src"] if fig.get("src") else None
+        if arq is None or not arq.exists():
+            continue
+        try:
+            mascaras[id(fig)] = _alfa(arq, int(fig["box"]["w"]), int(fig["box"]["h"]))
+        except Exception:
+            pass
+
+    avisos = []
+    saida = list(elementos)
+    for camada, indices in linhas.items():
+        teto = max(PISO, permitido.get(camada, 0.0) + TOLERANCIA)
+        if cobertura(indices, 1.0) <= teto:
+            continue
+        escolhido = None
+        for passo in range(1, 23):
+            k = 1.0 - passo * (1.0 - ENCOLHE_ATE) / 22
+            if cobertura(indices, k) <= teto:
+                escolhido = k
+                break
+        k = escolhido or ENCOLHE_ATE
+        for i in indices:
+            saida[i] = dict(elementos[i], box=_caixa_encolhida(elementos, indices, i, k))
+        if escolhido is None:
+            avisos.append(
+                f"`{camada}` encolheu {round((1-k)*100)}% e ainda encosta na figura: "
+                f"diminua mais em Ajustar ou mova a linha")
+        else:
+            avisos.append(
+                f"`{camada}` saiu {round((1-k)*100)}% menor para não encostar na figura "
+                f"que ficou plantada no rodapé")
+    return saida, avisos
+
+
+def _caixa_encolhida(elementos, indices, i, k) -> dict:
+    """A caixa do recorte com a linha reduzida em `k`, ancorada na esquerda e
+    na base: é como o texto está alinhado, e é o que puxa a ponta direita
+    para longe da figura sem mexer no começo da frase."""
+    caixas = [elementos[j]["box"] for j in indices]
+    x0 = min(b["x"] for b in caixas)
+    y1 = max(b["y"] + b["h"] for b in caixas)
+    b = elementos[i]["box"]
+    return {"x": round(x0 + (b["x"] - x0) * k),
+            "y": round(y1 - (y1 - b["y"]) * k),
+            "w": max(1, round(b["w"] * k)),
+            "h": max(1, round(b["h"] * k))}
+
+
+def _plantar(elementos: list[dict], formato: dict) -> list[dict]:
+    """Encosta na borda do quadro a figura que a prancheta cortava.
+
+    O conteúdo fica onde o reenquadramento o pôs — centrado, quando sobra
+    quadro dos dois lados. Só a figura desce até o chão. Era o pedido: "no
+    rodapé só o boneco, o conteúdo centralizado".
+
+    Ela não é esticada nem reposicionada no eixo em que não estava plantada:
+    só o lado que o quadro cortava encosta de novo.
+    """
+    W, H = formato["w"], formato["h"]
+    saida = []
+    for e in elementos:
+        lados = e.get("plantado") or []
+        if not lados:
+            saida.append(e)
+            continue
+        b = dict(e["box"])
+        if "baixo" in lados:
+            b["y"] = H - b["h"]
+        if "cima" in lados:
+            b["y"] = 0
+        if "direita" in lados:
+            b["x"] = W - b["w"]
+        if "esquerda" in lados:
+            b["x"] = 0
+        saida.append(dict(e, box=b))
+    return saida
 
 
 def desdobrar(leitura: Leitura, formato: dict, pasta: Path,

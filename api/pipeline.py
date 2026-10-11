@@ -270,6 +270,10 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
              "camadas": [c.nome for c in leitura.camadas],
              "notas": leitura.ignoradas}
     base_els = leitor_psd.como_elementos(leitura, pasta)
+    try:
+        na_mae = leitor_psd.cobertura_na_mae(leitura, pasta)
+    except Exception:
+        na_mae = {}
 
     for i, fid in enumerate(formatos):
         f = formato_by_id(fid)
@@ -301,8 +305,10 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
                 r.avisos.setdefault(fid, []).append(a)
 
         # a mesma régua do outro caminho: o PSD não passa por `conferir_peca`,
-        # e foi por aí que a peça com a chamada escrita em cima da foto saiu
-        for a in sobreposicao.conferir(peca, pasta):
+        # e foi por aí que a peça com a chamada escrita em cima da foto saiu.
+        # Com PSD dá para saber o que a arte-mãe já cobria, e aí a régua é a
+        # da casa: não mais do que ela fazia naquele mesmo par
+        for a in sobreposicao.conferir(peca, pasta, permitido=na_mae):
             r.avisos.setdefault(fid, []).append(a)
 
         arq = pasta / "pecas" / f"{fid}.json"
