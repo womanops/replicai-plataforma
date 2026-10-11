@@ -121,6 +121,13 @@ def renderizar(props: Path, destino: Path, espera: int = ESPERA) -> Path:
     cmd = [str(VIDEO / "node_modules" / ".bin" / "remotion"), "render",
            "src/Root.tsx", "Peca", str(destino.resolve()),
            f"--props={props.resolve()}", "--concurrency=1", "--log=error"]
+    # no contêiner o Chromium já está instalado e preso numa versão. Sem dizer
+    # isso, o Remotion baixa um navegador próprio na primeira peça — minutos de
+    # espera num trabalho que deveria levar trinta segundos, e outra métrica de
+    # texto que a do resto da plataforma
+    navegador = os.environ.get("CHROME_BIN")
+    if navegador:
+        cmd.append(f"--browser-executable={navegador}")
     try:
         r = subprocess.run(cmd, cwd=VIDEO, capture_output=True, text=True, timeout=espera)
     except subprocess.TimeoutExpired:

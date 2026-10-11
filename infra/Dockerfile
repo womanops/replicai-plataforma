@@ -33,16 +33,30 @@ RUN set -eux; \
       echo "peça de prova antes de aceitar: o texto pode ter mudado de tamanho."; \
       exit 1; \
     fi; \
-    apt-get install -y --no-install-recommends ffmpeg curl fonts-dejavu-core fontconfig; \
+    apt-get install -y --no-install-recommends ffmpeg curl ca-certificates gnupg \
+      fonts-dejavu-core fontconfig; \
     rm -rf /var/lib/apt/lists/*
+
+# --- Node ---------------------------------------------------------------------
+# Duas coisas precisam dele: o Remotion, que anima a peça, e a CLI do
+# Higgsfield, que continua o desenho do fundo. Sem Node a plataforma entrega
+# peça parada com fundo em bloco de cor — funciona, e é metade do produto.
+ARG NODE_MAJOR=22
+RUN set -eux; \
+    curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | bash -; \
+    apt-get install -y --no-install-recommends nodejs; \
+    npm install -g @higgsfield/cli; \
+    node --version; npm --version; \
+    rm -rf /var/lib/apt/lists/* /root/.npm
 
 # As versões ficam gravadas na imagem: assim o sistema em pé sabe dizer com o
 # que está desenhando, e a diferença entre duas máquinas aparece na hora.
 RUN set -eux; \
-    printf '{"chromium":"%s","fontes_dejavu":"%s","ffmpeg":"%s"}\n' \
+    printf '{"chromium":"%s","fontes_dejavu":"%s","ffmpeg":"%s","node":"%s"}\n' \
       "$(dpkg-query -W -f='${Version}' chromium)" \
       "$(dpkg-query -W -f='${Version}' fonts-dejavu-core)" \
-      "$(dpkg-query -W -f='${Version}' ffmpeg)" > /app-versoes.json; \
+      "$(dpkg-query -W -f='${Version}' ffmpeg)" \
+      "$(node --version)" > /app-versoes.json; \
     cat /app-versoes.json
 
 # O motor procura o binário por nome; garante que "chrome" resolva.
@@ -64,9 +78,20 @@ WORKDIR /app
 COPY requirements.txt requirements-api.txt ./
 RUN pip install --no-cache-dir -r requirements-api.txt
 
+# --- projeto de vídeo ---------------------------------------------------------
+# Antes do código da aplicação: `npm ci` é o passo caro, e só deve refazer
+# quando o lock mudar. O Remotion usa o Chromium que já está na imagem —
+# `CHROME_BIN` diz isso a ele —, senão ele baixa um navegador próprio na
+# primeira peça e passa a medir texto com outra métrica.
+COPY video/package.json video/package-lock.json* ./video/
+RUN set -eux; cd video; npm ci --omit=dev || npm install --omit=dev
+COPY video/ ./video/
+
 # --- código ------------------------------------------------------------------
 COPY motor/ ./motor/
 COPY api/ ./api/
+COPY web/ ./web/
+COPY worker.py ./
 
 # Fontes da marca entram aqui (montadas em volume ou copiadas no build).
 # Sem isso, a tipografia da peça não bate com a da arte-mãe.

@@ -10,3 +10,13 @@ pydantic==2.12.3        # validação de entrada
 redis==6.4.0            # fila de jobs
 rq==2.7.0               # workers de processamento assíncrono
 boto3==1.41.2           # storage de arquivos (S3 / Cloudflare R2)
+
+# O modelo que compõe. Importado dentro das funções, então a ausência dele não
+# derruba nada: `disponivel()` devolve False e a plataforma inteira passa a
+# compor pela régua — em silêncio, que é o pior jeito de falhar. Faltava aqui,
+# e no contêiner nenhuma peça teria saído do modelo.
+anthropic==1.13.0
+
+# A cobrança fala com o Asaas por httpx direto. Ele chega de carona no
+# anthropic, mas dependência de carona some quando a outra muda.
+httpx==0.28.1

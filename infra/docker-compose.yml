@@ -1,14 +1,19 @@
 # Sobe a plataforma inteira com um comando:  docker compose up
 #
-#   api     → recebe upload, cria o job, devolve o resultado
-#   worker  → processa as peças (Chromium + motor). É o que escala.
+#   api     → a tela, o upload, o estado do trabalho e a entrega
+#   worker  → processa as peças e os vídeos (Chromium + Node + motor)
 #   redis   → fila entre a api e o worker
 #
-# A chave do modelo vem do ambiente. Antes de subir:
-#   export ANTHROPIC_API_KEY=...        (ou um .env ao lado deste arquivo)
+# Antes de subir, um `.env` ao lado deste arquivo com:
+#   ANTHROPIC_API_KEY=...     sem ela a composição cai para a régua
+#   REPLICAI_SEGREDO=...      assina a sessão; sem ele, reiniciar desloga todo
+#                             mundo e duas réplicas da api não se reconhecem
+#
+# E uma vez só, para o fundo generativo:
+#   docker compose run --rm worker higgsfield auth login
 
 services:
-  # `docker compose up` sobe tudo: a api responde em :8000/docs
+  # `docker compose up` sobe tudo: a tela responde em :8000
   api:
     build:
       context: ..
@@ -21,6 +26,12 @@ services:
       # sem repasse, o contêiner não enxerga a chave e cai para a regra
       # determinística sem dizer nada. /saude denuncia: "compositor": "regra"
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # a sessão é um selo assinado. Sorteado a cada subida, ele invalida toda
+      # sessão no reinício — e com mais de uma réplica da api, cada uma
+      # recusaria o selo emitido pela outra
+      REPLICAI_SEGREDO: ${REPLICAI_SEGREDO:?defina REPLICAI_SEGREDO no .env}
+      ASAAS_API_KEY: ${ASAAS_API_KEY:-}
+      ASAAS_WEBHOOK_TOKEN: ${ASAAS_WEBHOOK_TOKEN:-}
     volumes:
       - dados:/dados
       - ../fontes:/app/fontes:ro
@@ -31,20 +42,21 @@ services:
     build:
       context: ..
       dockerfile: infra/Dockerfile
-    # as duas filas: a de peça primeiro, que é o que a pessoa espera ver.
-    # O vídeo precisa de Node e Remotion, que esta imagem ainda não tem — por
-    # enquanto o trabalho de vídeo falha dizendo isso, em vez de ficar parado
-    # na fila para sempre.
-    command: rq worker --url redis://redis:6379/0 replicai replicai-video
+    # pelo `worker.py`, e não por `rq worker` direto: é ele que escolhe a
+    # classe de worker por sistema e nomeia as duas filas num lugar só. Dois
+    # jeitos de subir o mesmo worker é um jeito a mais de eles divergirem.
+    command: python worker.py
     environment:
       REDIS_URL: redis://redis:6379/0
       STORAGE_DIR: /dados
-      # sem repasse, o contêiner não enxerga a chave e cai para a regra
-      # determinística sem dizer nada. /saude denuncia: "compositor": "regra"
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      REPLICAI_SEGREDO: ${REPLICAI_SEGREDO:?defina REPLICAI_SEGREDO no .env}
     volumes:
       - dados:/dados
       - ../fontes:/app/fontes:ro
+      # o login do Higgsfield é feito uma vez e vive no HOME do contêiner;
+      # sem volume, cada subida pede login de novo e o fundo cai para bloco
+      - higgsfield:/root/.config
     depends_on:
       - redis
     # Renderizar peça é pesado: suba mais réplicas conforme a demanda.
@@ -59,3 +71,4 @@ services:
 volumes:
   dados:
   redis:
+  higgsfield:
