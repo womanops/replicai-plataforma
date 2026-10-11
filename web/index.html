@@ -580,7 +580,8 @@ async function abrirPlanos(){
     el.innerHTML = `<h3>${p.nome}</h3>`
       + `<div class="preco">${dinheiro(p.preco)}<small>${p.preco?' /mês':''}</small></div>`
       + `<ul><li>${p.pecas} peças por ciclo</li><li>${p.videos} vídeos por ciclo</li>`
-      + `<li>todos os formatos e presets</li></ul>`
+      + `<li>todos os formatos e presets</li>`
+      + `<li>rascunho ilimitado dentro da franquia</li></ul>`
       + (atual ? `<button class="secund" disabled>plano atual</button>`
          : p.preco ? `<button class="acao">Assinar</button>`
          : `<button class="secund" disabled>plano de entrada</button>`);

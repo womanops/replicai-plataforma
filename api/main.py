@@ -114,9 +114,13 @@ def meus_trabalhos(c: contas.Conta = Depends(conta_atual)):
 @app.get("/planos")
 def planos():
     """O que cada plano permite e quanto custa."""
+    from api import precos
     return {"planos": [{"id": i, **uso.PLANOS[i],
-                        "preco": cobranca.PRECOS.get(i, 0.0)}
+                        "preco": cobranca.PRECO(i),
+                        **precos.conta(uso.PLANOS[i]["pecas"], cobranca.PRECO(i))}
                        for i in uso.PLANOS],
+            "margem_alvo": precos.MARGEM_ALVO,
+            "custo_por_peca": round(precos.custo_peca(), 4),
             "cobranca": cobranca.configurada()}
 
 

@@ -133,11 +133,12 @@ def meses(conta: str) -> list[str]:
 # O que cada plano permite por mês. Número grande não é "ilimitado": é o teto
 # que protege de um cliente sozinho consumir o lucro de todos.
 PLANOS = {
-    "teste":   {"pecas": 30,    "videos": 5,    "nome": "Teste"},
-    "estudio": {"pecas": 300,   "videos": 60,   "nome": "Estúdio"},
-    "agencia": {"pecas": 1500,  "videos": 300,  "nome": "Agência"},
+    "demo":       {"pecas": 20,   "videos": 5,   "nome": "Demo"},
+    "freelancer": {"pecas": 200,  "videos": 20,  "nome": "Freelancer"},
+    "studio":     {"pecas": 500,  "videos": 50,  "nome": "Studio"},
+    "agency":     {"pecas": 1000, "videos": 100, "nome": "Agency"},
 }
-PLANO_PADRAO = "teste"
+PLANO_PADRAO = "demo"
 
 
 def limites(plano: str) -> dict:

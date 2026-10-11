@@ -24,11 +24,29 @@ from pathlib import Path
 PRODUCAO = "https://api.asaas.com/v3"
 AREIA = "https://api-sandbox.asaas.com/v3"
 
-# Preço mensal de cada plano, em reais. **Estes números são provisórios.**
-# A base medida: cada peça custa de US$ 0,15 a 0,18 entre modelo e fundo
-# generativo — perto de R$ 1,00 com dólar a 5,40 e os 6% de IOF e spread que o
-# cartão cobra por cima. O resto é margem, e margem é decisão de quem vende.
-PRECOS = {"teste": 0.0, "estudio": 697.0, "agencia": 2497.0}
+def PRECO(plano: str) -> float:
+    """O preço do plano, derivado do custo medido em `api/precos.py`.
+
+    Não é tabela escrita à mão: quando o dólar mexe, o preço acompanha. Quem
+    decide é a margem pretendida, não um número que alguém digitou um dia.
+    """
+    from api import precos, uso
+
+    lim = uso.PLANOS.get(plano)
+    return precos.preco_de(lim["pecas"]) if lim else 0.0
+
+
+class _Precos(dict):
+    """Fala como dicionário para quem já lia `PRECOS[plano]`, mas calcula."""
+
+    def __getitem__(self, plano):
+        return PRECO(plano)
+
+    def get(self, plano, padrao=0.0):
+        return PRECO(plano) or padrao
+
+
+PRECOS = _Precos()
 
 FORMAS = ("PIX", "BOLETO", "CREDIT_CARD", "UNDEFINED")
 
@@ -100,7 +118,7 @@ def assinar(conta, plano: str, forma: str = "PIX", cpf_cnpj: str = "") -> dict:
     """
     from api import contas, uso
 
-    if plano not in uso.PLANOS or plano == "teste":
+    if plano not in uso.PLANOS or plano == uso.PLANO_PADRAO:
         raise CobrancaIndisponivel(f"não há assinatura para o plano `{plano}`")
     if forma not in FORMAS:
         raise CobrancaIndisponivel(f"forma de pagamento desconhecida: `{forma}`")
@@ -244,13 +262,14 @@ def plano_valendo(conta) -> str:
     """
     from api import uso
 
-    if conta.plano == "teste" or not conta.plano:
-        return "teste"
+    padrao = uso.PLANO_PADRAO
+    if conta.plano == padrao or not conta.plano:
+        return padrao
     if not conta.pago_ate:
-        return "teste"
+        return padrao
     try:
         if date.fromisoformat(conta.pago_ate) < date.today():
-            return "teste"
+            return padrao
     except ValueError:
-        return "teste"
-    return conta.plano if conta.plano in uso.PLANOS else "teste"
+        return padrao
+    return conta.plano if conta.plano in uso.PLANOS else padrao

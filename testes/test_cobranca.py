@@ -56,30 +56,30 @@ class TestAssinar:
         assert asaas[0][2]["cpfCnpj"] == "12345678900"
 
     def test_a_assinatura_e_mensal_e_leva_a_conta_na_referencia(self, conta, asaas):
-        cobranca.assinar(conta, "estudio", "PIX")
+        cobranca.assinar(conta, "studio", "PIX")
         _, caminho, corpo = asaas[-1]
         assert caminho == "/subscriptions"
         assert corpo["cycle"] == "MONTHLY" and corpo["billingType"] == "PIX"
-        assert corpo["value"] == cobranca.PRECOS["estudio"]
-        assert corpo["externalReference"] == f"{conta.id}:estudio"
+        assert corpo["value"] == cobranca.PRECOS["studio"]
+        assert corpo["externalReference"] == f"{conta.id}:studio"
 
     def test_assinar_nao_libera_o_plano(self, conta, asaas):
         """Quem libera é o aviso de pagamento. Liberar aqui é dar de graça a
         quem clicou e não pagou."""
-        cobranca.assinar(conta, "estudio")
-        assert contas.por_id(conta.id).plano == "teste"
-        assert contas.por_id(conta.id).plano_pedido == "estudio"
+        cobranca.assinar(conta, "studio")
+        assert contas.por_id(conta.id).plano == "demo"
+        assert contas.por_id(conta.id).plano_pedido == "studio"
 
-    def test_plano_de_graca_nao_tem_assinatura(self, conta, asaas):
+    def test_o_plano_de_entrada_nao_tem_assinatura(self, conta, asaas):
         with pytest.raises(cobranca.CobrancaIndisponivel):
-            cobranca.assinar(conta, "teste")
+            cobranca.assinar(conta, "demo")
 
     def test_forma_de_pagamento_torta_e_recusada(self, conta, asaas):
         with pytest.raises(cobranca.CobrancaIndisponivel, match="forma de pagamento"):
-            cobranca.assinar(conta, "estudio", "DINHEIRO")
+            cobranca.assinar(conta, "studio", "DINHEIRO")
 
     def test_cancelar_tira_a_assinatura(self, conta, asaas):
-        cobranca.assinar(conta, "estudio")
+        cobranca.assinar(conta, "studio")
         assert cobranca.cancelar(conta) is True
         assert ("DELETE", "/subscriptions/sub_000001", None) in asaas
         assert contas.por_id(conta.id).asaas_assinatura == ""
@@ -88,7 +88,7 @@ class TestAssinar:
         assert cobranca.cancelar(conta) is False
 
 
-def aviso(evento, conta_id, plano="estudio", vencimento=None, ident="evt_1"):
+def aviso(evento, conta_id, plano="studio", vencimento=None, ident="evt_1"):
     return {"id": ident, "event": evento,
             "payment": {"externalReference": f"{conta_id}:{plano}",
                         "dueDate": (vencimento or date.today()).isoformat()}}
@@ -96,17 +96,17 @@ def aviso(evento, conta_id, plano="estudio", vencimento=None, ident="evt_1"):
 
 class TestOQueOAsaasAvisa:
     def test_pagamento_confirmado_libera_o_plano(self, conta, asaas):
-        cobranca.assinar(conta, "estudio")
+        cobranca.assinar(conta, "studio")
         r = cobranca.aplicar_evento(aviso("PAYMENT_CONFIRMED", conta.id))
         assert r["feito"] == "aplicado"
         atual = contas.por_id(conta.id)
-        assert atual.plano == "estudio" and atual.em_atraso is False
-        assert cobranca.plano_valendo(atual) == "estudio"
+        assert atual.plano == "studio" and atual.em_atraso is False
+        assert cobranca.plano_valendo(atual) == "studio"
 
     def test_o_mesmo_aviso_duas_vezes_nao_conta_duas(self, conta, asaas):
         """O Asaas reenvia quando não recebe 200. Processar de novo adiantaria
         o vencimento sem ninguém ter pago."""
-        cobranca.assinar(conta, "estudio")
+        cobranca.assinar(conta, "studio")
         cobranca.aplicar_evento(aviso("PAYMENT_CONFIRMED", conta.id))
         primeiro = contas.por_id(conta.id).pago_ate
         r = cobranca.aplicar_evento(aviso("PAYMENT_CONFIRMED", conta.id))
@@ -114,7 +114,7 @@ class TestOQueOAsaasAvisa:
         assert contas.por_id(conta.id).pago_ate == primeiro
 
     def test_atraso_marca_a_conta(self, conta, asaas):
-        cobranca.assinar(conta, "estudio")
+        cobranca.assinar(conta, "studio")
         cobranca.aplicar_evento(aviso("PAYMENT_CONFIRMED", conta.id))
         cobranca.aplicar_evento(aviso("PAYMENT_OVERDUE", conta.id, ident="evt_2"))
         assert contas.por_id(conta.id).em_atraso is True
@@ -137,36 +137,36 @@ class TestOQueOAsaasAvisa:
 
 class TestOPlanoSoValePago:
     def test_sem_pagamento_nenhum_vale_teste(self, conta):
-        conta.plano = "agencia"
-        assert cobranca.plano_valendo(conta) == "teste"
+        conta.plano = "agency"
+        assert cobranca.plano_valendo(conta) == "demo"
 
     def test_vencido_cai_para_teste(self, conta):
-        conta.plano = "estudio"
+        conta.plano = "studio"
         conta.pago_ate = (date.today() - timedelta(days=1)).isoformat()
-        assert cobranca.plano_valendo(conta) == "teste"
+        assert cobranca.plano_valendo(conta) == "demo"
 
     def test_dentro_do_prazo_vale(self, conta):
-        conta.plano = "estudio"
+        conta.plano = "studio"
         conta.pago_ate = (date.today() + timedelta(days=1)).isoformat()
-        assert cobranca.plano_valendo(conta) == "estudio"
+        assert cobranca.plano_valendo(conta) == "studio"
 
     def test_o_contratado_nao_e_apagado_pelo_atraso(self, conta):
         """`plano` é o que foi comprado; `plano_valendo` é o que pode usar
         hoje. Misturar faria o atraso apagar a memória do que ela tinha."""
-        conta.plano = "agencia"
+        conta.plano = "agency"
         conta.pago_ate = "2020-01-01"
-        assert cobranca.plano_valendo(conta) == "teste"
-        assert conta.plano == "agencia"
+        assert cobranca.plano_valendo(conta) == "demo"
+        assert conta.plano == "agency"
 
     def test_data_torta_nao_libera(self, conta):
-        conta.plano = "estudio"
+        conta.plano = "studio"
         conta.pago_ate = "nunca"
-        assert cobranca.plano_valendo(conta) == "teste"
+        assert cobranca.plano_valendo(conta) == "demo"
 
     def test_plano_que_sumiu_da_tabela_nao_libera(self, conta):
         conta.plano = "plano-antigo"
         conta.pago_ate = (date.today() + timedelta(days=30)).isoformat()
-        assert cobranca.plano_valendo(conta) == "teste"
+        assert cobranca.plano_valendo(conta) == "demo"
 
 
 class TestSemChave:

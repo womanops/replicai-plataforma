@@ -51,7 +51,7 @@ class Conta:
     nome: str
     email: str
     criada: str = ""
-    plano: str = "teste"
+    plano: str = "demo"
     ativa: bool = True
     senha: str = ""
     chaves: list[dict] = field(default_factory=list)
@@ -164,7 +164,7 @@ def _ident_de(nome: str, email: str) -> str:
     return f"{base[:40]}-{secrets.token_hex(3)}"
 
 
-def criar(nome: str, email: str, senha: str, plano: str = "teste") -> Conta:
+def criar(nome: str, email: str, senha: str, plano: str = "demo") -> Conta:
     email = (email or "").strip().lower()
     if not EMAIL.fullmatch(email):
         raise ContaInvalida("e-mail inválido")

@@ -68,26 +68,26 @@ class TestPlano:
     def test_cabe_enquanto_nao_estoura(self):
         for _ in range(10):
             uso.registrar(CONTA, uso.PECA)
-        assert uso.cabe(CONTA, "teste", pecas=5)[0] is True
+        assert uso.cabe(CONTA, "demo", pecas=5)[0] is True
 
     def test_nao_cabe_e_diz_o_numero(self):
-        for _ in range(28):
+        for _ in range(18):
             uso.registrar(CONTA, uso.PECA)
-        pode, porque = uso.cabe(CONTA, "teste", pecas=5)
+        pode, porque = uso.cabe(CONTA, "demo", pecas=5)
         assert pode is False
-        assert "30 peças" in porque and "33" in porque
+        assert "20 peças" in porque and "23" in porque
 
     def test_video_tem_limite_proprio(self):
         for _ in range(5):
             uso.registrar(CONTA, uso.VIDEO)
-        assert uso.cabe(CONTA, "teste", videos=1)[0] is False
-        assert uso.cabe(CONTA, "teste", pecas=1)[0] is True
+        assert uso.cabe(CONTA, "demo", videos=1)[0] is False
+        assert uso.cabe(CONTA, "demo", pecas=1)[0] is True
 
     def test_plano_maior_cabe_mais(self):
-        for _ in range(100):
+        for _ in range(50):
             uso.registrar(CONTA, uso.PECA)
-        assert uso.cabe(CONTA, "teste", pecas=1)[0] is False
-        assert uso.cabe(CONTA, "estudio", pecas=1)[0] is True
+        assert uso.cabe(CONTA, "demo", pecas=1)[0] is False
+        assert uso.cabe(CONTA, "freelancer", pecas=1)[0] is True
 
     def test_plano_desconhecido_cai_no_mais_apertado(self):
         """Plano torto não pode virar uso ilimitado."""
