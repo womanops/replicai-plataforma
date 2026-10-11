@@ -60,6 +60,14 @@ def conta(pecas: int, preco: float) -> dict:
     impostos = preco * IMPOSTO
     taxas = preco * GATEWAY
     margem = preco - custo - impostos - taxas
+    if not preco:
+        # plano de graça não tem margem, tem custo de aquisição: o que você
+        # paga para alguém experimentar. Chamar isso de margem zero esconderia
+        # que o dinheiro sai.
+        return {"preco": 0.0, "custo_cheio": round(custo, 2), "impostos": 0.0,
+                "gateway": 0.0, "margem": round(-custo, 2), "margem_pct": 0.0,
+                "margem_na_metade": 0.0, "custo_de_aquisicao": round(custo, 2),
+                "custo_por_peca": round(custo_peca(), 4)}
     return {"preco": round(preco, 2), "custo_cheio": round(custo, 2),
             "impostos": round(impostos, 2), "gateway": round(taxas, 2),
             "margem": round(margem, 2),

@@ -175,3 +175,34 @@ class TestSemChave:
         assert cobranca.configurada() is False
         with pytest.raises(cobranca.CobrancaIndisponivel, match="ASAAS_API_KEY"):
             cobranca.chamar("GET", "/customers")
+
+
+class TestOPlanoDeEntradaEDeGraca:
+    def test_demo_nao_tem_preco(self):
+        from api import uso
+        assert cobranca.PRECO(uso.PLANO_PADRAO) == 0.0
+
+    def test_os_outros_tem(self):
+        assert cobranca.PRECO("freelancer") > 0
+        assert cobranca.PRECO("agency") > cobranca.PRECO("studio")
+
+    def test_plano_de_graca_nao_vira_margem_zero(self):
+        """Chamar de margem zero esconderia que o dinheiro sai: é custo de
+        aquisição, o que se paga para alguém experimentar."""
+        from api import precos, uso
+        c = precos.conta(uso.PLANOS["demo"]["pecas"], 0.0)
+        assert c["custo_de_aquisicao"] > 0
+        assert c["margem"] == -c["custo_de_aquisicao"]
+
+    def test_o_preco_acompanha_o_dolar(self, monkeypatch):
+        """Preço escrito à mão envelhece calado."""
+        from api import precos
+        antes = cobranca.PRECO("studio")
+        monkeypatch.setattr(precos, "DOLAR", precos.DOLAR * 1.2)
+        assert cobranca.PRECO("studio") > antes
+
+    def test_a_margem_pretendida_e_entregue(self):
+        from api import precos, uso
+        for plano in ("freelancer", "studio", "agency"):
+            c = precos.conta(uso.PLANOS[plano]["pecas"], cobranca.PRECO(plano))
+            assert c["margem_pct"] >= precos.MARGEM_ALVO * 100

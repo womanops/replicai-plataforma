@@ -551,7 +551,7 @@ $('#plano').onclick = abrirPlanos;
 $('#planos').onclick = e => { if (e.target.id === 'planos') $('#planos').classList.add('hidden'); };
 
 const dinheiro = v => v ? v.toLocaleString('pt-BR', {style:'currency', currency:'BRL'})
-                        : 'sem custo';
+                        : 'de graça';
 
 async function abrirPlanos(){
   let cat, u;
@@ -584,7 +584,7 @@ async function abrirPlanos(){
       + `<li>rascunho ilimitado dentro da franquia</li></ul>`
       + (atual ? `<button class="secund" disabled>plano atual</button>`
          : p.preco ? `<button class="acao">Assinar</button>`
-         : `<button class="secund" disabled>plano de entrada</button>`);
+         : `<button class="secund" disabled>onde toda conta começa</button>`);
     const b = el.querySelector('button:not([disabled])');
     if (b) b.onclick = () => assinarPlano(p);
     cards.appendChild(el);

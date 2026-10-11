@@ -32,6 +32,10 @@ def PRECO(plano: str) -> float:
     """
     from api import precos, uso
 
+    # o plano de entrada é de graça: é porta, não receita. Custa até o preço
+    # das peças que a pessoa experimentar, e isso é custo de aquisição.
+    if plano == uso.PLANO_PADRAO:
+        return 0.0
     lim = uso.PLANOS.get(plano)
     return precos.preco_de(lim["pecas"]) if lim else 0.0
 
