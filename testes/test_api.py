@@ -224,12 +224,24 @@ class TestQuemCompoe:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
         from api.tarefas import compositor
-        assert type(compositor("arte.png", "Oi", "")).__name__ == "CompositorSimples"
+        assert type(compositor("arte.png", "Oi", "", "novo")).__name__ == "CompositorSimples"
+
+    def test_quem_nao_pediu_texto_novo_nao_recebe_texto_nenhum(self, cliente, monkeypatch):
+        """Os dois modos conservadores não escrevem — nem com credencial.
+
+        Foi assim que o Stories real saiu com a chamada e o CTA duplicados por
+        cima do lettering que a arte já trazia: ninguém tinha pedido texto."""
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-teste")
+        from api.tarefas import compositor
+        for modo in ("sem", "com"):
+            c = compositor("arte.png", "Oi", "Clique", modo)
+            assert type(c).__name__ == "CompositorPreserva"
+            assert c.preserva is True
 
     def test_com_credencial_o_modelo_vem_primeiro_e_a_regra_atras(self, cliente, monkeypatch):
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-teste")
         from api.tarefas import compositor
-        c = compositor("arte.png", "Oi", "")
+        c = compositor("arte.png", "Oi", "", "novo")
         assert type(c).__name__ == "CompositorEmCadeia"
         assert [type(x).__name__ for x in c.compositores] == ["CompositorModelo", "CompositorSimples"]
 

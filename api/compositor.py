@@ -56,6 +56,41 @@ class CompositorArquivo:
         return json.loads(arq.read_text(encoding="utf-8"))
 
 
+# ----------------------------------------------------------------- só reenquadra
+
+class CompositorPreserva:
+    """Não escreve nada: a peça é a arte inteira, reenquadrada, e só.
+
+    É o modo "adaptação de formato". O fundo que chega no terreno já é a arte
+    completa — sem corte, com o que faltava de quadro continuado — então pôr
+    qualquer elemento em cima é repetir o que a arte já diz. Foi exatamente
+    isso que aconteceu na primeira rodada real: a chamada e o CTA saíram
+    escritos por cima do lettering que a arte já trazia, nas mesmas palavras.
+
+    Não custa chamada de modelo nenhuma, e não pode sair errado: a peça é a
+    arte, e a arte foi aprovada por quem mandou.
+    """
+
+    preserva = True
+
+    def compor(self, base: Path, formato_id: str, brief: str = "",
+               terreno: "Terreno | None" = None) -> dict:
+        f = formato_by_id(formato_id)
+        if not f:
+            raise ComposicaoImpossivel(f"formato desconhecido: {formato_id}")
+        return {
+            "formato": formato_id,
+            "canvas": {"w": f["w"], "h": f["h"]},
+            "safe": f["safe"],
+            "saida": f"{formato_id}.png",
+            "via": "reenquadra",
+            "fundo": terreno.fundo if terreno else
+                     {"tipo": "imagem", "src": Path(base).name, "fit": "cover"},
+            "fontes": terreno.fontes if terreno else [],
+            "elementos": [],
+        }
+
+
 # ----------------------------------------------------------------- regra simples
 
 @dataclass

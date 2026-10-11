@@ -28,6 +28,7 @@ import argparse
 import datetime as dt
 import html
 import json
+import math
 import os
 import platform
 import re
@@ -117,11 +118,52 @@ def load_formatos() -> dict:
     return json.loads(FORMATOS_JSON.read_text(encoding="utf-8"))
 
 
+LIVRE = re.compile(r"^livre-(\d{2,5})x(\d{2,5})$")
+
+# os limites da medida livre. Abaixo do primeiro não é peça, é ícone; acima do
+# segundo o navegador que desenha estoura a memória e o render morre sem dizer
+# por quê, que é pior do que recusar aqui.
+LIVRE_MIN, LIVRE_MAX = 50, 10000
+
+
+def formato_livre(fid: str) -> dict | None:
+    """Uma medida que não está no catálogo, descrita como `livre-LARGxALT`.
+
+    O catálogo cobre os destinos conhecidos, com a margem de recorte e os
+    limites de texto que cada rede impõe de verdade. Uma medida digitada na
+    hora não tem nada disso para herdar, então o que se pode fazer é o
+    honesto: margem proporcional em volta e limites folgados, deixando o
+    motor encolher o texto se não couber.
+    """
+    m = LIVRE.match(fid or "")
+    if not m:
+        return None
+    w, h = int(m.group(1)), int(m.group(2))
+    if not (LIVRE_MIN <= w <= LIVRE_MAX and LIVRE_MIN <= h <= LIVRE_MAX):
+        return None
+    margem = max(8, round(min(w, h) * 0.045))
+    cabe = max(18, min(60, round(min(w, h) / 18 + 14)))
+    d = math.gcd(w, h)
+    return {
+        "id": fid,
+        "canal": "Medida livre",
+        "nome": f"{w}×{h}",
+        "w": w, "h": h,
+        "ratio": f"{w // d}:{h // d}",
+        "safe": {"top": margem, "bottom": margem, "left": margem, "right": margem},
+        "texto": {"headline_max": cabe, "apoio_max": round(cabe * 1.9),
+                  "cta_max": max(10, round(cabe * 0.38))},
+        "notas": ("Medida fora do catálogo: a margem é proporcional e os limites de "
+                  "texto são estimados, porque não há recorte de rede conhecido a "
+                  "respeitar. Confira a peça antes de publicar."),
+    }
+
+
 def formato_by_id(fid: str) -> dict | None:
     for f in load_formatos()["formatos"]:
         if f["id"] == fid:
             return f
-    return None
+    return formato_livre(fid)
 
 
 def resolve_target(args) -> tuple[int, int, dict | None]:

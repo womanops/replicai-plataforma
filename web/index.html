@@ -2,6 +2,7 @@
 <meta charset="utf-8">
 <title>ReplicAI</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="/assets/replicai-favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
@@ -16,8 +17,10 @@
 body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.5 var(--corpo);
   -webkit-font-smoothing:antialiased}
 header{display:flex;align-items:baseline;gap:14px;padding:22px 26px 0}
-header b{font:400 30px/1 var(--disp);letter-spacing:.06em}
-header span{font:500 11px var(--mono);color:var(--mut);letter-spacing:.14em;text-transform:uppercase}
+header .saldo b{font:500 13px var(--mono);color:var(--fg);letter-spacing:0}
+header>span{font:500 11px var(--mono);color:var(--mut);letter-spacing:.14em;
+  text-transform:uppercase}
+@media (max-width:1100px){header>span:first-of-type{display:none}}
 /* dizer quem está compondo evita a pior descoberta possível: perceber dias
    depois que a chave não foi lida e tudo saiu pela regra simples */
 header .quem{margin-left:auto;color:var(--mut)}
@@ -60,11 +63,13 @@ textarea{resize:vertical;min-height:70px}
   color:var(--mut);margin:22px 0 10px;border-top:1px solid var(--linha);padding-top:10px}
 .grade{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
 .f{background:transparent;border:0;padding:0;cursor:pointer;text-align:left;color:inherit;
+  font:inherit;
   display:flex;flex-direction:column;gap:5px;width:132px}
 .f .cx{position:relative;width:100%;border:1.5px solid rgba(var(--fgRGB),.22);border-radius:5px;
   background:repeating-conic-gradient(#141014 0% 25%,#191419 0% 50%) 50%/12px 12px;overflow:hidden}
 .f .cx img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 .f.on .cx{border-color:var(--sinal);box-shadow:0 0 0 3px rgba(182,255,60,.16)}
+.f:focus-visible .cx{outline:2px solid var(--rosa);outline-offset:2px}
 .f.feito .cx{border-color:var(--sinal)}
 .f.falhou .cx{border-color:var(--err)}
 .f b{font:500 12px var(--corpo);font-weight:500;line-height:1.25}
@@ -123,7 +128,7 @@ button.secund{background:transparent;color:var(--fg);border:1px solid var(--linh
   padding:24px;max-width:min(980px,94vw);max-height:88vh;overflow:auto}
 .folha h2{font:400 24px/1 var(--disp);letter-spacing:.04em;margin:0 0 4px}
 .folha p{margin:0 0 18px;color:var(--mut);font-size:13px}
-.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+#prGrade{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
 .pr{background:var(--painel2);border:1px solid var(--linha);border-radius:12px;padding:10px;
   cursor:pointer;text-align:left}
 .pr:hover{border-color:var(--rosa)}
@@ -177,11 +182,106 @@ header .plano.apertado{color:var(--err)}
 header .sair{background:none;border:0;color:var(--mut);cursor:pointer;font:500 11px var(--mono);
   letter-spacing:.1em;text-transform:uppercase;padding:0}
 header .sair:hover{color:var(--fg)}
+
+/* ---------- medida que não está no catálogo ---------- */
+.livre{display:flex;align-items:center;gap:8px;margin:22px 0 0;border-top:1px solid var(--linha);
+  padding-top:14px;flex-wrap:wrap}
+.livre .rot{font:500 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;
+  color:var(--mut);width:100%}
+.livre input{width:92px;background:var(--painel);color:var(--fg);border:1px solid var(--linha);
+  border-radius:8px;padding:8px 10px;font:500 13px var(--mono)}
+.livre input:focus{outline:2px solid var(--rosa);outline-offset:1px}
+.livre b{color:var(--mut);font-weight:400}
+.livre .nota{width:100%;font-size:12px;color:var(--mut);margin:2px 0 0}
+.f .tira{position:absolute;right:4px;top:4px;z-index:3;width:18px;height:18px;border:0;
+  border-radius:3px;background:rgba(14,10,12,.82);color:var(--mut);cursor:pointer;
+  font-size:11px;line-height:1;display:grid;place-items:center}
+.f .tira:hover{color:var(--err)}
+
+/* ---------- a marca ---------- */
+header .marca{height:24px;display:block;margin-right:2px}
+header .marca img{height:100%;display:block}
+
+/* ---------- os três modos ---------- */
+.modos{margin:20px 0 0;border:1px solid var(--linha);border-radius:12px;overflow:hidden}
+.modos>.rot{display:block;font:500 10.5px var(--mono);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--mut);padding:11px 14px 9px;background:var(--painel)}
+label.modo{display:flex;gap:10px;padding:11px 14px;cursor:pointer;
+  border-top:1px solid var(--linha);align-items:flex-start}
+label.modo input{margin:4px 0 0;accent-color:var(--rosa);flex:none}
+label.modo b{display:block;font-weight:500;font-size:13.5px}
+label.modo small{display:block;color:var(--mut);font-size:12px;line-height:1.4;margin-top:2px}
+label.modo.on{background:rgba(232,180,200,.06)}
+label.modo.on b{color:var(--rosa)}
+.travado{margin:10px 0 0;font-size:12px;color:var(--mut);border-left:2px solid var(--linha);
+  padding-left:10px}
+
+/* ---------- progresso ---------- */
+footer .trilha{height:3px;background:var(--painel2);border-radius:2px;margin-top:8px;
+  overflow:hidden;max-width:420px}
+footer .trilha i{display:block;height:100%;width:0;background:var(--sinal);
+  transition:width .5s linear}
+footer .trilha.hidden{display:none}
+
+/* ---------- saldo no cabeçalho ---------- */
+header .saldo{display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none;
+  font:500 11px var(--mono);color:var(--mut);letter-spacing:.06em}
+header .saldo:hover{color:var(--fg)}
+header .saldo .fio{width:54px;height:3px;border-radius:2px;background:var(--painel2);
+  overflow:hidden}
+header .saldo .fio i{display:block;height:100%;background:var(--rosa)}
+header .saldo.apertado{color:var(--err)}
+header .saldo.apertado .fio i{background:var(--err)}
+
+/* ---------- ampliar a peça ---------- */
+#lupa{position:fixed;inset:0;z-index:170;background:rgba(8,5,7,.94);display:grid;
+  place-items:center;padding:30px;cursor:zoom-out}
+#lupa.hidden{display:none}
+/* contra a janela, e não contra a célula da grade: a célula cresce com a
+   imagem, e `100%` dela não limitava nada — a peça saía maior que a tela */
+#lupa img{max-width:calc(100vw - 60px);max-height:calc(100vh - 70px);object-fit:contain;
+  border-radius:4px;display:block;box-shadow:0 30px 90px rgba(0,0,0,.7)}
+#lupa .pe{position:fixed;left:0;right:0;bottom:18px;text-align:center;color:var(--mut);
+  font:500 11px var(--mono);letter-spacing:.1em;text-transform:uppercase}
+.f .cx .olho{position:absolute;right:5px;bottom:5px;z-index:3;width:22px;height:22px;
+  border-radius:4px;background:rgba(14,10,12,.82);color:var(--fg);display:none;
+  place-items:center;font-size:12px;cursor:zoom-in;border:0}
+.f.feito .cx .olho{display:grid}
+.f .cx .mao{position:absolute;left:5px;bottom:5px;z-index:3;height:18px;padding:0 5px;
+  border-radius:4px;background:rgba(14,10,12,.82);color:var(--rosa);display:none;
+  place-items:center;font:500 8px var(--mono);letter-spacing:.06em;text-transform:uppercase;
+  cursor:pointer;border:0}
+.f.feito.ajustavel .cx .mao{display:grid}
+
+/* ---------- remontar na mão ---------- */
+#editor{position:fixed;inset:0;z-index:180;background:rgba(8,5,7,.92);display:flex;
+  flex-direction:column;padding:16px 20px 0}
+#editor.hidden{display:none}
+#editor .topo{display:flex;align-items:center;gap:14px;flex:none;padding-bottom:12px}
+#editor .topo h2{font:400 24px/1 var(--disp);letter-spacing:.04em;margin:0}
+#editor .topo p{margin:0;color:var(--mut);font-size:12.5px;flex:1}
+#editor .palco{flex:1;min-height:0;display:grid;place-items:center;padding-bottom:16px}
+#lona{position:relative;background:#000;box-shadow:0 20px 70px rgba(0,0,0,.6);
+  user-select:none;touch-action:none}
+#lona .ch{position:absolute;inset:0;background-size:cover;background-position:center}
+#lona .margem{position:absolute;border:1px dashed rgba(232,180,200,.35);pointer-events:none}
+.pe-el{position:absolute;border:1px solid rgba(182,255,60,.55);cursor:grab;
+  background:rgba(182,255,60,.05)}
+.pe-el.sel{border-color:var(--rosa);background:rgba(232,180,200,.1);
+  box-shadow:0 0 0 1px rgba(232,180,200,.4)}
+.pe-el img{width:100%;height:100%;display:block;object-fit:fill;pointer-events:none}
+.pe-el .rot{position:absolute;left:0;top:-15px;font:500 9px var(--mono);color:var(--sinal);
+  letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;pointer-events:none}
+.pe-el.sel .rot{color:var(--rosa)}
+.pe-el .puxa{position:absolute;right:-5px;bottom:-5px;width:11px;height:11px;border-radius:2px;
+  background:var(--rosa);cursor:nwse-resize}
+.pe-el .letra{position:absolute;inset:0;display:flex;align-items:center;padding:0 2px;
+  color:rgba(245,236,233,.9);font:500 11px var(--corpo);overflow:hidden;pointer-events:none}
 </style>
 
 <div id="porta">
   <form class="cartao" id="formPorta">
-    <h1>ReplicAI</h1>
+    <img src="/assets/replicai-horizontal-escuro.svg" alt="ReplicAI" style="height:30px;display:block;margin:0 0 10px">
     <p class="sub">uma peça aprovada, todos os formatos</p>
     <div class="abas">
       <button type="button" class="ativa" data-modo="entrar">Entrar</button>
@@ -234,9 +334,11 @@ header .sair:hover{color:var(--fg)}
   </div>
 </div>
 
-<header><b>ReplicAI</b><span>uma peça aprovada, todos os formatos</span>
+<header>
+  <a class="marca" href="/" title="ReplicAI"><img src="/assets/replicai-horizontal-escuro.svg" alt="ReplicAI"></a>
+  <span>uma peça aprovada, todos os formatos</span>
   <span id="quemCompoe" class="quem"></span>
-  <span class="plano" id="plano"></span>
+  <span class="saldo" id="saldo" hidden></span>
   <button class="sair" id="btnSair" hidden>sair</button></header>
 
 <main>
@@ -249,9 +351,24 @@ header .sair:hover{color:var(--fg)}
     </div>
     <input type="file" id="arquivo" hidden accept="image/*,.pdf,.psd,.psb,application/octet-stream">
 
-    <label class="campo"><span>Chamada <i class="conta" id="cHead"></i></span>
+    <div class="modos" role="radiogroup" aria-labelledby="rotModos">
+      <span class="rot" id="rotModos">Como quer desdobrar</span>
+      <label class="modo"><input type="radio" name="modo" value="sem">
+        <span><b>Adaptação de formato</b>
+        <small>Preserva 100% da peça. Nada é escrito por cima: só o quadro muda.</small></span></label>
+      <label class="modo on"><input type="radio" name="modo" value="com" checked>
+        <span><b>Adaptação de formato + Diagramação</b>
+        <small>O mesmo conteúdo, e você remonta cada formato na mão depois.</small></span></label>
+      <label class="modo"><input type="radio" name="modo" value="novo">
+        <span><b>Adaptação de formato + Novos Textos</b>
+        <small>Além do acima, uma chamada e um CTA novos entram no espaço que sobrou.</small></span></label>
+    </div>
+    <p class="travado" id="travaPsd" hidden>Foto e grafismo só se movem com PSD.
+      PNG, JPEG e PDF chegam achatados: aí só dá para mover o que for escrito agora.</p>
+
+    <label class="campo" id="campoHead" hidden><span>Chamada <i class="conta" id="cHead"></i></span>
       <input type="text" id="headline" placeholder="Chegamos a Porto Belo" maxlength="120"></label>
-    <label class="campo"><span>Botão <i class="conta" id="cCta"></i></span>
+    <label class="campo" id="campoCta" hidden><span>Botão <i class="conta" id="cCta"></i></span>
       <input type="text" id="cta" placeholder="Candidate-se" maxlength="60"></label>
     <label class="campo"><span>Nome da campanha</span>
       <input type="text" id="titulo" placeholder="Save the Date Energiza"></label>
@@ -262,13 +379,36 @@ header .sair:hover{color:var(--fg)}
   <section>
     <div class="titulo"><h2>Para onde vai</h2><em id="resumoSel">nenhum formato escolhido</em></div>
     <div id="formatos"></div>
+    <div class="livre">
+      <span class="rot">Outra medida</span>
+      <input type="number" id="livreW" min="50" max="10000" placeholder="largura" aria-label="largura em pixels">
+      <b>×</b>
+      <input type="number" id="livreH" min="50" max="10000" placeholder="altura" aria-label="altura em pixels">
+      <button class="secund" id="btnLivre" type="button">Adicionar</button>
+      <p class="nota">Para destinos que não estão na lista. A margem de recorte vira
+        proporcional, porque não há regra de rede conhecida para herdar.</p>
+    </div>
   </section>
 </main>
+
+<div id="lupa" class="hidden"><img alt=""><div class="pe">clique em qualquer lugar para fechar</div></div>
+
+<div id="editor" class="hidden">
+  <div class="topo">
+    <h2 id="edTitulo">Remontar</h2>
+    <p id="edDica">Arraste para mover, puxe o canto para redimensionar. Delete tira o elemento.</p>
+    <button class="secund" id="edVolta">Desfazer tudo</button>
+    <button class="secund" id="edFecha">Fechar</button>
+    <button class="acao" id="edSalva">Desenhar de novo</button>
+  </div>
+  <div class="palco"><div id="lona"></div></div>
+</div>
 
 <div class="aviso hidden" id="aviso"></div>
 
 <footer>
-  <div class="estado"><b id="conta">Comece pela peça</b><span id="detalhe">Arraste a arte aprovada em qualquer lugar da tela.</span></div>
+  <div class="estado"><b id="conta">Comece pela peça</b><span id="detalhe">Arraste a arte aprovada em qualquer lugar da tela.</span>
+    <div class="trilha hidden" id="trilha"><i></i></div></div>
   <button class="secund" id="btnFinal" style="display:none">Exportar final</button>
   <button class="secund" id="btnAnimar" style="display:none">Animar</button>
   <button class="secund" id="btnZip" style="display:none">Baixar tudo</button>
@@ -279,6 +419,8 @@ header .sair:hover{color:var(--fg)}
 const $ = s => document.querySelector(s);
 const escolhidos = new Set();
 let catalogo = [], peca = null, job = null, pulso = null;
+const refazer = new Set();          // formatos cuja miniatura ficou velha
+let esperandoAjuste = null;         // formato remontado esperando o redesenho
 
 /* ---------- avisos ---------- */
 let somem;
@@ -335,19 +477,20 @@ async function receber(f){
   if (['png','jpg','jpeg','webp'].includes(ext)){
     const url = URL.createObjectURL(f), im = new Image();
     im.onload = () => { peca.w=im.naturalWidth; peca.h=im.naturalHeight;
-      pinta(url, `${peca.w}×${peca.h} · ${tam}`); pintarFormatos(); pintarRodape(); };
-    im.onerror = () => { pinta(null, tam); pintarRodape(); };
+      pinta(url, `${peca.w}×${peca.h} · ${tam}`); pintarFormatos(); lerModo(); };
+    im.onerror = () => { pinta(null, tam); lerModo(); };
     im.src = url;
   } else if (ext==='psd' || ext==='psb'){
     pinta(null, `lendo o PSD… · ${tam}`);
     const r = await lerPsd(f);
     if (r.erro){ aviso(r.erro); pinta(null, tam); }
     else { peca.w=r.w; peca.h=r.h; pinta(r.capa, `${r.w}×${r.h} · ${tam}`); }
-    pintarFormatos(); pintarRodape();
-  } else { pinta(null, tam); pintarRodape(); }
+    pintarFormatos(); lerModo();
+  } else { pinta(null, tam); lerModo(); }
 }
 
 $('#zona').onclick = () => $('#arquivo').click();
+
 $('#arquivo').onchange = e => e.target.files[0] && receber(e.target.files[0]);
 
 // A peça pode ser solta em qualquer lugar da janela. A zona é pequena, errar o
@@ -368,23 +511,65 @@ async function carregarFormatos(){
 const LARG = 132;
 function pintarFormatos(){
   const porCanal = {};
-  for (const f of catalogo) (porCanal[f.canal] ||= []).push(f);
+  for (const f of catalogo.concat(livres)) (porCanal[f.canal] ||= []).push(f);
   $('#formatos').innerHTML = Object.entries(porCanal).map(([canal, fs]) => `
     <div class="canal">${canal}</div>
     <div class="grade">${fs.map(cartao).join('')}</div>`).join('');
-  $('#formatos').querySelectorAll('.f').forEach(b => b.onclick = () => {
-    if (job) return;
-    escolhidos.has(b.dataset.id) ? escolhidos.delete(b.dataset.id) : escolhidos.add(b.dataset.id);
-    b.classList.toggle('on'); pintarRodape();
+  $('#formatos').querySelectorAll('.f').forEach(b => {
+    const vira = () => {
+      if (job) return;
+      escolhidos.has(b.dataset.id) ? escolhidos.delete(b.dataset.id) : escolhidos.add(b.dataset.id);
+      b.classList.toggle('on'); pintarRodape();
+    };
+    b.onclick = vira;
+    // o cartão deixou de ser <button> para poder ter botões dentro; a tecla
+    // volta na mão para quem não usa mouse
+    b.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); vira(); } };
+  });
+  $('#formatos').querySelectorAll('.tira').forEach(x => x.onclick = ev => {
+    ev.stopPropagation();
+    const id = x.closest('.f').dataset.id;
+    livres = livres.filter(f => f.id !== id); escolhidos.delete(id);
+    pintarFormatos(); pintarRodape();
   });
 }
+
+/* ---------- medida que não está no catálogo ----------
+   O catálogo cobre os destinos conhecidos, com a margem que cada rede recorta
+   de verdade. Fora deles havia só o impasse: ou o formato existia na lista, ou
+   a peça não saía. */
+let livres = [];
+const LIVRE_MIN = 50, LIVRE_MAX = 10000;
+
+$('#btnLivre').onclick = () => {
+  const w = parseInt($('#livreW').value, 10), h = parseInt($('#livreH').value, 10);
+  if (!(w >= LIVRE_MIN && w <= LIVRE_MAX && h >= LIVRE_MIN && h <= LIVRE_MAX)){
+    aviso(`A medida vai de ${LIVRE_MIN} a ${LIVRE_MAX} pixels de cada lado.`); return;
+  }
+  const id = `livre-${w}x${h}`;
+  if (catalogo.some(f => f.w === w && f.h === h)){
+    const j = catalogo.find(f => f.w === w && f.h === h);
+    escolhidos.add(j.id); aviso(`Essa medida já está na lista: ${j.nome}.`, true);
+  } else if (livres.some(f => f.id === id)){
+    aviso('Essa medida já foi adicionada.');
+  } else {
+    livres.push({ id, canal: 'Medida livre', nome: `${w}×${h}`, w, h, livre: true });
+    escolhidos.add(id);
+  }
+  $('#livreW').value = ''; $('#livreH').value = '';
+  pintarFormatos(); pintarRodape();
+};
+['#livreW','#livreH'].forEach(sel => $(sel).onkeydown = e => {
+  if (e.key === 'Enter'){ e.preventDefault(); $('#btnLivre').click(); }
+});
 function cartao(f){
   // altura pela proporção verdadeira do destino: o retângulo É o formato
   const alt = Math.max(26, Math.min(190, Math.round(LARG * f.h / f.w)));
   const on = escolhidos.has(f.id) ? ' on' : '';
-  return `<button class="f${on}" data-id="${f.id}" type="button" title="${f.nome}">
-    <div class="cx" style="height:${alt}px"></div>
-    <b>${f.nome}</b><i>${f.w}×${f.h}</i></button>`;
+  const tira = f.livre && !job ? `<button class="tira" type="button" title="Tirar">✕</button>` : '';
+  return `<div class="f${on}" data-id="${f.id}" role="button" tabindex="0" title="${f.nome}">
+    <div class="cx" style="height:${alt}px">${tira}</div>
+    <b>${f.livre ? 'Medida livre' : f.nome}</b><i>${f.w}×${f.h}</i></div>`;
 }
 
 /* ---------- rodapé ---------- */
@@ -392,15 +577,34 @@ function pintarRodape(){
   const n = escolhidos.size;
   $('#resumoSel').textContent = n ? `${n} formato${n>1?'s':''} escolhido${n>1?'s':''}` : 'nenhum formato escolhido';
   if (job) return;
-  const temPeca = !!peca, temHead = !!$('#headline').value.trim();
-  $('#btnIr').disabled = !(temPeca && n && temHead);
-  $('#conta').textContent = !temPeca ? 'Comece pela peça' : !temHead ? 'Falta a chamada'
+  const temPeca = !!peca, escreve = modoPeca() === 'novo';
+  const falta = escreve && !$('#headline').value.trim();
+  $('#btnIr').disabled = !(temPeca && n && !falta);
+  $('#conta').textContent = !temPeca ? 'Comece pela peça' : falta ? 'Falta a chamada'
     : !n ? 'Escolha os formatos' : `${n} peça${n>1?'s':''} para replicar`;
   $('#detalhe').textContent = !temPeca ? 'Arraste a arte aprovada em qualquer lugar da tela.'
-    : !temHead ? 'A chamada é o texto principal da peça.'
+    : falta ? 'A chamada é o texto principal da peça.'
     : !n ? 'Cada retângulo está na proporção real do destino.'
     : 'Leva cerca de um minuto por peça.';
 }
+/* ---------- os três modos ----------
+   Sem esta escolha a tela travava o começo do trabalho pedindo uma chamada
+   que nem sempre existe: quem só quer a mesma peça noutro formato não tem
+   texto novo nenhum a escrever. */
+const modoPeca = () => (document.querySelector('input[name=modo]:checked')||{}).value || 'com';
+function lerModo(){
+  const v = modoPeca();
+  document.querySelectorAll('label.modo').forEach(l =>
+    l.classList.toggle('on', l.querySelector('input').checked));
+  $('#campoHead').hidden = v !== 'novo';
+  $('#campoCta').hidden  = v !== 'novo';
+  // só PSD entrega camadas; arquivo achatado não tem foto nem grafismo a mover
+  const achatado = peca && !['psd','psb'].includes(peca.ext);
+  $('#travaPsd').hidden = !(v === 'com' && achatado);
+  pintarRodape();
+}
+document.querySelectorAll('input[name=modo]').forEach(r => r.onchange = lerModo);
+
 ['#headline','#cta'].forEach(s => $(s).oninput = () => { contar(); pintarRodape(); });
 function contar(){
   const h = $('#headline').value.length, c = $('#cta').value.length;
@@ -417,6 +621,7 @@ $('#btnIr').onclick = async () => {
   fd.set('cta', $('#cta').value.trim());
   fd.set('titulo', $('#titulo').value.trim());
   fd.set('brief', $('#brief').value.trim());
+  fd.set('modo', modoPeca());
   $('#btnIr').disabled = true; $('#conta').textContent = 'Enviando';
   $('#detalhe').textContent = 'Subindo a arte…';
   let r;
@@ -429,6 +634,35 @@ $('#btnIr').onclick = async () => {
   if (r.status === 'escolha a prancheta'){ escolherPrancheta(r.pranchetas); return; }
   acompanhar();
 };
+
+/* ---------- quanto falta ----------
+   Dentro de um formato o trabalho não é linear: preparar o fundo é a maior
+   parte, desenhar é o fim. Sem esses pesos a barra ficava parada minutos num
+   formato e pulava de uma vez — que é como se parece com um travamento. */
+const PESO = {'lendo a arte':0, 'abrindo o PSD em camadas':0, 'preparando o fundo':.15,
+              'compondo':.62, 'desenhando':.82, 'pronta':0};
+function fracao(d){
+  const v = d.video || {};
+  if (['rodando','na fila'].includes(v.status||''))
+    return (v.prontos||[]).length / Math.max(1, (v.formatos||[]).length);
+  const p = d.progresso;
+  if (!p || !p.total) return null;
+  const dentro = p.feito < p.total ? (PESO[p.etapa] ?? 0) : 0;
+  return Math.min(1, (p.feito + dentro) / p.total);
+}
+function emTempo(seg){
+  if (seg < 50) return `${Math.max(5, Math.round(seg/5)*5)} s`;
+  const m = Math.round(seg/60);
+  return `${m} min`;
+}
+function falta(d, f){
+  // o relógio é o do servidor dos dois lados: comparar com o do navegador
+  // erraria pelo fuso e pelo atraso de cada máquina
+  if (!d.inicio || !d.agora || !f || f < .04) return '';
+  const correu = d.agora - d.inicio;
+  if (correu < 3) return '';
+  return `~${emTempo(correu * (1 - f) / f)} restando`;
+}
 
 async function acompanhar(){
   clearInterval(pulso);
@@ -444,10 +678,26 @@ async function acompanhar(){
         b.insertAdjacentHTML('beforeend',
           `<span class="ressalva" title="${aviso.join(' · ').replace(/"/g,'')}">com ressalva</span>`);
       }
-      if (prontas.has(id) && !cx.querySelector('img')){
-        const arq = (d.entregas||[]).find(e => e.nome.includes(id) && e.nome.endsWith('.png'));
-        if (arq) cx.innerHTML = `<img src="/jobs/${job}/arquivos/${encodeURIComponent(arq.nome)}" alt="">`;
+      if (prontas.has(id) && (!cx.querySelector('img') || refazer.has(id))){
+        // pelo nome exato: `fundo-ig-stories.png` também contém "ig-stories" e
+        // também termina em .png, e vinha antes na lista. O cartão mostrava o
+        // fundo preparado — que por definição não tem texto nenhum — e a peça
+        // parecia ter saído sem texto quando estava inteira no disco
+        const arq = (d.entregas||[]).find(e => e.nome === id + '.png')
+                 || (d.entregas||[]).find(e => e.nome.endsWith('/' + id + '.png'));
+        // o carimbo força o navegador a buscar de novo: depois de remontar à
+        // mão o arquivo tem o mesmo nome e o cache devolveria a peça antiga
+        const v = refazer.has(id) ? '?v=' + Date.now() : '';
+        if (arq) cx.innerHTML = `<img src="/jobs/${job}/arquivos/${encodeURIComponent(arq.nome)}${v}" alt="">`;
+        refazer.delete(id);
+        cx.insertAdjacentHTML('beforeend',
+          `<button class="olho" title="Ampliar">⤢</button>`
+          + (d.modo === 'sem' ? '' : `<button class="mao" title="Remontar na mão">remontar</button>`));
+        cx.querySelector('.olho').onclick = ev => { ev.stopPropagation(); ampliar(cx.querySelector('img').src, id); };
+        const mao = cx.querySelector('.mao');
+        if (mao) mao.onclick = ev => { ev.stopPropagation(); abrirEditor(id); };
         b.classList.add('feito'); b.classList.remove('pulsa');
+        b.classList.toggle('ajustavel', d.modo !== 'sem');
       } else if (falhas[id]){
         b.classList.add('falhou'); b.classList.remove('pulsa');
         if (!cx.querySelector('.selo')) cx.insertAdjacentHTML('afterbegin', `<span class="selo">não saiu</span>`);
@@ -482,10 +732,30 @@ async function acompanhar(){
       : erradas ? `${feitas} entregue${feitas>1?'s':''}, ${erradas} não saiu. Passe o mouse para ver por quê.`
       : `${feitas} peça${feitas>1?'s':''} entregue${feitas>1?'s':''}.`;
 
+    const andandoAlgo = andando || ['rodando','na fila'].includes(v.status||'')
+                        || ['rodando','na fila'].includes((d.ajuste||{}).status||'');
+    const f = fracao(d);
+    const trilha = $('#trilha');
+    trilha.classList.toggle('hidden', !andandoAlgo);
+    if (andandoAlgo && f !== null){
+      trilha.querySelector('i').style.width = Math.round(f*100) + '%';
+      const resta = falta(d, f);
+      if (resta) $('#detalhe').textContent += ' · ' + resta;
+    }
+
     const parado = ['pronto','parcial','erro'].includes(d.status)
-                && !['rodando','na fila'].includes(v.status || '');
+                && !['rodando','na fila'].includes(v.status || '')
+                && !['rodando','na fila'].includes((d.ajuste||{}).status || '');
     if (parado){
       clearInterval(pulso);
+      trilha.classList.add('hidden');
+      if ((d.ajuste||{}).status === 'erro') aviso(d.ajuste.erro || 'O ajuste não desenhou.');
+      // só avisa de ajuste pedido agora: ao reabrir um trabalho antigo o
+      // estado ainda diz "pronto", e a tela anunciava um redesenho que não houve
+      if ((d.ajuste||{}).status === 'pronto' && esperandoAjuste === d.ajuste.formato){
+        refazer.add(esperandoAjuste); esperandoAjuste = null;
+        aviso('Peça redesenhada.', true);
+      }
       if (feitas){
         const z=$('#btnZip'); z.style.display=''; z.onclick=()=>location.href=`/jobs/${job}/zip`;
         const a=$('#btnAnimar'); a.style.display=''; a.onclick=abrirAnimar;
@@ -547,7 +817,7 @@ $('#formPorta').onsubmit = async e => {
   $('#btnPorta').disabled = false;
 };
 
-$('#plano').onclick = abrirPlanos;
+$('#saldo').onclick = abrirPlanos;
 $('#planos').onclick = e => { if (e.target.id === 'planos') $('#planos').classList.add('hidden'); };
 
 const dinheiro = v => v ? v.toLocaleString('pt-BR', {style:'currency', currency:'BRL'})
@@ -620,11 +890,17 @@ function abrir(conta){
 async function verPlano(){
   try {
     const u = await (await fetch('/eu/uso')).json();
-    const el = $('#plano');
-    el.textContent = `${u.plano.nome} · ${u.resta.pecas} peças, ${u.resta.videos} vídeos`;
+    const el = $('#saldo');
+    // usadas sobre franquia, e não só o que resta: quem produz precisa ver o
+    // ritmo do ciclo, não um número que só desce
+    const cheio = Math.min(100, Math.round(100 * u.pecas / Math.max(1, u.plano.pecas)));
+    el.innerHTML = `<b>${u.pecas}/${u.plano.pecas}</b> peças`
+      + `<span class="fio"><i style="width:${cheio}%"></i></span>`
+      + `${u.videos}/${u.plano.videos} vídeos · ${u.plano.nome}`;
+    el.hidden = false;
     el.classList.toggle('apertado', u.resta.pecas <= 0);
-    el.title = `${u.pecas} de ${u.plano.pecas} peças e ${u.videos} de ${u.plano.videos} `
-             + `vídeos usados em ${u.mes}.`;
+    el.title = `Ciclo ${u.mes}. Restam ${u.resta.pecas} peças e ${u.resta.videos} vídeos. `
+             + `Clique para ver os planos.`;
   } catch(e){}
 }
 
@@ -707,6 +983,182 @@ $('#btnAnimarOk').onclick = async () => {
   $('#detalhe').textContent = 'O vídeo leva mais tempo que a peça parada.';
   acompanhar();
 };
+
+
+/* ---------- ampliar a peça ----------
+   O cartão está na proporção do destino, com 132 px de largura: serve para
+   escolher o formato, não para conferir a peça. Sem isto a única forma de ver
+   o que saiu era baixar o zip. */
+function ampliar(url, fid){
+  const l = $('#lupa');
+  l.querySelector('img').src = url;
+  l.querySelector('.pe').textContent = fid ? `${fid} · clique para fechar` : 'clique para fechar';
+  l.classList.remove('hidden');
+}
+$('#lupa').onclick = () => $('#lupa').classList.add('hidden');
+addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  $('#lupa').classList.add('hidden');
+  if (!$('#editor').classList.contains('hidden')) fecharEditor();
+});
+
+/* ---------- remontar na mão ----------
+   O modelo decide bem onde cabe, mas não sabe a que a campanha quer dar peso.
+   Aqui a peça montada é aberta como ela é — fundo, margem de recorte e cada
+   elemento na caixa dele — e o que a pessoa mover volta para o motor.
+
+   Os elementos são agrupados pela camada de origem: um lettering do PSD vira
+   trinta e cinco recortes de letra, e arrastar letra por letra não é edição,
+   é castigo. */
+let ed = null;
+
+const arquivoUrl = nome => `/jobs/${job}/arquivos/${encodeURIComponent(nome)}`;
+
+async function abrirEditor(fid){
+  let pc;
+  try { pc = await (await fetch(`/jobs/${job}/pecas/${fid}`)).json(); }
+  catch(e){ aviso('Não consegui abrir a montagem dessa peça.'); return; }
+  if (!pc.elementos || !pc.elementos.length){
+    aviso('Esta peça é a arte reenquadrada: não há elemento solto para mover.');
+    return;
+  }
+  ed = { fid, peca: pc, k: 1, sel: null,
+         boxes: pc.elementos.map(e => ({...e.box})),
+         orig: pc.elementos.map(e => ({...e.box})),
+         fora: new Set() };
+  $('#edTitulo').textContent = `Remontar · ${fid}`;
+  $('#editor').classList.remove('hidden');
+  pintarLona();
+}
+
+function fecharEditor(){ $('#editor').classList.add('hidden'); ed = null; }
+$('#edFecha').onclick = fecharEditor;
+$('#edVolta').onclick = () => {
+  if (!ed) return;
+  ed.boxes = ed.orig.map(b => ({...b}));
+  ed.fora.clear(); ed.sel = null; pintarLona();
+};
+
+function grupos(){
+  const mapa = new Map();
+  ed.peca.elementos.forEach((e, i) => {
+    if (ed.fora.has(i)) return;
+    const chave = e.camada || `${e.papel || e.tipo}#${i}`;
+    if (!mapa.has(chave))
+      mapa.set(chave, { chave, rotulo: e.camada || e.papel || e.tipo, itens: [] });
+    mapa.get(chave).itens.push(i);
+  });
+  return [...mapa.values()];
+}
+
+function cerca(itens){
+  const bs = itens.map(i => ed.boxes[i]);
+  const x = Math.min(...bs.map(b => b.x)), y = Math.min(...bs.map(b => b.y));
+  return { x, y,
+           w: Math.max(...bs.map(b => b.x + b.w)) - x,
+           h: Math.max(...bs.map(b => b.y + b.h)) - y };
+}
+
+function pintarLona(){
+  const { peca } = ed, lona = $('#lona');
+  const W = peca.canvas.w, H = peca.canvas.h;
+  const palco = $('#editor .palco').getBoundingClientRect();
+  const k = ed.k = Math.min((palco.width - 30) / W, (palco.height - 30) / H);
+  lona.style.width = W * k + 'px'; lona.style.height = H * k + 'px';
+  const sv = peca.safe || {left:0,right:0,top:0,bottom:0};
+  const fundo = (peca.fundo || {}).src ? arquivoUrl(peca.fundo.src) : '';
+  lona.innerHTML = `<div class="ch" style="background-image:url('${fundo}')"></div>`
+    + `<div class="margem" style="left:${sv.left*k}px;top:${sv.top*k}px;`
+    + `right:${sv.right*k}px;bottom:${sv.bottom*k}px"></div>`;
+
+  for (const g of grupos()){
+    const c = cerca(g.itens);
+    const el = document.createElement('div');
+    el.className = 'pe-el' + (ed.sel === g.chave ? ' sel' : '');
+    el.style.cssText = `left:${c.x*k}px;top:${c.y*k}px;width:${c.w*k}px;height:${c.h*k}px`;
+    el.innerHTML = `<span class="rot">${g.rotulo}</span><span class="puxa"></span>`;
+    for (const i of g.itens){
+      const e = ed.peca.elementos[i], b = ed.boxes[i];
+      const dentro = document.createElement('div');
+      dentro.style.cssText = `position:absolute;left:${(b.x-c.x)*k}px;top:${(b.y-c.y)*k}px;`
+        + `width:${b.w*k}px;height:${b.h*k}px`;
+      dentro.innerHTML = e.tipo === 'imagem' && e.src
+        ? `<img src="${arquivoUrl(e.src)}" alt="">`
+        : `<span class="letra">${(e.texto || e.papel || '').replace(/</g,'&lt;')}</span>`;
+      el.appendChild(dentro);
+    }
+    pegar(el, g);
+    lona.appendChild(el);
+  }
+}
+
+function pegar(el, g){
+  const mover = (ev, escalando) => {
+    ev.preventDefault();
+    ed.sel = g.chave;
+    el.setPointerCapture(ev.pointerId);
+    const x0 = ev.clientX, y0 = ev.clientY;
+    const antes = g.itens.map(i => ({...ed.boxes[i]}));
+    const c0 = cerca(g.itens);
+    const anda = e2 => {
+      const dx = (e2.clientX - x0) / ed.k, dy = (e2.clientY - y0) / ed.k;
+      g.itens.forEach((i, n) => {
+        const a = antes[n];
+        if (!escalando){ ed.boxes[i] = {...a, x: Math.round(a.x + dx), y: Math.round(a.y + dy)}; return; }
+        // escalar o grupo inteiro em volta do canto de cima: cada peça guarda
+        // a posição relativa, senão o lettering se desmonta ao ser puxado
+        const fx = Math.max(.15, (c0.w + dx) / c0.w), fy = Math.max(.15, (c0.h + dy) / c0.h);
+        ed.boxes[i] = { x: Math.round(c0.x + (a.x - c0.x) * fx), y: Math.round(c0.y + (a.y - c0.y) * fy),
+                        w: Math.max(4, Math.round(a.w * fx)), h: Math.max(4, Math.round(a.h * fy)) };
+      });
+      pintarLona();
+    };
+    const solta = () => { removeEventListener('pointermove', anda);
+                          removeEventListener('pointerup', solta); };
+    addEventListener('pointermove', anda);
+    addEventListener('pointerup', solta);
+  };
+  el.onpointerdown = ev => {
+    if (ev.target.classList.contains('puxa')) return mover(ev, true);
+    mover(ev, false);
+  };
+}
+
+addEventListener('keydown', e => {
+  if (!ed || $('#editor').classList.contains('hidden')) return;
+  if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+  if (!ed.sel) return;
+  const g = grupos().find(x => x.chave === ed.sel);
+  if (!g) return;
+  e.preventDefault();
+  g.itens.forEach(i => ed.fora.add(i));
+  ed.sel = null; pintarLona();
+});
+
+$('#edSalva').onclick = async () => {
+  if (!ed) return;
+  const fid = ed.fid;
+  const elementos = ed.peca.elementos
+    .map((e, i) => ed.fora.has(i) ? null : { i, box: ed.boxes[i] })
+    .filter(Boolean);
+  if (!elementos.length && !confirm('Isto tira todos os elementos da peça. Seguir?')) return;
+  $('#edSalva').disabled = true;
+  try {
+    const r = await fetch(`/jobs/${job}/pecas/${fid}`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ elementos }) });
+    if (!r.ok){ aviso((await r.json()).detail || 'Não deu para salvar.');
+                $('#edSalva').disabled = false; return; }
+  } catch(e){ aviso('Não consegui falar com o servidor.'); $('#edSalva').disabled = false; return; }
+  $('#edSalva').disabled = false;
+  esperandoAjuste = fid;
+  fecharEditor();
+  $('#conta').textContent = 'Redesenhando';
+  $('#detalhe').textContent = `${fid} · com a montagem que você fez.`;
+  acompanhar();
+};
+
+addEventListener('resize', () => { if (ed) pintarLona(); });
 
 /* ---------- começa fechado ---------- */
 (async () => {

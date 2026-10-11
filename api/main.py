@@ -21,7 +21,8 @@ from fastapi import (Cookie, Depends, FastAPI, File, Form, Header, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
 from api import ambiente, cobranca, contas, trabalhos, uso
-from api.tarefas import processar, processar_video
+from api.tarefas import (MODOS, MODO_PADRAO, TEXTO_NOVO, processar, processar_video,
+                         redesenhar)
 from api.fila import FILA_VIDEO, fila_do_ambiente
 from motor.replica import formato_by_id, load_formatos
 
@@ -180,6 +181,16 @@ def meus_eventos(mes: str = "", c: contas.Conta = Depends(conta_atual)):
     return {"mes": mes or uso._mes(), "eventos": uso.eventos(c.id, mes)}
 
 
+@app.get("/assets/{nome}")
+def arquivo_da_marca(nome: str):
+    """A marca e o ícone. Servidos daqui porque a tela é um arquivo só e a
+    logomarca não cabe nela em linha sem virar ruído no meio do CSS."""
+    alvo = (WEB / "assets" / nome).resolve()
+    if alvo.parent != (WEB / "assets").resolve() or not alvo.is_file():
+        raise HTTPException(404, "não existe")
+    return FileResponse(alvo, media_type="image/svg+xml" if alvo.suffix == ".svg" else None)
+
+
 @app.get("/", response_class=HTMLResponse)
 def tela():
     pagina = WEB / "index.html"
@@ -233,13 +244,21 @@ def formatos():
 async def criar(
     arte: UploadFile = File(...),
     formatos: str = Form(..., description="ids separados por vírgula"),
-    headline: str = Form(...),
+    headline: str = Form(""),
     cta: str = Form(""),
     titulo: str = Form(""),
     brief: str = Form(""),
     prancheta: str = Form(""),
+    modo: str = Form(MODO_PADRAO, description="sem | com | novo"),
     c: contas.Conta = Depends(conta_atual),
 ):
+    if modo not in MODOS:
+        raise HTTPException(422, f"modo desconhecido: `{modo}`. Use {', '.join(MODOS)}")
+    # a chamada só é exigida de quem pediu texto novo. Exigir sempre travava o
+    # pedido de quem queria apenas a mesma peça noutros formatos — e não há
+    # chamada a escrever quando nada vai ser escrito
+    if modo == TEXTO_NOVO and not headline.strip():
+        raise HTTPException(422, "para escrever texto novo preciso da chamada")
     ext = Path(arte.filename or "").suffix.lower()
     if ext not in ACEITOS:
         raise HTTPException(415, f"não trabalho com `{ext or 'arquivo sem extensão'}`. "
@@ -267,7 +286,7 @@ async def criar(
         shutil.copyfileobj(arte.file, f)
 
     comum = {"formatos": pedidos, "titulo": titulo, "arte": destino.name,
-             "headline": headline, "cta": cta, "brief": brief}
+             "headline": headline, "cta": cta, "brief": brief, "modo": modo}
 
     # PSD com várias pranchetas é vários trabalhos num arquivo só. Escolher a
     # maior ou a primeira pega a errada e fica calado: no Key Visual real as
@@ -296,7 +315,7 @@ async def criar(
 
     trabalhos.gravar(c.id, job, {**comum, "status": "na fila", "prancheta": prancheta})
     na_fila = FILA.enfileirar(processar, c.id, job, str(destino), pedidos, headline, cta,
-                              brief, prancheta, False)
+                              brief, prancheta, False, modo)
     trabalhos.gravar(c.id, job, {"id_na_fila": na_fila})
     return {"job": job, "status": trabalhos.ler(c.id, job)["status"]}
 
@@ -322,7 +341,8 @@ def escolher_prancheta(job: str, nome: str = Form(...),
     trabalhos.gravar(c.id, job, {"status": "na fila", "prancheta": nome})
     trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
         processar, c.id, job, str(arte), estado["formatos"], estado.get("headline", ""),
-        estado.get("cta", ""), estado.get("brief", ""), nome, False)})
+        estado.get("cta", ""), estado.get("brief", ""), nome, False,
+        estado.get("modo", MODO_PADRAO))})
     return {"job": job, "status": trabalhos.ler(c.id, job)["status"], "prancheta": nome}
 
 
@@ -393,8 +413,76 @@ def finalizar(job: str, c: contas.Conta = Depends(conta_atual)):
     trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
         processar, c.id, job, str(arte), estado["formatos"], estado.get("headline", ""),
         estado.get("cta", ""), estado.get("brief", ""), estado.get("prancheta", ""),
-        True)})
+        True, estado.get("modo", MODO_PADRAO))})
     return {"job": job, "status": "na fila", "final": True}
+
+
+# o que a tela pode mexer numa peça já montada. Lista curta de propósito: o
+# `src` fica de fora, senão um pedido forjado faria o motor desenhar — e
+# devolver no PNG — qualquer arquivo da máquina
+AJUSTAVEL = {"box", "texto", "align", "valign", "cor", "peso", "min", "max",
+             "lineHeight", "opacidade"}
+
+
+def _peca_do(conta: str, job: str, formato: str) -> Path:
+    if not formato_by_id(formato):
+        raise HTTPException(422, f"formato desconhecido: {formato}")
+    arq = trabalhos.pasta_do(conta, job) / "pecas" / f"{formato}.json"
+    if not arq.exists():
+        raise HTTPException(404, f"não existe peça montada para `{formato}`")
+    return arq
+
+
+@app.get("/jobs/{job}/pecas/{formato}")
+def ver_peca(job: str, formato: str, c: contas.Conta = Depends(conta_atual)):
+    """A montagem da peça: é o que o editor abre para mover os elementos."""
+    try:
+        arq = _peca_do(c.id, job, formato)
+    except ValueError:
+        raise HTTPException(400, "identificador inválido")
+    return json.loads(arq.read_text(encoding="utf-8"))
+
+
+@app.post("/jobs/{job}/pecas/{formato}", status_code=202)
+async def ajustar_peca(job: str, formato: str, request: Request,
+                       c: contas.Conta = Depends(conta_atual)):
+    """Grava a peça remontada na mão e manda desenhar de novo.
+
+    Só a geometria e o texto de cada elemento mudam, e cada um é casado com o
+    que já estava gravado em vez de substituí-lo: o que a tela manda é onde a
+    pessoa pôs a caixa, não uma peça nova. Elemento que a tela não mandou de
+    volta foi tirado de propósito.
+    """
+    try:
+        arq = _peca_do(c.id, job, formato)
+    except ValueError:
+        raise HTTPException(400, "identificador inválido")
+    corpo = await request.json()
+    pedidos = corpo.get("elementos")
+    if not isinstance(pedidos, list):
+        raise HTTPException(422, "mande `elementos` com a lista remontada")
+
+    peca = json.loads(arq.read_text(encoding="utf-8"))
+    antigos = peca.get("elementos", [])
+    novos = []
+    for e in pedidos:
+        if not isinstance(e, dict):
+            raise HTTPException(422, "cada elemento é um objeto")
+        i = e.get("i")
+        if not isinstance(i, int) or not 0 <= i < len(antigos):
+            raise HTTPException(422, "cada elemento precisa do índice `i` que veio na peça")
+        base = dict(antigos[i])
+        base.update({k: v for k, v in e.items() if k in AJUSTAVEL})
+        novos.append(base)
+    peca["elementos"] = novos
+    peca["via"] = (peca.get("via") or "") + "+mao" if "+mao" not in (peca.get("via") or "") \
+                  else peca["via"]
+    arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    trabalhos.gravar(c.id, job, {"ajuste": {"status": "na fila", "formato": formato}})
+    trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
+        redesenhar, c.id, job, formato)})
+    return {"job": job, "formato": formato, "ajuste": "na fila"}
 
 
 @app.get("/jobs/{job}")
@@ -406,7 +494,11 @@ def ver(job: str, c: contas.Conta = Depends(conta_atual)):
     if estado is None:
         raise HTTPException(404, "trabalho não existe")
     estado = perdido(c.id, job, estado)
-    return {"job": job, **estado, "entregas": trabalhos.entregas(c.id, job)}
+    # o relógio do servidor vai junto: a tela estima o que falta comparando com
+    # `inicio`, e sem isso a conta erra pelo tanto que os dois relógios diferem
+    from time import time
+    return {"job": job, **estado, "agora": time(),
+            "entregas": trabalhos.entregas(c.id, job)}
 
 
 def perdido(conta: str, job: str, estado: dict) -> dict:

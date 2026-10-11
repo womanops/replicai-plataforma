@@ -172,8 +172,13 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
         # a leitura é uma chamada por trabalho, não por formato: é a arte que
         # está sendo lida, e ela é a mesma para todos
         aviso = _passo(progresso, len(formatos))
-        aviso("lendo a arte", 0)
-        leitura = leitor(copia) if leitor else None
+        preserva = getattr(compositor, "preserva", False)
+        leitura = None
+        if leitor and not preserva:
+            # quem só reenquadra não pergunta nada ao modelo: a arte inteira é
+            # protegida e nada é escrito por cima
+            aviso("lendo a arte", 0)
+            leitura = leitor(copia)
         _compor_e_render(r, formatos, compositor, copia, pasta, brief, leitura, aviso,
                          final)
     # o custo entra mesmo quando o job falha: a chamada que não deu peça
@@ -279,7 +284,7 @@ def _texto_novo(peca: dict, formato: dict, pasta: Path, leitura, brief: str,
     em cima da chama — e a rede de segurança do sossego, ao descartar as duas
     faixas, devolveu a peça inteira e piorou.
     """
-    if compositor is None:
+    if compositor is None or getattr(compositor, "preserva", False):
         return []
     caixas = [e["box"] for e in peca["elementos"]]
     if not caixas:
@@ -316,7 +321,7 @@ def _texto_novo(peca: dict, formato: dict, pasta: Path, leitura, brief: str,
 
 
 def _terreno(copia: Path, fid: str, pasta: Path, leitura,
-             final: bool = False) -> tuple[Terreno | None, list[str], int]:
+             final: bool = False, preserva: bool = False) -> tuple[Terreno | None, list[str], int]:
     """O fundo do formato e o espaço que ele deixou. Sem leitura, sem terreno:
     quem compõe volta ao comportamento antigo em vez de receber meia verdade.
 
@@ -325,11 +330,14 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura,
     apagava o primeiro.
     """
     f = formato_by_id(fid)
-    if not f or leitura is None:
+    if not f or (leitura is None and not preserva):
         return None, [], 0
     from PIL import Image
     with Image.open(copia) as im:
-        tinta = leitura.em_pixels(*im.size)
+        # quem só reenquadra protege a arte inteira: não há o que perguntar ao
+        # modelo sobre onde está a tinta quando nada vai ser escrito por cima.
+        # É o que torna esse modo de graça, e certo por construção.
+        tinta = leitura.em_pixels(*im.size) if leitura is not None else [0, 0, *im.size]
     info = prep_fundo.preparar(copia, f, tinta, pasta / f"fundo-{fid}.png",
                                insistir=final, reaproveitar=final)
 
@@ -354,7 +362,7 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura,
 
     return Terreno(fundo={"tipo": "imagem", "src": info["src"], "fit": "cover"},
                    livres=livres,
-                   ja_escrito=list(leitura.frases),
+                   ja_escrito=list(leitura.frases) if leitura is not None else [],
                    fontes=_fonte_do_trabalho(pasta),
                    tinta=info["protect_box"]), avisos, int(info.get("generativo") or 0)
 
@@ -375,7 +383,9 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
     for i, fid in enumerate(formatos):
         avisar("preparando o fundo", i, fid)
         try:
-            terreno, avisos_do_fundo, gastou = _terreno(copia, fid, pasta, leitura, final)
+            terreno, avisos_do_fundo, gastou = _terreno(
+                copia, fid, pasta, leitura, final,
+                preserva=getattr(compositor, "preserva", False))
             r.generativo += gastou
         except Exception as e:
             # fundo que não sai é falha do formato, não do trabalho inteiro

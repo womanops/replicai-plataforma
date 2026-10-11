@@ -10,12 +10,26 @@ from __future__ import annotations
 from pathlib import Path
 
 from api import trabalhos, uso
-from api.compositor import CompositorEmCadeia, CompositorModelo, CompositorSimples
+from api.compositor import (CompositorEmCadeia, CompositorModelo, CompositorPreserva,
+                            CompositorSimples)
 from api.pipeline import desdobrar
 
+# os três modos de desdobrar, do mais conservador ao mais livre
+SO_FORMATO = "sem"       # preserva 100% da peça, só reenquadra
+DIAGRAMAR = "com"        # preserva o conteúdo, e a pessoa remonta depois
+TEXTO_NOVO = "novo"      # o modelo escreve chamada e CTA no espaço que sobrou
+MODOS = (SO_FORMATO, DIAGRAMAR, TEXTO_NOVO)
+MODO_PADRAO = DIAGRAMAR
 
-def compositor(arte: str, headline: str, cta: str):
-    """Quem compõe. Com credencial, o modelo decide a estrutura e a máquina
+
+def compositor(arte: str, headline: str, cta: str, modo: str = MODO_PADRAO):
+    """Quem compõe, conforme o que foi pedido.
+
+    Nos dois primeiros modos ninguém escreve: a peça é a arte reenquadrada, e
+    quem quiser mexer mexe depois, na mão. Escrever sem ser pedido foi como o
+    Stories saiu com a chamada duplicada por cima do lettering da arte.
+
+    No terceiro, com credencial, o modelo decide a estrutura e a máquina
     calcula as caixas; a regra determinística fica atrás como rede. Sem
     credencial, só a regra — a plataforma funciona, com menos qualidade, em vez
     de recusar o trabalho.
@@ -23,6 +37,8 @@ def compositor(arte: str, headline: str, cta: str):
     A ordem é essa e não o contrário: a regra dá conta do caso fácil, mas não
     sabe o que sacrificar quando o formato aperta, que é o que decide a peça.
     """
+    if modo != TEXTO_NOVO:
+        return CompositorPreserva()
     from api import modelo
     simples = CompositorSimples(headline=headline, cta=cta)
     if not modelo.disponivel():
@@ -36,7 +52,10 @@ def compositor(arte: str, headline: str, cta: str):
 
 def leitor():
     """Quem lê a arte antes de compor. Sem credencial não há leitura, e a
-    esteira cai no comportamento antigo — com a arte crua de fundo."""
+    esteira cai no comportamento antigo — com a arte crua de fundo.
+
+    Quem só reenquadra nem chega a usar: a esteira pula a leitura quando o
+    compositor preserva a peça."""
     from api import modelo
     if not modelo.disponivel():
         return None
@@ -71,9 +90,14 @@ def _contar(conta: str, job: str, r) -> dict:
 
 
 def processar(conta: str, job: str, arte: str, formatos: list[str], headline: str,
-              cta: str, brief: str, prancheta: str = "", final: bool = False) -> None:
+              cta: str, brief: str, prancheta: str = "", final: bool = False,
+              modo: str = MODO_PADRAO) -> None:
     """O que o worker executa. Fora da API de propósito: é o pedaço pesado."""
-    trabalhos.gravar(conta, job, {"status": "rodando", "final": final})
+    from time import time
+    # o relógio começa aqui, e não quando o trabalho entrou na fila: é com ele
+    # que a tela estima quanto falta, e esperar na fila não é progresso
+    trabalhos.gravar(conta, job, {"status": "rodando", "final": final,
+                                  "modo": modo, "inicio": time()})
 
     def contar(p: dict) -> None:
         # grava a cada passo: é o que distingue, de fora, um render demorado
@@ -81,7 +105,7 @@ def processar(conta: str, job: str, arte: str, formatos: list[str], headline: st
         trabalhos.gravar(conta, job, {"progresso": p})
 
     try:
-        r = desdobrar(Path(arte), formatos, compositor(arte, headline, cta),
+        r = desdobrar(Path(arte), formatos, compositor(arte, headline, cta, modo),
                       trabalhos.pasta_do(conta, job), brief, leitor(), prancheta,
                       progresso=contar, final=final)
         trabalhos.gravar(conta, job, {"status": r.status, "progresso": None,
@@ -119,3 +143,30 @@ def processar_video(conta: str, job: str, formatos: list[str], preset: str,
         raise
 
 
+
+def redesenhar(conta: str, job: str, formato: str) -> None:
+    """Desenha de novo um formato cuja peça foi remontada na mão.
+
+    Não conta consumo: a peça é a mesma, e cobrar duas vezes por mover um
+    título seria cobrar a pessoa por discordar da diagramação. O que ela paga
+    é a peça produzida, não cada tentativa de deixá-la boa.
+
+    Vai para a fila como qualquer render porque é o Chrome que desenha, e isso
+    leva segundos — tempo demais para uma requisição esperar.
+    """
+    from motor.replica import render_peca
+    pasta = trabalhos.pasta_do(conta, job)
+    arq = pasta / "pecas" / f"{formato}.json"
+    if not arq.exists():
+        raise ValueError(f"não existe peça montada para `{formato}`")
+    import json
+    peca = json.loads(arq.read_text(encoding="utf-8"))
+    destino = pasta / (peca.get("saida") or f"{formato}.png")
+    trabalhos.gravar(conta, job, {"ajuste": {"status": "rodando", "formato": formato}})
+    try:
+        render_peca(arq, destino)
+    except Exception as e:
+        trabalhos.gravar(conta, job, {"ajuste": {"status": "erro", "formato": formato,
+                                                 "erro": str(e)}})
+        raise
+    trabalhos.gravar(conta, job, {"ajuste": {"status": "pronto", "formato": formato}})

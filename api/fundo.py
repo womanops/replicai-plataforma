@@ -114,8 +114,11 @@ def _continuar(base, ex: dict, espera: int):
     """
     import tempfile
 
+    from time import monotonic
+
     tmp = Path(tempfile.mkstemp(suffix=".png", prefix="replicai-fundo-")[1])
     base.save(tmp)
+    comecou = monotonic()
     try:
         feito, log = _outpaint_higgsfield(tmp, ex, None, timeout=espera)
     except Exception as e:
@@ -123,8 +126,15 @@ def _continuar(base, ex: dict, espera: int):
     finally:
         tmp.unlink(missing_ok=True)
     if feito is None:
-        return None, (f"o fundo generativo não respondeu em {espera}s "
-                      f"({log.get('erro') or 'sem resposta'})")
+        # dizer "não respondeu em 180s" quando a recusa voltou em dois
+        # segundos manda quem lê procurar lentidão onde o problema é conta,
+        # credencial ou crédito. Custou meia hora de busca errada uma vez.
+        levou = monotonic() - comecou
+        porque = log.get("erro") or "sem resposta"
+        if levou >= espera * 0.9:
+            return None, f"o fundo generativo não respondeu em {espera}s ({porque})"
+        return None, (f"o fundo generativo recusou em {round(levou)}s: {porque}. "
+                      f"Não foi demora — confira a credencial e o crédito do serviço")
     alvo = (base.width + ex["left"] + ex["right"], base.height + ex["top"] + ex["bottom"])
     return (feito if feito.size == alvo
             else ImageOps.fit(feito, alvo, Image.Resampling.LANCZOS)), ""
