@@ -127,8 +127,12 @@ def conferir_peca(peca: dict, pasta: Path, arte: Path) -> list[str]:
 
 def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
               pasta: Path, brief: str = "", leitor=None, prancheta: str = "",
-              progresso=None) -> Resultado:
+              progresso=None, final: bool = False) -> Resultado:
     """Compõe e renderiza cada formato pedido dentro de `pasta`.
+
+    `final` liga a insistência com o fundo generativo e reaproveita o que já
+    saiu limpo. Chamada de generativo é o item mais caro da peça, e refazer a
+    cada rascunho é queimar margem numa versão que vai mudar.
 
     `progresso(dict)` é chamado a cada passo. Sem ele o trabalho fica minutos
     em "rodando" sem dizer nada, e quem está do outro lado não distingue um
@@ -158,7 +162,7 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
         # assar. Entrava achatado antes, e a peça inteira não animava.
         with custo.medir() as conta:
             _psd_e_render(r, formatos, copia, pasta, brief, compositor, prancheta,
-                          _passo(progresso, len(formatos)))
+                          _passo(progresso, len(formatos)), final)
         r.custo = conta.resumo()
         (pasta / "resultado.json").write_text(
             json.dumps(r.para_json(), ensure_ascii=False, indent=1), encoding="utf-8")
@@ -170,7 +174,8 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
         aviso = _passo(progresso, len(formatos))
         aviso("lendo a arte", 0)
         leitura = leitor(copia) if leitor else None
-        _compor_e_render(r, formatos, compositor, copia, pasta, brief, leitura, aviso)
+        _compor_e_render(r, formatos, compositor, copia, pasta, brief, leitura, aviso,
+                         final)
     # o custo entra mesmo quando o job falha: a chamada que não deu peça
     # foi cobrada igual, e é ela que explica a fatura no fim do mês
     r.custo = conta.resumo()
@@ -200,7 +205,7 @@ def _fonte_do_trabalho(pasta: Path) -> list[dict]:
 
 
 def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
-                  compositor, prancheta: str, avisar=None) -> None:
+                  compositor, prancheta: str, avisar=None, final: bool = False) -> None:
     """A esteira do PSD: abre em camadas e desdobra cada formato.
 
     O fundo vem assado pelo próprio Photoshop, as camadas soltas vêm com
@@ -230,7 +235,7 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
             continue
         avisar("preparando o fundo", i, fid)
         try:
-            peca = leitor_psd.desdobrar(leitura, f, pasta)
+            peca = leitor_psd.desdobrar(leitura, f, pasta, final=final)
         except Exception as e:
             r.falhas[fid] = f"o fundo não saiu: {e}"
             continue
@@ -238,6 +243,9 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
         r.generativo += int(info.get("generativo") or 0)
         for a in info.get("avisos") or []:
             r.avisos.setdefault(fid, []).append(a)
+            if not final:
+                r.avisos.setdefault(fid, []).append(
+                    "na exportação final este fundo é refeito")
         if info.get("caiu_para"):
             r.avisos.setdefault(fid, []).append(
                 f"{info['caiu_para']} — o fundo saiu em bloco de cor")
@@ -307,7 +315,8 @@ def _texto_novo(peca: dict, formato: dict, pasta: Path, leitura, brief: str,
     return avisos
 
 
-def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | None, list[str], int]:
+def _terreno(copia: Path, fid: str, pasta: Path, leitura,
+             final: bool = False) -> tuple[Terreno | None, list[str], int]:
     """O fundo do formato e o espaço que ele deixou. Sem leitura, sem terreno:
     quem compõe volta ao comportamento antigo em vez de receber meia verdade.
 
@@ -321,7 +330,8 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | Non
     from PIL import Image
     with Image.open(copia) as im:
         tinta = leitura.em_pixels(*im.size)
-    info = prep_fundo.preparar(copia, f, tinta, pasta / f"fundo-{fid}.png")
+    info = prep_fundo.preparar(copia, f, tinta, pasta / f"fundo-{fid}.png",
+                               insistir=final, reaproveitar=final)
 
     livres = prep_fundo.espaco_livre(f, info["protect_box"])
     with Image.open(info["caminho"]) as pronto:
@@ -330,6 +340,8 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura) -> tuple[Terreno | Non
         livres, notas = sossego.acalmar(pronto.convert("RGB"), livres)
 
     avisos = list(notas) + list(info.get("avisos") or [])
+    if info.get("avisos") and not final:
+        avisos.append("na exportação final este fundo é refeito")
     if info.get("caiu_para"):
         avisos.append(f"{info['caiu_para']} — o fundo saiu em bloco de cor, que não "
                       f"continua a grade nem a textura da arte. Vale rodar de novo")
@@ -358,12 +370,12 @@ def _passo(progresso, total: int):
 
 
 def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Path,
-                     brief: str, leitura=None, avisar=None) -> None:
+                     brief: str, leitura=None, avisar=None, final: bool = False) -> None:
     avisar = avisar or (lambda *a, **k: None)
     for i, fid in enumerate(formatos):
         avisar("preparando o fundo", i, fid)
         try:
-            terreno, avisos_do_fundo, gastou = _terreno(copia, fid, pasta, leitura)
+            terreno, avisos_do_fundo, gastou = _terreno(copia, fid, pasta, leitura, final)
             r.generativo += gastou
         except Exception as e:
             # fundo que não sai é falha do formato, não do trabalho inteiro

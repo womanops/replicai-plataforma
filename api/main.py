@@ -292,7 +292,7 @@ async def criar(
 
     trabalhos.gravar(c.id, job, {**comum, "status": "na fila", "prancheta": prancheta})
     na_fila = FILA.enfileirar(processar, c.id, job, str(destino), pedidos, headline, cta,
-                              brief, prancheta)
+                              brief, prancheta, False)
     trabalhos.gravar(c.id, job, {"id_na_fila": na_fila})
     return {"job": job, "status": trabalhos.ler(c.id, job)["status"]}
 
@@ -318,7 +318,7 @@ def escolher_prancheta(job: str, nome: str = Form(...),
     trabalhos.gravar(c.id, job, {"status": "na fila", "prancheta": nome})
     trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
         processar, c.id, job, str(arte), estado["formatos"], estado.get("headline", ""),
-        estado.get("cta", ""), estado.get("brief", ""), nome)})
+        estado.get("cta", ""), estado.get("brief", ""), nome, False)})
     return {"job": job, "status": trabalhos.ler(c.id, job)["status"], "prancheta": nome}
 
 
@@ -360,6 +360,37 @@ def animar(job: str, formatos: str = Form(""), preset: str = Form("editorial"),
     trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
         processar_video, c.id, job, pedidos, preset, float(segundos), fila=FILA_VIDEO)})
     return {"job": job, "video": trabalhos.ler(c.id, job)["video"]}
+
+
+@app.post("/jobs/{job}/finalizar", status_code=202)
+def finalizar(job: str, c: contas.Conta = Depends(conta_atual)):
+    """Refaz o trabalho em modo final.
+
+    A diferença é o fundo generativo: no rascunho ele é pedido uma vez só, e
+    se inventar traço que a arte não tem a peça sai assim mesmo, com o aviso.
+    Aqui ele insiste até sair limpo — e só nos formatos que precisaram, porque
+    o que passou na conferência é reaproveitado. Chamada de generativo é o
+    item mais caro da peça; refazer a cada rascunho é queimar margem numa
+    versão que ainda vai mudar.
+    """
+    try:
+        estado = trabalhos.ler(c.id, job)
+    except ValueError:
+        raise HTTPException(400, "identificador inválido")
+    if estado is None:
+        raise HTTPException(404, "trabalho não existe")
+    if estado.get("status") in ("na fila", "rodando"):
+        raise HTTPException(409, "este trabalho ainda está rodando")
+    if not estado.get("prontas"):
+        raise HTTPException(409, "não há peça pronta para finalizar")
+
+    arte = trabalhos.pasta_do(c.id, job) / estado["arte"]
+    trabalhos.gravar(c.id, job, {"status": "na fila", "final": True})
+    trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
+        processar, c.id, job, str(arte), estado["formatos"], estado.get("headline", ""),
+        estado.get("cta", ""), estado.get("brief", ""), estado.get("prancheta", ""),
+        True)})
+    return {"job": job, "status": "na fila", "final": True}
 
 
 @app.get("/jobs/{job}")

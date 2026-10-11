@@ -269,6 +269,7 @@ header .sair:hover{color:var(--fg)}
 
 <footer>
   <div class="estado"><b id="conta">Comece pela peça</b><span id="detalhe">Arraste a arte aprovada em qualquer lugar da tela.</span></div>
+  <button class="secund" id="btnFinal" style="display:none">Exportar final</button>
   <button class="secund" id="btnAnimar" style="display:none">Animar</button>
   <button class="secund" id="btnZip" style="display:none">Baixar tudo</button>
   <button class="acao" id="btnIr" disabled>Replicar</button>
@@ -488,6 +489,9 @@ async function acompanhar(){
       if (feitas){
         const z=$('#btnZip'); z.style.display=''; z.onclick=()=>location.href=`/jobs/${job}/zip`;
         const a=$('#btnAnimar'); a.style.display=''; a.onclick=abrirAnimar;
+        // a exportação final só aparece enquanto o trabalho ainda é rascunho
+        const f=$('#btnFinal'); f.style.display = d.final ? 'none' : '';
+        f.onclick = finalizar;
       }
       document.querySelectorAll('.pulsa').forEach(b => b.classList.remove('pulsa'));
       if (d.erro) aviso(d.erro);
@@ -677,6 +681,19 @@ async function abrirAnimar(){
 }
 $('#animar').onclick = e => { if (e.target.id === 'animar') $('#animar').classList.add('hidden'); };
 $('#pranchetas').onclick = e => { if (e.target.id === 'pranchetas') aviso('Escolha uma prancheta para seguir.'); };
+
+async function finalizar(){
+  $('#btnFinal').disabled = true;
+  try {
+    const r = await fetch(`/jobs/${job}/finalizar`, { method:'POST' });
+    if (!r.ok){ aviso((await r.json()).detail || 'Não deu para finalizar.');
+                $('#btnFinal').disabled=false; return; }
+  } catch(e){ aviso('Não consegui falar com o servidor.'); $('#btnFinal').disabled=false; return; }
+  $('#conta').textContent = 'Exportando';
+  $('#detalhe').textContent = 'Refazendo só os fundos que saíram com ressalva.';
+  document.querySelectorAll('.ressalva').forEach(e => e.remove());
+  acompanhar();
+}
 
 $('#btnAnimarOk').onclick = async () => {
   $('#animar').classList.add('hidden');

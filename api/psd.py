@@ -420,7 +420,7 @@ LOCKUP_NO_ALTO = 0.50
 
 
 def recompor(leitura: Leitura, formato: dict, pasta: Path,
-             elementos: list[dict] | None = None) -> dict:
+             elementos: list[dict] | None = None, final: bool = False) -> dict:
     """Desdobra soltando o lockup do fundo.
 
     Reenquadrar preserva a relação entre a arte e o lockup, e é o certo quando
@@ -441,7 +441,8 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
 
     info = pf.preparar(pasta / leitura.fundo, formato, None,
                        pasta / f"fundo-{formato['id']}.png",
-                       estrategia="contain", ancora=(0.5, 0.0))
+                       estrategia="contain", ancora=(0.5, 0.0),
+                       insistir=final, reaproveitar=final)
 
     W, H, s = formato["w"], formato["h"], formato["safe"]
     fim_da_arte = info["base_box"][3]
@@ -479,7 +480,7 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
 
 
 def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
-                elementos: list[dict] | None = None) -> dict:
+                elementos: list[dict] | None = None, final: bool = False) -> dict:
     """Desdobra mantendo o lockup colado no fundo.
 
     O lockup sofre a mesma transformação que o fundo, então a relação entre
@@ -491,7 +492,8 @@ def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
     pasta = Path(pasta)
     base = elementos if elementos is not None else como_elementos(leitura, pasta)
     info = pf.preparar(pasta / leitura.fundo, formato, tinta_de(leitura),
-                       pasta / f"fundo-{formato['id']}.png")
+                       pasta / f"fundo-{formato['id']}.png",
+                       insistir=final, reaproveitar=final)
     return {
         "formato": formato["id"],
         "canvas": {"w": formato["w"], "h": formato["h"]},
@@ -506,7 +508,7 @@ def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
 
 
 def desdobrar(leitura: Leitura, formato: dict, pasta: Path,
-              modo: str = "auto") -> dict:
+              modo: str = "auto", final: bool = False) -> dict:
     """Escolhe entre manter o lockup colado no fundo ou soltá-lo.
 
     A régua é a mesma do fundo: enquanto preservar a arte inteira não deixa a
@@ -525,5 +527,5 @@ def desdobrar(leitura: Leitura, formato: dict, pasta: Path,
                                          tinta_de(leitura))
         modo = "reenquadra" if qual == "contain" else "recompoe"
     if modo == "recompoe" and leitura.camadas:
-        return recompor(leitura, formato, pasta)
-    return reenquadrar(leitura, formato, pasta)
+        return recompor(leitura, formato, pasta, final=final)
+    return reenquadrar(leitura, formato, pasta, final=final)

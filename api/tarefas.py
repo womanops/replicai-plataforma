@@ -71,9 +71,9 @@ def _contar(conta: str, job: str, r) -> dict:
 
 
 def processar(conta: str, job: str, arte: str, formatos: list[str], headline: str,
-              cta: str, brief: str, prancheta: str = "") -> None:
+              cta: str, brief: str, prancheta: str = "", final: bool = False) -> None:
     """O que o worker executa. Fora da API de propósito: é o pedaço pesado."""
-    trabalhos.gravar(conta, job, {"status": "rodando"})
+    trabalhos.gravar(conta, job, {"status": "rodando", "final": final})
 
     def contar(p: dict) -> None:
         # grava a cada passo: é o que distingue, de fora, um render demorado
@@ -83,7 +83,7 @@ def processar(conta: str, job: str, arte: str, formatos: list[str], headline: st
     try:
         r = desdobrar(Path(arte), formatos, compositor(arte, headline, cta),
                       trabalhos.pasta_do(conta, job), brief, leitor(), prancheta,
-                      progresso=contar)
+                      progresso=contar, final=final)
         trabalhos.gravar(conta, job, {"status": r.status, "progresso": None,
                                "prontas": sorted(r.prontas),
                                "falhas": r.falhas,

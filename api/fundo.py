@@ -69,7 +69,8 @@ def escolher_estrategia(W: int, H: int, w: int, h: int, protegido=None) -> tuple
 TENTATIVAS = 2
 
 
-def _melhor_continuacao(base, ex: dict, espera: int, plano: dict, w: int, h: int):
+def _melhor_continuacao(base, ex: dict, espera: int, plano: dict, w: int, h: int,
+                        insistir: bool = False):
     """Continua o fundo, repetindo enquanto inventar estrutura.
 
     Devolve também quantas tentativas foram gastas: cada uma é cobrada pelo
@@ -85,7 +86,7 @@ def _melhor_continuacao(base, ex: dict, espera: int, plano: dict, w: int, h: int
 
     melhor, melhor_nota, motivo = None, None, ""
     gastas = 0
-    for _ in range(TENTATIVAS):
+    for _ in range(TENTATIVAS if insistir else 1):
         gastas += 1
         tela, motivo = _continuar(base, ex, espera)
         if tela is None:
@@ -157,7 +158,8 @@ def _com_respiro(protegido, formato: dict, W: int, H: int):
 
 def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = None,
              estrategia: str = "auto", folga: float = 0.0, modo: str = "auto",
-             cor: str | None = None, ancora: tuple[float, float] = (0.5, 0.5)) -> dict:
+             cor: str | None = None, ancora: tuple[float, float] = (0.5, 0.5),
+             insistir: bool = False, reaproveitar: bool = False) -> dict:
     """Monta o fundo de `formato` a partir de `arte` e diz onde sobrou espaço.
 
     `protegido` é a caixa (x0,y0,x1,y1, em pixels da arte) que não pode ser
@@ -189,10 +191,22 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
     crop, ex = plano["crop"], plano["expand"]
     base = img.crop(tuple(crop))
 
+    pronto = _ja_feito(destino, plano, modo) if reaproveitar else None
+    if pronto is not None:
+        plano.update(_to_target_coords(plano, W, H, w, h, protegido))
+        return {**pronto, "caminho": Path(destino), "generativo": 0, "avisos": [],
+                "plano": {"crop": crop, "expand": ex, "escala": plano["escala"]},
+                "estrategia": plano["estrategia"], "enquadramento": estrategia,
+                "porque": "o fundo anterior serviu e foi reaproveitado",
+                "cortou": bool(plano.get("cortou_fundo")),
+                "base_box": plano["base_box"], "protect_box": plano.get("protect_box"),
+                "areas_livres": plano.get("areas_livres") or {}}
+
     caiu_para, generativo = "", 0
     if modo == "outpaint":
         espera = max(30, int(os.environ.get("REPLICAI_FUNDO_ESPERA", ESPERA_PADRAO)))
-        tela, motivo, generativo = _melhor_continuacao(base, ex, espera, plano, w, h)
+        tela, motivo, generativo = _melhor_continuacao(base, ex, espera, plano, w, h,
+                                                       insistir)
         if tela is None:
             # o generativo é o único que continua o desenho do fundo, mas não
             # pode prender a entrega. Passou do prazo, a peça sai com o fundo
@@ -224,16 +238,19 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
 
     plano.update(_to_target_coords(plano, W, H, w, h, protegido))
 
-    # a mesma assinatura que o motor grava: diz de onde o fundo saiu, para a
-    # tela poder mostrar quando não veio da arte inteira
-    destino.with_suffix(destino.suffix + ".origem.json").write_text(
-        json.dumps({"origem": "extend", "modo": modo, "base": str(Path(arte).resolve()),
-                    "crop": crop, "expand": ex}, ensure_ascii=False, indent=1), encoding="utf-8")
-
     # a conferência vale para qualquer extensão, não só a generativa: amarrá-la
     # ao modo deixava o teste da entrega dependendo de serviço externo, e a
-    # regra em si não é sobre quem desenhou, é sobre o que apareceu
+    # regra em si não é sobre quem desenhou, é sobre o que apareceu. Vem antes
+    # da assinatura porque é ela que diz se o fundo pode ser reaproveitado.
     avisos = inventou_estrutura(destino, plano["base_box"]) if any(ex.values()) else []
+
+    # a assinatura guarda o plano e se a conferência passou: é com ela que a
+    # exportação final sabe o que reaproveitar e o que precisa refazer
+    destino.with_suffix(destino.suffix + ".origem.json").write_text(
+        json.dumps({"origem": "extend", "modo": modo, "base": str(Path(arte).resolve()),
+                    "crop": crop, "expand": ex, "escala": plano["escala"],
+                    "limpo": not avisos, "src": destino.name},
+                   ensure_ascii=False, indent=1), encoding="utf-8")
     return {"src": destino.name, "caminho": destino, "modo": modo, "caiu_para": caiu_para,
             # cada tentativa do generativo é cobrada, inclusive a que foi
             # refeita por ter inventado traço: quem paga é quem roda
@@ -334,6 +351,28 @@ def inventou_estrutura(caminho, base_box) -> list[str]:
                 f"não tem (linha {linha}, {razao:.1f}x mais marcado que a arte ao lado). "
                 f"Vale rodar de novo ou escolher outro enquadramento")
     return avisos
+
+
+def _ja_feito(destino, plano: dict, modo: str) -> dict | None:
+    """O fundo que já está em disco serve?
+
+    Serve quando saiu do mesmo recorte e da mesma escala e passou na
+    conferência. Fundo com traço inventado não é reaproveitado: refazer esse é
+    justamente o motivo de existir a exportação final.
+    """
+    destino = Path(destino)
+    assinatura = destino.with_suffix(destino.suffix + ".origem.json")
+    if not destino.exists() or not assinatura.exists():
+        return None
+    try:
+        d = json.loads(assinatura.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not d.get("limpo") or d.get("modo") != modo:
+        return None
+    if d.get("crop") != plano["crop"] or d.get("expand") != plano["expand"]:
+        return None
+    return {"src": destino.name, "modo": modo, "caiu_para": "", "reaproveitado": True}
 
 
 def mover(caixa: dict, plano: dict) -> dict:

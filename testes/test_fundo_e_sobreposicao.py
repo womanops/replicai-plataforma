@@ -523,7 +523,8 @@ class TestOGenerativoInventando:
 
 class TestInsistirComOGenerativo:
     """Acusar o traço inventado não conserta a peça. Como o generativo é
-    estocástico, insistir resolve na maior parte das vezes."""
+    estocástico, insistir resolve na maior parte das vezes — mas custa uma
+    chamada a mais do item mais caro, então só vale na exportação final."""
 
     def test_repete_ate_sair_limpo(self, arte, tmp_path, monkeypatch):
         from PIL import Image as Im
@@ -544,7 +545,7 @@ class TestInsistirComOGenerativo:
 
         monkeypatch.setattr(fu, "inventou_estrutura", confere)
         r = fu.preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770),
-                        tmp_path / "f.png", modo="outpaint")
+                        tmp_path / "f.png", modo="outpaint", insistir=True)
         assert len(tentativas) == 2            # insistiu e a segunda saiu limpa
         assert r["avisos"] == []
 
@@ -562,7 +563,7 @@ class TestInsistirComOGenerativo:
         monkeypatch.setattr(fu, "_continuar", continua)
         monkeypatch.setattr(fu, "inventou_estrutura", lambda *a: ["inventou"])
         r = fu.preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770),
-                        tmp_path / "f.png", modo="outpaint")
+                        tmp_path / "f.png", modo="outpaint", insistir=True)
         assert len(tentativas) == fu.TENTATIVAS
         assert r["avisos"]                     # a peça sai, com a ressalva
 
@@ -601,3 +602,92 @@ class TestCentralizarPelaArte:
                       livres={"bottom": [0, 700, 1080, 1080]})
         b = peca["elementos"][0]["box"]
         assert abs((b["x"] + b["w"] / 2) - 540) < 30
+
+
+class TestRascunhoEFinal:
+    """Chamada de generativo é o item mais caro da peça. Refazer a cada
+    rascunho é queimar margem numa versão que ainda vai mudar."""
+
+    def caro(self, monkeypatch, sujo=True):
+        from PIL import Image as Im
+        import api.fundo as fu
+        gastos = []
+
+        def continua(base, ex, espera):
+            gastos.append(1)
+            alvo = (base.width + ex["left"] + ex["right"],
+                    base.height + ex["top"] + ex["bottom"])
+            return Im.new("RGB", alvo, "#0a1a55"), ""
+
+        monkeypatch.setattr(fu, "_continuar", continua)
+        monkeypatch.setattr(fu, "inventou_estrutura",
+                            lambda *a: ["inventou"] if sujo else [])
+        return gastos
+
+    def test_rascunho_pede_uma_vez_so(self, arte, tmp_path, monkeypatch):
+        import api.fundo as fu
+        gastos = self.caro(monkeypatch)
+        r = fu.preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770),
+                        tmp_path / "f.png", modo="outpaint")
+        assert len(gastos) == 1 and r["generativo"] == 1
+        assert r["avisos"]                      # sai com o defeito e com o aviso
+
+    def test_final_insiste(self, arte, tmp_path, monkeypatch):
+        import api.fundo as fu
+        gastos = self.caro(monkeypatch)
+        fu.preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770),
+                    tmp_path / "f.png", modo="outpaint", insistir=True)
+        assert len(gastos) == fu.TENTATIVAS
+
+    def test_o_fundo_limpo_e_reaproveitado_na_final(self, arte, tmp_path, monkeypatch):
+        """Só o que saiu com defeito é refeito: o resto já serve."""
+        import api.fundo as fu
+        gastos = self.caro(monkeypatch, sujo=False)
+        alvo = tmp_path / "f.png"
+        fu.preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770), alvo,
+                    modo="outpaint")
+        assert len(gastos) == 1
+        r = fu.preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770), alvo,
+                        modo="outpaint", insistir=True, reaproveitar=True)
+        assert len(gastos) == 1                 # não pediu de novo
+        assert r["reaproveitado"] is True and r["generativo"] == 0
+        assert r["base_box"] and r["areas_livres"] is not None
+
+    def test_o_fundo_sujo_e_refeito_na_final(self, arte, tmp_path, monkeypatch):
+        import api.fundo as fu
+        gastos = self.caro(monkeypatch, sujo=True)
+        alvo = tmp_path / "f.png"
+        fu.preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770), alvo,
+                    modo="outpaint")
+        fu.preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770), alvo,
+                    modo="outpaint", insistir=True, reaproveitar=True)
+        assert len(gastos) > 1
+
+    def test_plano_diferente_nao_reaproveita(self, arte, tmp_path, monkeypatch):
+        """Outro formato é outro recorte: reaproveitar daria a peça errada."""
+        import api.fundo as fu
+        gastos = self.caro(monkeypatch, sujo=False)
+        alvo = tmp_path / "f.png"
+        fu.preparar(arte, formato_by_id("ig-feed-1x1"), (900, 430, 1790, 770), alvo,
+                    modo="outpaint")
+        fu.preparar(arte, formato_by_id("ig-stories"), (900, 430, 1790, 770), alvo,
+                    modo="outpaint", insistir=True, reaproveitar=True)
+        assert len(gastos) == 2
+
+    def test_o_rascunho_avisa_que_a_final_refaz(self, arte, tmp_path, monkeypatch):
+        import api.fundo as fu
+        import api.pipeline as pl
+        from api.leitura import Leitura as L
+        from api.pipeline import desdobrar
+        self.caro(monkeypatch)
+        monkeypatch.setenv("REPLICAI_FUNDO", "outpaint")
+        monkeypatch.setattr(pl, "render_peca", lambda a, d: d.write_bytes(b"x"))
+
+        class Serve:
+            def compor(self, base, formato_id, brief="", terreno=None):
+                return {"canvas": {"w": 1080, "h": 1080}, "fundo": terreno.fundo,
+                        "elementos": [], "saida": f"{formato_id}.png"}
+
+        r = desdobrar(arte, ["ig-feed-1x1"], Serve(), tmp_path / "job",
+                      leitor=lambda a: L(True, (0.47, 0.4, 0.46, 0.31), []))
+        assert any("exportação final" in a for a in r.avisos["ig-feed-1x1"])
