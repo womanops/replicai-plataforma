@@ -518,6 +518,63 @@ LOCKUP_NA_LARGURA = 0.82
 LOCKUP_NO_ALTO = 0.50
 
 
+# a faixa precisa comportar o lockup: abaixo disto não é faixa, é borda
+FAIXA_MINIMA = 40
+
+
+def _ancora_do_recompor(leitura: Leitura, formato: dict, arte: Path) -> tuple[float, float]:
+    """Para que lado a arte encosta, para a sobra virar uma faixa só.
+
+    A sobra espalhada nos quatro lados não comporta lockup nenhum; encostada
+    num canto, vira uma faixa usável. Qual lado depende da proporção: num
+    destino mais largo que a arte a sobra é lateral, num mais alto ela é
+    horizontal. E nunca do lado onde há figura plantada — abrir faixa ali
+    descola a figura da borda em que ela se apoia.
+    """
+    from motor.replica import open_rgb
+
+    with open_rgb(arte) as im:
+        W, H = im.size
+    plantada = set(leitura.plantada_em)
+    if (formato["w"] / formato["h"]) > (W / H):
+        # destino mais largo: a sobra é lateral
+        if "direita" in plantada and "esquerda" not in plantada:
+            return (1.0, 0.5)
+        return (0.0, 0.5)
+    # destino mais alto: a sobra é horizontal. O padrão é a arte no topo e o
+    # lockup no rodapé, que é como se lê uma peça
+    if "baixo" in plantada and "cima" not in plantada:
+        return (0.5, 1.0)
+    return (0.5, 0.0)
+
+
+def _faixa_livre(base_box, formato: dict) -> tuple[int, int, int, int] | None:
+    """A maior faixa que sobrou ao lado da arte, dentro da área segura.
+
+    Quatro candidatas, e a maior vence. Antes só se olhava embaixo: numa capa
+    de Facebook (1640×624 vinda de um quadrado) a arte ocupa a altura inteira
+    e a sobra é lateral, então não havia rodapé nenhum e a peça não saía.
+    """
+    W, H, s = formato["w"], formato["h"], formato["safe"]
+    ax0, ay0, ax1, ay1 = (int(v) for v in base_box)
+    sx0, sy0 = s["left"], s["top"]
+    sx1, sy1 = W - s["right"], H - s["bottom"]
+    candidatas = {
+        "baixo": (sx0, max(ay1, sy0), sx1, sy1),
+        "cima": (sx0, sy0, sx1, min(ay0, sy1)),
+        "esquerda": (sx0, sy0, min(ax0, sx1), sy1),
+        "direita": (max(ax1, sx0), sy0, sx1, sy1),
+    }
+    melhor, area = None, 0
+    for caixa in candidatas.values():
+        x0, y0, x1, y1 = caixa
+        if x1 - x0 < FAIXA_MINIMA or y1 - y0 < FAIXA_MINIMA:
+            continue
+        if (x1 - x0) * (y1 - y0) > area:
+            melhor, area = caixa, (x1 - x0) * (y1 - y0)
+    return melhor
+
+
 def recompor(leitura: Leitura, formato: dict, pasta: Path,
              elementos: list[dict] | None = None, final: bool = False) -> dict:
     """Desdobra soltando o lockup do fundo.
@@ -538,36 +595,40 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
     if not base or not tinta:
         raise ValueError("não há lockup separado para recompor")
 
-    # a faixa desce para abrir rodapé ao texto novo — mas não quando há figura
-    # plantada embaixo: ali descer é cortar o corpo dela no meio
-    ancora = (0.5, 0.0) if "baixo" not in leitura.plantada_em else \
-             ancora_das_bordas(set(leitura.plantada_em))
+    ancora = _ancora_do_recompor(leitura, formato, pasta / leitura.fundo)
     info = pf.preparar(pasta / leitura.fundo, formato, None,
                        pasta / f"fundo-{formato['id']}.png",
                        estrategia="contain", ancora=ancora,
                        insistir=final, reaproveitar=final)
 
     W, H, s = formato["w"], formato["h"], formato["safe"]
-    fim_da_arte = info["base_box"][3]
-    y0 = max(fim_da_arte, s["top"])
-    y1 = H - s["bottom"]
-    livre_w = W - s["left"] - s["right"]
-    if y1 - y0 < 40:
-        raise ValueError("a arte não deixou rodapé para o lockup")
+    faixa = _faixa_livre(info["base_box"], formato)
+    if faixa is None:
+        raise ValueError("a arte não deixou faixa livre para o lockup")
+    x0, y0, x1, y1 = faixa
 
     lx0, ly0, lx1, ly1 = tinta
-    k = min((livre_w * LOCKUP_NA_LARGURA) / (lx1 - lx0),
+    k = min(((x1 - x0) * LOCKUP_NA_LARGURA) / max(1, lx1 - lx0),
             ((y1 - y0) * 0.70) / max(1, ly1 - ly0))
-    cx, cy = W / 2, y0 + (y1 - y0) * LOCKUP_NO_ALTO / 2
+    cx = (x0 + x1) / 2
+    cy = y0 + (y1 - y0) * LOCKUP_NO_ALTO / 2
     meio_x, meio_y = (lx0 + lx1) / 2, (ly0 + ly1) / 2
 
+    # a figura plantada acompanha a ARTE, não o lockup: ela é desenho da peça,
+    # e escalá-la pela medida do lockup a encolhia e a jogava para o meio da
+    # faixa, longe do chão em que se apoia
     elementos_novos = []
+    figuras = []
     for e in base:
+        if e.get("plantado"):
+            figuras.append(dict(e, box=pf.mover(e["box"], info["plano"])))
+            continue
         b = e["box"]
         elementos_novos.append(dict(e, box={
             "x": round(cx + (b["x"] - meio_x) * k),
             "y": round(cy + (b["y"] - meio_y) * k),
             "w": round(b["w"] * k), "h": round(b["h"] * k)}))
+    elementos_novos = _plantar(figuras, formato) + elementos_novos
 
     return {
         "formato": formato["id"],

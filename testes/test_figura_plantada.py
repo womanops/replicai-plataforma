@@ -84,13 +84,18 @@ class TestAEsteiraUsaAAncora:
         from api import psd
         assert "ancora_das_bordas" in inspect.getsource(psd.reenquadrar)
 
-    def test_recompor_nao_abre_rodape_sob_figura_plantada(self):
-        """`recompor` desce a arte para abrir rodapé ao texto novo. Embaixo de
-        uma figura plantada, descer é cortar o corpo dela no meio."""
-        import inspect
+    def test_recompor_nao_abre_rodape_sob_figura_plantada(self, tmp_path):
+        """`recompor` encosta a arte no topo para abrir rodapé ao lockup.
+        Embaixo de uma figura plantada, abrir ali a descola do chão — então a
+        faixa vai para cima e a arte desce."""
+        from PIL import Image
 
-        from api import psd
-        assert "ancora_das_bordas" in inspect.getsource(psd.recompor)
+        from api.psd import Leitura, _ancora_do_recompor
+        arte = tmp_path / "a.png"
+        Image.new("RGB", (1200, 1200)).save(arte)
+        alto = {"w": 1080, "h": 1920}
+        assert _ancora_do_recompor(Leitura(plantada_em=[]), alto, arte) == (0.5, 0.0)
+        assert _ancora_do_recompor(Leitura(plantada_em=["baixo"]), alto, arte) == (0.5, 1.0)
 
     def test_a_leitura_carrega_as_bordas(self):
         from api.psd import Leitura
@@ -174,3 +179,79 @@ class TestQuemEhAAssinatura:
         regra = re.search(r"if \(/(.+?)/\.test\(n\)\) return 'marca'", fonte)
         assert regra, "não achei a regra de marca no movimento"
         assert not re.search(regra.group(1), "figura")
+
+
+class TestAFaixaDoLockup:
+    """`recompor` assumia que a sobra era um rodapé embaixo da arte. Numa capa
+    de Facebook (1640×624 vinda de um quadrado) a arte ocupa a altura inteira
+    e a sobra é lateral: não havia rodapé, e o formato não saía."""
+
+    def _formato(self, w, h, margem=20):
+        return {"w": w, "h": h,
+                "safe": {"top": margem, "bottom": margem,
+                         "left": margem, "right": margem}}
+
+    def test_destino_largo_acha_a_faixa_lateral(self):
+        from api.psd import _faixa_livre
+        # arte quadrada de 624 encostada à esquerda de uma capa 1640×624
+        faixa = _faixa_livre([0, 0, 624, 624], self._formato(1640, 624))
+        assert faixa is not None
+        x0, y0, x1, y1 = faixa
+        assert x0 >= 624 and x1 - x0 > 900          # a sobra é à direita
+
+    def test_destino_alto_acha_o_rodape(self):
+        from api.psd import _faixa_livre
+        faixa = _faixa_livre([0, 0, 1080, 1080], self._formato(1080, 1920))
+        x0, y0, x1, y1 = faixa
+        assert y0 >= 1080                            # a sobra é embaixo
+
+    def test_sem_sobra_nenhuma_devolve_nada(self):
+        from api.psd import _faixa_livre
+        assert _faixa_livre([0, 0, 1080, 1080], self._formato(1080, 1080)) is None
+
+    def test_faixa_fina_demais_nao_conta(self):
+        """Vinte pixels não comportam lockup: é borda, não faixa."""
+        from api.psd import _faixa_livre
+        assert _faixa_livre([0, 0, 1080, 1060], self._formato(1080, 1080)) is None
+
+
+class TestParaQueLadoAArteEncosta:
+    class Leit:
+        def __init__(self, plantada): self.plantada_em = list(plantada)
+
+    def test_destino_largo_foge_da_figura_a_direita(self, tmp_path):
+        """O mascote sai pela direita da prancheta: abrir faixa ali o descola
+        da borda em que se apoia."""
+        from PIL import Image
+        from api.psd import _ancora_do_recompor
+        arte = tmp_path / "a.png"
+        Image.new("RGB", (1200, 1200)).save(arte)
+        a = _ancora_do_recompor(self.Leit(["baixo", "direita"]),
+                                {"w": 1640, "h": 624}, arte)
+        assert a == (1.0, 0.5)                       # arte encosta à direita
+
+    def test_destino_largo_sem_figura_poe_a_arte_a_esquerda(self, tmp_path):
+        from PIL import Image
+        from api.psd import _ancora_do_recompor
+        arte = tmp_path / "a.png"
+        Image.new("RGB", (1200, 1200)).save(arte)
+        assert _ancora_do_recompor(self.Leit([]), {"w": 1640, "h": 624}, arte) == (0.0, 0.5)
+
+    def test_destino_alto_mantem_o_rodape(self, tmp_path):
+        from PIL import Image
+        from api.psd import _ancora_do_recompor
+        arte = tmp_path / "a.png"
+        Image.new("RGB", (1200, 1200)).save(arte)
+        assert _ancora_do_recompor(self.Leit([]), {"w": 1080, "h": 1920}, arte) == (0.5, 0.0)
+
+
+class TestAFiguraNaoEhLockup:
+    def test_recompor_move_a_figura_com_a_arte(self):
+        """Escalada pela medida do lockup, ela encolhia e ia para o meio da
+        faixa, longe do chão em que se apoia."""
+        import inspect
+
+        from api import psd
+        fonte = inspect.getsource(psd.recompor)
+        assert 'e.get("plantado")' in fonte
+        assert "_plantar(figuras, formato)" in fonte
