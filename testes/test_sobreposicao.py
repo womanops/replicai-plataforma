@@ -78,6 +78,45 @@ class TestUmCobrindoOOutro:
         avisos = conferir(peca, tmp_path)
         assert all("fica debaixo" not in a for a in avisos)
 
+class TestNaPecaRemontada:
+    """Quando a adaptação REMONTA a peça, o empilhamento não é mais o da
+    arte-mãe: quem decidiu o que fica perto do quê foi a máquina. A régua só
+    olhava o que estava por cima do texto na lista, e o mascote entrava antes
+    dele — foi assim que ele cobriu 54% do CANDIDATE-SE na capa de página e a
+    conferência saiu limpa.
+    """
+
+    def _peca(self, pasta, via=None):
+        recorte(pasta / "mascote.png", 200, 200)
+        recorte(pasta / "letra.png", 300, 60)
+        fundo_liso(pasta / "fundo.png")
+        peca = {"formato": "fb-capa", "fundo": {"tipo": "imagem", "src": "fundo.png"},
+                "elementos": [
+                    {"tipo": "imagem", "papel": "figura", "camada": "Nino",
+                     "src": "mascote.png", "box": {"x": 250, "y": 250, "w": 200, "h": 200}},
+                    {"tipo": "imagem", "papel": "cta", "camada": "CANDIDATE-SE",
+                     "src": "letra.png", "box": {"x": 100, "y": 300, "w": 300, "h": 60}},
+                ]}
+        if via:
+            peca["via"] = via
+        return peca
+
+    def test_a_figura_que_entrou_antes_do_texto_e_acusada(self, tmp_path):
+        from api.sobreposicao import conferir
+        avisos = conferir(self._peca(tmp_path, "psd-recompor-largo"), tmp_path)
+        assert avisos and "Nino" in avisos[0] and "CANDIDATE-SE" in avisos[0]
+
+    def test_o_que_a_mae_ja_fazia_continua_valendo(self, tmp_path):
+        """A régua não é "nunca encostar": é "não mais do que a mãe"."""
+        from api.sobreposicao import conferir
+        peca = self._peca(tmp_path, "psd-recompor-largo")
+        assert conferir(peca, tmp_path, permitido={"CANDIDATE-SE": 0.9}) == []
+
+    def test_peca_so_reenquadrada_nao_e_discutida(self, tmp_path):
+        """Aí a montagem é a da arte-mãe, e ela não se discute."""
+        from api.sobreposicao import conferir
+        assert conferir(self._peca(tmp_path), tmp_path) == []
+
 
 class TestTextoSobreODesenho:
     def test_chamada_em_cima_do_desenho_e_acusada(self, tmp_path):

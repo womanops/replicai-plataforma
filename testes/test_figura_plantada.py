@@ -219,23 +219,22 @@ class TestParaQueLadoAArteEncosta:
     class Leit:
         def __init__(self, plantada): self.plantada_em = list(plantada)
 
-    def test_destino_largo_foge_da_figura_a_direita(self, tmp_path):
-        """O mascote sai pela direita da prancheta: abrir faixa ali o descola
-        da borda em que se apoia."""
-        from PIL import Image
-        from api.psd import _ancora_do_recompor
-        arte = tmp_path / "a.png"
-        Image.new("RGB", (1200, 1200)).save(arte)
-        a = _ancora_do_recompor(self.Leit(["baixo", "direita"]),
-                                {"w": 1640, "h": 624}, arte)
-        assert a == (1.0, 0.5)                       # arte encosta à direita
+    def test_destino_largo_poe_a_arte_ao_centro(self, tmp_path):
+        """Num destino bem mais largo a leitura se abre nas duas pontas: a
+        chamada à esquerda, o CTA à direita, as fotos ao centro. Encostar a
+        arte num lado deixava uma faixa só, larga demais, com o lockup
+        espalhado nela — e era a capa de página que a Ligia chamou de medonha.
 
-    def test_destino_largo_sem_figura_poe_a_arte_a_esquerda(self, tmp_path):
+        A figura plantada não perde a borda: `_remontar_largo` a replanta no
+        chão da ponta, em vez de prender a arte inteira ao lado dela.
+        """
         from PIL import Image
         from api.psd import _ancora_do_recompor
         arte = tmp_path / "a.png"
         Image.new("RGB", (1200, 1200)).save(arte)
-        assert _ancora_do_recompor(self.Leit([]), {"w": 1640, "h": 624}, arte) == (0.0, 0.5)
+        for plantada in (["baixo", "direita"], []):
+            a = _ancora_do_recompor(self.Leit(plantada), {"w": 1640, "h": 624}, arte)
+            assert a == (0.5, 0.5), f"com {plantada or 'nada'} plantado"
 
     def test_destino_alto_mantem_o_rodape(self, tmp_path):
         from PIL import Image

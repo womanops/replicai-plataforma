@@ -200,6 +200,12 @@ def conferir(peca: dict, pasta: Path, permitido: dict | None = None) -> list[str
         # desenho do fundo — que é justamente o caso do braço do mascote
         return sobre_desenho(peca, pasta)
     medido = _por_papel(pasta, peca.get("formato", ""))
+    # numa peça REMONTADA o empilhamento não é mais o da arte-mãe: quem decidiu
+    # o que fica perto do quê foi a adaptação. Sem isto o mascote cobriu metade
+    # do CANDIDATE-SE na capa de página e a régua ficou calada — ele entrou na
+    # lista antes do texto, e o que vem antes só era olhado quando o texto era
+    # novo. `permitido` continua guardando o que a mãe já fazia
+    remontada = str(peca.get("via") or "").startswith("psd-recompor")
     avisos: list[str] = []
     pior: dict[tuple, float] = {}
     # a linha é a unidade, não a letra: um lettering do PSD vira trinta e cinco
@@ -233,7 +239,7 @@ def conferir(peca: dict, pasta: Path, permitido: dict | None = None) -> list[str
         # novo — o recorte que ele próprio foi cobrir. Olhar só um lado deixava
         # passar justamente a chamada escrita em cima da foto
         acima = els[i + 1:]
-        abaixo = [] if _veio_da_mae(el) else els[:i]
+        abaixo = [] if _veio_da_mae(el) and not remontada else els[:i]
         for cima in acima + abaixo:
             if cima.get("tipo") not in ("imagem", "video") or not cima.get("src"):
                 continue
@@ -252,7 +258,8 @@ def conferir(peca: dict, pasta: Path, permitido: dict | None = None) -> list[str
                 continue
             quem = cima.get("camada") or cima.get("papel") or Path(cima["src"]).stem
             oque = (el.get("texto") or el.get("camada") or papel or "texto")[:28]
-            encostou = "cobre" if cima in acima else "fica debaixo de"
+            encostou = ("cobre" if cima in acima
+                        else "encosta em" if remontada else "fica debaixo de")
             # uma linha por par, e não por letra: um lettering do PSD vira
             # trinta e cinco recortes e a entrega saía com trinta e cinco
             # avisos do mesmo problema

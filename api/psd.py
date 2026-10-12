@@ -612,10 +612,10 @@ def _ancora_do_recompor(leitura: Leitura, formato: dict, arte: Path) -> tuple[fl
         W, H = im.size
     plantada = set(leitura.plantada_em)
     if (formato["w"] / formato["h"]) > (W / H):
-        # destino mais largo: a sobra é lateral
-        if "direita" in plantada and "esquerda" not in plantada:
-            return (1.0, 0.5)
-        return (0.0, 0.5)
+        # destino mais largo: a arte ao centro, e as duas faixas recebem os
+        # blocos de texto. Encostá-la num lado deixava uma faixa só, larga
+        # demais, com o lockup espalhado nela
+        return (0.5, 0.5)
     # destino mais alto: a sobra é horizontal. O padrão é a arte no topo e o
     # lockup no rodapé, que é como se lê uma peça
     if "baixo" in plantada and "cima" not in plantada:
@@ -650,6 +650,246 @@ def _faixa_livre(base_box, formato: dict) -> tuple[int, int, int, int] | None:
     return melhor
 
 
+# a barriga do mascote, em fração da altura visível dele. Medida na arte-mãe
+# da Consigaz: a faixa branca do peito vai de 0,54 a 0,67 da altura dele e o
+# bloco do CTA está centrado em 0,60 — bem no meio dela. Mais acima o texto
+# bate no braço aberto, mais abaixo ele cruza a perna
+BARRIGA = 0.60
+
+# o vão entre o fim do texto e o corpo da figura, em fração da faixa. Na
+# arte-mãe o CANDIDATE-SE termina a 7 px do corpo do Nino: é "encostado"
+RESPIRO_NO_CORPO = 0.012
+
+# um vão maior que isto, em fração da linha mais alta ao redor, separa blocos
+VAO_ENTRE_BLOCOS = 0.8
+
+
+def _blocos_de_texto(elementos: list[dict]) -> list[list[dict]]:
+    """Agrupa as linhas de texto em blocos, pela distância entre elas.
+
+    Na arte-mãe da Consigaz: "Chegamos" e "a Porto Belo!" ficam a 30 px um do
+    outro e são um bloco; o próximo texto está 336 px abaixo e é outro. É como
+    se lê a peça, e é a unidade que faz sentido mover junto.
+    """
+    linhas: dict[str, list[dict]] = {}
+    for e in elementos:
+        if e.get("papel") in ("headline", "apoio", "cta", "selo") and e.get("camada"):
+            linhas.setdefault(e["camada"], []).append(e)
+    if not linhas:
+        return []
+    caixas = []
+    for nome, pedacos in linhas.items():
+        y0 = min(p["box"]["y"] for p in pedacos)
+        y1 = max(p["box"]["y"] + p["box"]["h"] for p in pedacos)
+        caixas.append((y0, y1, pedacos))
+    caixas.sort()
+
+    blocos, atual = [], [caixas[0]]
+    for anterior, linha in zip(caixas, caixas[1:]):
+        vao = linha[0] - anterior[1]
+        altura = max(anterior[1] - anterior[0], linha[1] - linha[0])
+        if vao > altura * VAO_ENTRE_BLOCOS:
+            blocos.append(atual)
+            atual = [linha]
+        else:
+            atual.append(linha)
+    blocos.append(atual)
+    return [[p for _, _, pedacos in b for p in pedacos] for b in blocos]
+
+
+def _caixa(elementos: list[dict]) -> tuple[int, int, int, int]:
+    xs0 = min(e["box"]["x"] for e in elementos)
+    ys0 = min(e["box"]["y"] for e in elementos)
+    xs1 = max(e["box"]["x"] + e["box"]["w"] for e in elementos)
+    ys1 = max(e["box"]["y"] + e["box"]["h"] for e in elementos)
+    return xs0, ys0, xs1, ys1
+
+
+def _comeco_do_corpo(src: Path, abaixo: float = BARRIGA) -> float:
+    """Em que fração da largura o CORPO da figura começa.
+
+    O Nino está de braço aberto para a esquerda: medido pela tinta ele ocupa a
+    caixa inteira, e encostar o texto na caixa é enfiá-lo embaixo do braço —
+    que foi exatamente a reclamação. O corpo é onde a tinta é ALTA: da barriga
+    ao pé ela não falha. No PNG dele o perfil pula de 0,13 para 0,89 na coluna
+    0,533, e na arte-mãe o CANDIDATE-SE termina a 7 px dessa coluna.
+    """
+    try:
+        import numpy as np
+        from PIL import Image
+        a = np.array(Image.open(src).convert("RGBA"))[..., 3] > 16
+    except Exception:
+        return 0.0                      # sem medida, o texto para na caixa
+    faixa = a[int(a.shape[0] * abaixo):]
+    if not faixa.size:
+        return 0.0
+    cheias = np.flatnonzero(faixa.mean(0) >= 0.5)
+    return float(cheias.min() / a.shape[1]) if cheias.size else 0.0
+
+
+def _faixa_limpa(src: Path, corpo: float, alto: float,
+                 de: float = BARRIGA, ate: float = 0.85) -> float | None:
+    """Onde cabe uma faixa de altura `alto` sem nada da figura à frente do
+    corpo dela. Devolve o CENTRO da faixa, em fração da altura.
+
+    O braço do Nino desce à frente do corpo até 0,59 da altura dele e só
+    recolhe em 0,60. Centrar o CTA na barriga punha o canto de cima do bloco
+    embaixo do cotovelo — não encostava em letra nenhuma, mas a régua de
+    sobreposição mede o retângulo de tinta e acusava 6%. Descer o bloco até a
+    primeira faixa limpa custa uns pixels e tira o aviso de vez.
+
+    Tudo em fração da figura: `alto` é a altura do bloco dividida pela dela.
+    """
+    try:
+        import numpy as np
+        from PIL import Image
+        a = np.array(Image.open(src).convert("RGBA"))[..., 3] > 16
+    except Exception:
+        return None                     # sem medida, fica na barriga
+    h, w = a.shape
+    cheia = np.where(a.any(1), a.argmax(1), w)      # primeira coluna com tinta
+    passo = max(1, int(h * alto))
+    limite = corpo * w - 2
+    for topo in range(int(h * de - passo / 2), int(h * ate) - passo):
+        if topo >= 0 and cheia[topo:topo + passo].min() >= limite:
+            return (topo + passo / 2) / h
+    return None
+
+
+def _junto(e: dict, de: dict, para: dict) -> dict:
+    """Leva um elemento que viajava dentro de `de` para o mesmo lugar em `para`.
+
+    É a logo da manga do mascote: ela é uma camada de marca separada, e sem
+    isto ficava para trás como uma sujeirinha branca no meio do nada quando
+    ele mudava de tamanho e de lugar.
+    """
+    kx = para["w"] / max(1, de["w"])
+    ky = para["h"] / max(1, de["h"])
+    b = e["box"]
+    return dict(e, box={"x": round(para["x"] + (b["x"] - de["x"]) * kx),
+                        "y": round(para["y"] + (b["y"] - de["y"]) * ky),
+                        "w": max(1, round(b["w"] * kx)),
+                        "h": max(1, round(b["h"] * ky))})
+
+
+def _dentro(e: dict, caixa: dict) -> bool:
+    b = e["box"]
+    return (caixa["x"] <= b["x"] + b["w"] / 2 <= caixa["x"] + caixa["w"]
+            and caixa["y"] <= b["y"] + b["h"] / 2 <= caixa["y"] + caixa["h"])
+
+
+def _assentar(elementos: list[dict], destino: tuple[float, float, float, float],
+              largura_util: float, encostar: str = "centro") -> list[dict]:
+    """Leva um bloco para `destino` (x0, y_centro, x1, —), escalado para caber.
+
+    Escala uma vez, pelo bloco inteiro: linha a linha a relação entre elas se
+    perde, e o que era um lockup vira texto solto.
+    """
+    x0, cy, x1, _ = destino
+    bx0, by0, bx1, by1 = _caixa(elementos)
+    k = min((x1 - x0) * largura_util / max(1, bx1 - bx0), 1.0)
+    sobra = (x1 - x0) - (bx1 - bx0) * k
+    alvo_x = x0 + (sobra if encostar == "direita" else sobra / 2)
+    alvo_y = cy - (by1 - by0) * k / 2
+    return [dict(e, box={
+        "x": round(alvo_x + (e["box"]["x"] - bx0) * k),
+        "y": round(alvo_y + (e["box"]["y"] - by0) * k),
+        "w": max(1, round(e["box"]["w"] * k)),
+        "h": max(1, round(e["box"]["h"] * k))}) for e in elementos]
+
+
+def _remontar_largo(base: list[dict], info: dict, formato: dict,
+                    pasta: Path | None = None) -> list[dict] | None:
+    """A diagramação do destino bem mais largo que a arte.
+
+    Direcional da Ligia: de uma peça quadrada para uma larga, o topo da peça
+    base começa SEMPRE na esquerda da peça maior, e dali a leitura corre do
+    começo para o fim. Na capa de página isso dá: a chamada centrada na faixa
+    da esquerda com a logo em cima dela; as fotos ao centro; a linha de apoio
+    onde ela já está em relação às fotos — que é embaixo da boca do fogão; o
+    CTA à direita; e o mascote com a barriga encostada no fim do CANDIDATE-SE,
+    para não ficar flutuando no vazio.
+
+    O que vai para as faixas são os blocos das pontas, na ordem de leitura. O
+    que está no meio acompanha a arte: ali a relação com a foto é o conteúdo.
+    """
+    from api import fundo as pf
+
+    W, H, s = formato["w"], formato["h"], formato["safe"]
+    ax0, ay0, ax1, ay1 = (int(v) for v in info["base_box"])
+    esq = (s["left"], ax0)
+    dir_ = (ax1, W - s["right"])
+    if esq[1] - esq[0] < 120 or dir_[1] - dir_[0] < 120:
+        return None                       # faixa estreita demais: outra rota
+
+    movidos = [dict(e, box=pf.mover(e["box"], info["plano"])) for e in base]
+    blocos = _blocos_de_texto(movidos)
+    if len(blocos) < 2:
+        return None
+
+    de_bloco = {id(e) for b in blocos for e in b}
+    marca = [e for e in movidos if e.get("papel") == "marca"]
+    figura = [e for e in movidos if e.get("plantado") or e.get("papel") == "figura"]
+    acompanham = [e for e in movidos
+                  if id(e) not in de_bloco and e not in marca and e not in figura]
+    # os blocos do meio ficam onde estão em relação à arte
+    acompanham += [e for b in blocos[1:-1] for e in b]
+
+    meio = H / 2
+    # o que acompanha a arte: as fotos. O plantado é reposicionado adiante, e
+    # entrar nas duas listas o desenhava duas vezes
+    saida = list(acompanham) + [e for e in figura if not e.get("plantado")]
+
+    # --- esquerda: a chamada, com a assinatura em cima dela ------------------
+    primeira = _assentar(blocos[0], (esq[0], meio, esq[1], 0), LOCKUP_NA_LARGURA)
+    topo = min(e["box"]["y"] for e in primeira)
+    sobrando = list(marca)
+    if marca:
+        alta = max(marca, key=lambda e: e["box"]["w"] * e["box"]["h"])
+        mx0, my0, mx1, my1 = _caixa([alta])
+        k = min((esq[1] - esq[0]) * 0.34 / max(1, mx1 - mx0), 1.0)
+        larg, alt = (mx1 - mx0) * k, (my1 - my0) * k
+        respiro = round(alt * 0.9)
+        saida.append(dict(alta, box={
+            "x": round(esq[0] + ((esq[1] - esq[0]) - larg) / 2),
+            "y": round(topo - respiro - alt),
+            "w": round(larg), "h": round(alt)}))
+        sobrando = [e for e in marca if e is not alta]
+    saida += primeira
+
+    # --- direita: o mascote plantado, e o CTA encostado na barriga dele ------
+    plantados = [e for e in figura if e.get("plantado")]
+    cy, ate = meio, W - s["right"]
+    if plantados:
+        boneco = max(plantados, key=lambda e: e["box"]["w"] * e["box"]["h"])
+        antigo = boneco["box"]
+        corpo = _comeco_do_corpo(pasta / boneco["src"]) if pasta and boneco.get("src") else 0.0
+        folga = round((dir_[1] - dir_[0]) * RESPIRO_NO_CORPO)
+        # o tamanho que faz o CORPO dele parar logo depois do fim do texto.
+        # Ele mesmo encosta na borda direita, como na arte-mãe — figura pode
+        # sangrar, texto não
+        querida = (W - ate - folga) / max(0.1, 1 - corpo)
+        k = min(querida / antigo["w"], H * 0.95 / antigo["h"],
+                (W - dir_[0]) / antigo["w"])
+        bw, bh = round(antigo["w"] * k), round(antigo["h"] * k)
+        novo = {"x": W - bw, "y": H - bh, "w": bw, "h": bh}
+        saida.append(dict(boneco, box=novo))
+        saida += [_junto(e, antigo, novo) if _dentro(e, antigo) else e
+                  for e in plantados if e is not boneco]
+        sobrando = [_junto(e, antigo, novo) if _dentro(e, antigo) else e
+                    for e in sobrando]
+        cy = novo["y"] + bh * BARRIGA          # a linha da barriga
+        if pasta and boneco.get("src"):
+            _, by0, _, by1 = _caixa(blocos[-1])
+            limpa = _faixa_limpa(pasta / boneco["src"], corpo, (by1 - by0) / bh)
+            if limpa is not None:
+                cy = novo["y"] + bh * limpa
+        ate = min(ate, novo["x"] + round(bw * corpo) - folga)
+    saida += sobrando
+    saida += _assentar(blocos[-1], (dir_[0], cy, ate, 0), 1.0, encostar="direita")
+    return saida
+
+
 def recompor(leitura: Leitura, formato: dict, pasta: Path,
              elementos: list[dict] | None = None, final: bool = False) -> dict:
     """Desdobra soltando o lockup do fundo.
@@ -675,6 +915,23 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
                        pasta / f"fundo-{formato['id']}.png",
                        estrategia="contain", ancora=ancora,
                        insistir=final, reaproveitar=final)
+
+    # destino bem mais largo: a arte vai ao centro e os blocos de texto ocupam
+    # as duas faixas. Preservar a relação da arte-mãe numa faixa larga espalha
+    # a chamada pelo vazio; aqui ela é rediagramada de propósito.
+    largo = _remontar_largo(base, info, formato, pasta)
+    if largo is not None:
+        return {
+            "formato": formato["id"],
+            "canvas": {"w": formato["w"], "h": formato["h"]},
+            "safe": formato["safe"],
+            "saida": f"{formato['id']}.png",
+            "via": "psd-recompor-largo",
+            "fundo": {"tipo": "imagem", "src": info["src"], "fit": "cover"},
+            "fontes": [],
+            "elementos": largo,
+            "_fundo": info,
+        }
 
     W, H, s = formato["w"], formato["h"], formato["safe"]
     faixa = _faixa_livre(info["base_box"], formato)
