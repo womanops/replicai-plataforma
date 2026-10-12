@@ -346,7 +346,8 @@ header .saldo.apertado .fio i{background:var(--err)}
     <div class="zona" id="zona">
       <div>
         <h2>Arraste a peça aqui</h2>
-        <p>PSD, PNG, JPEG ou PDF.<br>O PSD rende mais: abre em camadas e o fundo vem inteiro.</p>
+        <p>PSD, PNG, JPEG ou PDF.<br>O PSD rende mais: abre em camadas e o fundo vem inteiro.
+          <br><span id="dicaLimite" style="opacity:.7"></span></p>
       </div>
     </div>
     <input type="file" id="arquivo" hidden accept="image/*,.pdf,.psd,.psb,application/octet-stream">
@@ -466,9 +467,18 @@ async function lerPsd(f){
   return out;
 }
 
+let limiteMB = 250;                 // o servidor diz o dele em /saude
+
 async function receber(f){
   const ext = (f.name.split('.').pop()||'').toLowerCase();
   if (!ACEITOS.includes(ext)) { aviso(`Não trabalho com .${ext}. Mande PSD, PNG, JPEG ou PDF.`); return; }
+  // antes de subir, e não depois: num arquivo grande demais a recusa só
+  // chegaria no fim de uma subida longa, que é a pior hora de saber
+  if (f.size > limiteMB * 1e6){
+    aviso(`A arte tem ${(f.size/1e6).toFixed(0)} MB e o limite é ${limiteMB} MB. `
+        + `Achate o PSD, ou mande só a prancheta que vai ser adaptada.`);
+    return;
+  }
   const tam = f.size>=1048576 ? (f.size/1048576).toFixed(1)+' MB' : Math.round(f.size/1024)+' KB';
   peca = { arquivo:f, ext, w:null, h:null };
   if (!$('#titulo').value) $('#titulo').value = f.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ');
@@ -701,7 +711,8 @@ async function acompanhar(){
         refazer.delete(id);
         cx.insertAdjacentHTML('beforeend',
           `<button class="olho" title="Ampliar">⤢</button>`
-          + (d.modo === 'sem' ? '' : `<button class="mao" title="Ajustar a diagramação">ajustar</button>`));
+          + (d.modo === 'sem' || d.arquivado ? ''
+             : `<button class="mao" title="Ajustar a diagramação">ajustar</button>`));
         cx.querySelector('.olho').onclick = ev => { ev.stopPropagation(); ampliar(cx.querySelector('img').src, id); };
         const mao = cx.querySelector('.mao');
         if (mao) mao.onclick = ev => { ev.stopPropagation(); abrirEditor(id); };
@@ -741,7 +752,8 @@ async function acompanhar(){
       : erradas ? `${feitas} entregue${feitas>1?'s':''}, ${erradas} não saiu. Passe o mouse para ver por quê.`
       // os dois caminhos daqui em diante, ditos: baixar agora ou ajustar antes
       : `${feitas} peça${feitas>1?'s':''} entregue${feitas>1?'s':''}. `
-        + (d.modo === 'sem' ? 'Baixe quando aprovar.'
+        + (d.arquivado ? 'A arte foi apagada por idade: dá para baixar, não para refazer.'
+           : d.modo === 'sem' ? 'Baixe quando aprovar.'
            : 'Baixe se aprovou, ou ajuste a diagramação e baixe depois.');
 
     const andandoAlgo = andando || ['rodando','na fila'].includes(v.status||'')
@@ -776,8 +788,10 @@ async function acompanhar(){
         const pf=$('#btnPdf'); pf.style.display = temPdf ? '' : 'none';
         pf.onclick = () => open(`/jobs/${job}/arquivos/apresentacao.pdf`, '_blank');
         const a=$('#btnAnimar'); a.style.display=''; a.onclick=abrirAnimar;
-        // a exportação final só aparece enquanto o trabalho ainda é rascunho
-        const f=$('#btnFinal'); f.style.display = d.final ? 'none' : '';
+        // a exportação final só aparece enquanto o trabalho ainda é rascunho —
+        // e some de vez quando o bruto foi apagado por idade: sem a arte não
+        // há o que refazer, e botão que falha é pior do que botão ausente
+        const f=$('#btnFinal'); f.style.display = (d.final || d.arquivado) ? 'none' : '';
         f.onclick = finalizar;
       }
       document.querySelectorAll('.pulsa').forEach(b => b.classList.remove('pulsa'));
@@ -793,6 +807,9 @@ async function acompanhar(){
 async function quemCompoe(){
   try {
     const s = await (await fetch('/saude')).json();
+    if (s.limite_arte_mb) limiteMB = s.limite_arte_mb;
+    const dica = $('#dicaLimite');
+    if (dica) dica.textContent = `Até ${limiteMB} MB.`;
     const el = $('#quemCompoe');
     const simples = s.compositor === 'regra';
     el.textContent = simples ? 'compondo por regra · sem o modelo' : 'compondo com o modelo';

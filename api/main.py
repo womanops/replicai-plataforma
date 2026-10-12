@@ -35,6 +35,42 @@ FILA = fila_do_ambiente()
 
 ACEITOS = {".png", ".jpg", ".jpeg", ".webp", ".psd", ".psb", ".pdf"}
 
+# Teto da arte que entra. O PSD é 85% do disco de um trabalho: 60 dos 71 MB
+# no arquivo que serviu de medida. Sem teto, uma arte de 2 GB enche o disco do
+# servidor antes de qualquer conferência, e nada a impede.
+#
+# 250 MB é quatro vezes o maior arquivo real que passou por aqui. Não é número
+# medido num arquivo grande de verdade — é julgamento a partir do que foi
+# medido, e vale rever quando aparecer um KV pesado.
+LIMITE_ARTE = int(os.environ.get("REPLICAI_MAX_ARTE_MB", "250")) * 1_000_000
+
+# lido em pedaços: a conferência tem que acontecer enquanto o arquivo chega,
+# não depois. Esperar o fim para medir é deixar o disco encher primeiro.
+PEDACO = 1024 * 1024
+
+
+def gravar_arte(entrada, destino: Path, limite: int = LIMITE_ARTE) -> int:
+    """Grava a arte que subiu, parando no limite. Devolve o tamanho.
+
+    O que passou do teto é apagado antes de levantar: um upload recusado não
+    pode deixar meio arquivo ocupando lugar.
+    """
+    total = 0
+    try:
+        with destino.open("wb") as f:
+            while pedaco := entrada.read(PEDACO):
+                total += len(pedaco)
+                if total > limite:
+                    raise HTTPException(
+                        413, f"a arte passa de {limite // 1_000_000} MB. "
+                             f"Achate o PSD, ou mande só a prancheta que vai ser "
+                             f"adaptada")
+                f.write(pedaco)
+    except Exception:
+        destino.unlink(missing_ok=True)
+        raise
+    return total
+
 
 BISCOITO = "replicai_sessao"
 
@@ -226,6 +262,7 @@ def saude():
             "fila_porque": getattr(FILA, "porque", ""),
             "fila_tamanho": {n: q.count for n, q in getattr(FILA, "filas", {}).items()},
             "compositor": "modelo+regra" if modelo.disponivel() else "regra",
+            "limite_arte_mb": LIMITE_ARTE // 1_000_000,
             # sem segredo configurado o selo é sorteado ao subir: reiniciar
             # desloga todo mundo, e duas réplicas atrás do mesmo endereço não
             # reconhecem a sessão uma da outra. Serve para desenvolver, e em
@@ -289,8 +326,7 @@ async def criar(
     pasta = trabalhos.pasta_do(c.id, job)
     pasta.mkdir(parents=True, exist_ok=True)
     destino = pasta / f"arte{ext}"
-    with destino.open("wb") as f:
-        shutil.copyfileobj(arte.file, f)
+    gravar_arte(arte.file, destino)
 
     comum = {"formatos": pedidos, "titulo": titulo, "arte": destino.name,
              "headline": headline, "cta": cta, "brief": brief, "modo": modo}
@@ -414,6 +450,10 @@ def finalizar(job: str, c: contas.Conta = Depends(conta_atual)):
         raise HTTPException(409, "este trabalho ainda está rodando")
     if not estado.get("prontas"):
         raise HTTPException(409, "não há peça pronta para finalizar")
+    if estado.get("arquivado"):
+        raise HTTPException(409, "o material bruto deste trabalho já foi apagado "
+                                 "por idade: as peças continuam para baixar, mas "
+                                 "refazer os fundos exigiria a arte. Suba de novo")
 
     arte = trabalhos.pasta_do(c.id, job) / estado["arte"]
     trabalhos.gravar(c.id, job, {"status": "na fila", "final": True})
@@ -464,6 +504,11 @@ async def ajustar_peca(job: str, formato: str, request: Request,
         arq = _peca_do(c.id, job, formato)
     except ValueError:
         raise HTTPException(400, "identificador inválido")
+    estado = trabalhos.ler(c.id, job) or {}
+    if estado.get("arquivado"):
+        raise HTTPException(409, "o material bruto deste trabalho já foi apagado "
+                                 "por idade: não há recorte de camada para remontar. "
+                                 "Suba a arte de novo")
     corpo = await request.json()
     pedidos = corpo.get("elementos")
     if not isinstance(pedidos, list):

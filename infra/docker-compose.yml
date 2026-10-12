@@ -62,6 +62,26 @@ services:
     deploy:
       replicas: 2
 
+  # Apaga o material bruto de trabalhos com mais de 30 dias, uma vez por dia.
+  # Sem ela nenhum disco serve: pelos volumes dos planos, quarenta clientes
+  # geram 94 GB por mês e o PSD é 85% disso. Com ela, o acúmulo permanente
+  # cai para 8 GB por mês.
+  #
+  # Serviço à parte, e não uma linha no worker: assim o registro dela é dela,
+  # e dá para parar a faxina sem parar a produção.
+  faxina:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    command: sh -c 'while true; do python -m api.faxina; sleep 86400; done'
+    env_file:
+      - ../.env
+    environment:
+      STORAGE_DIR: /dados
+      REPLICAI_FAXINA_DIAS: ${REPLICAI_FAXINA_DIAS:-30}
+    volumes:
+      - dados:/dados
+
   redis:
     image: redis:8-alpine
     volumes:

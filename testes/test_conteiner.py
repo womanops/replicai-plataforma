@@ -98,7 +98,8 @@ class TestOCompose:
         """Um lugar só para a chave e o segredo: o mesmo `.env` que a
         plataforma usa fora do contêiner. Cópia em dois lugares é cópia que
         diverge."""
-        assert compose.count("- ../.env") == 2       # api e worker
+        # um por serviço que roda a plataforma: api, worker e faxina
+        assert compose.count("- ../.env") == compose.count("dockerfile: infra/Dockerfile")
 
     def test_a_saude_denuncia_segredo_sorteado(self):
         """A garantia saiu do compose e foi para a aplicação, onde também vale
@@ -118,6 +119,23 @@ class TestOCompose:
     def test_os_dados_ficam_em_volume(self, compose):
         """Trabalho entregue não pode morrer com o contêiner."""
         assert "STORAGE_DIR: /dados" in compose and "dados:/dados" in compose
+
+
+class TestAFaxinaRoda:
+    """Código que apaga disco e ninguém chama é disco que não é apagado. A
+    plataforma já teve regra escrita e nunca chamada duas vezes."""
+
+    def test_o_compose_sobe_a_faxina(self, compose):
+        assert "python -m api.faxina" in compose
+
+    def test_ela_enxerga_o_disco_dos_trabalhos(self, compose):
+        # fatia pelo recuo do serviço: "redis:" aparece antes dentro da URL
+        # da fila, e cortar ali devolvia um bloco vazio que passava em tudo
+        bloco = compose[compose.index("\n  faxina:"):compose.index("\n  redis:")]
+        assert "dados:/dados" in bloco and "STORAGE_DIR: /dados" in bloco
+
+    def test_da_para_mudar_o_prazo_sem_tocar_na_imagem(self, compose):
+        assert "REPLICAI_FAXINA_DIAS" in compose
 
 
 class TestNadaDeDependenciaDeCarona:
