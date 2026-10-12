@@ -10,6 +10,7 @@ não entregar nada, e muito melhor do que entregar oito com duas erradas.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -191,7 +192,16 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
     # e o job inteiro pode ser movido de máquina sem quebrar
     copia = pasta / f"base{base.suffix.lower()}"
     if base.resolve() != copia.resolve():
-        shutil.copy2(base, copia)
+        # ligação, não cópia: os dois nomes apontam para o mesmo arquivo em
+        # disco. Num PSD de 60 MB a cópia dobrava o trabalho inteiro — 120 dos
+        # 131 MB guardados eram a mesma arte duas vezes. Ninguém escreve
+        # nesses arquivos depois, então ligar é seguro; apagar um não leva o
+        # outro. Entre volumes diferentes `os.link` não funciona, e aí copia.
+        copia.unlink(missing_ok=True)
+        try:
+            os.link(base, copia)
+        except OSError:
+            shutil.copy2(base, copia)
 
     r = Resultado(pasta=pasta)
     if copia.suffix.lower() in PSD:

@@ -159,3 +159,35 @@ class TestNadaDeDependenciaDeCarona:
             if nome not in self._declaradas():
                 faltando.add(mod)
         assert not faltando, f"importado e não declarado: {sorted(faltando)}"
+
+
+class TestODiscoPorTrabalho:
+    """Num PSD de 60 MB, 120 dos 131 MB guardados eram a mesma arte duas
+    vezes. Com os volumes dos planos, isso é a diferença entre um disco de
+    80 GB durar três meses ou seis."""
+
+    def test_a_arte_nao_e_guardada_duas_vezes(self, tmp_path):
+        from api.compositor import CompositorPreserva
+        from api.pipeline import desdobrar
+        from PIL import Image
+        arte = tmp_path / "arte.png"
+        Image.new("RGB", (1200, 1200), (12, 42, 102)).save(arte)
+        saida = tmp_path / "trabalho"
+        desdobrar(arte, ["gdn-300x250"], CompositorPreserva(), saida)
+        base = saida / "base.png"
+        assert base.exists()
+        assert base.stat().st_ino == arte.stat().st_ino, \
+            "a arte foi copiada em vez de ligada"
+
+    def test_apagar_uma_ponta_nao_leva_a_outra(self, tmp_path):
+        """Ligação não é atalho: cada nome vale sozinho."""
+        from api.compositor import CompositorPreserva
+        from api.pipeline import desdobrar
+        from PIL import Image
+        arte = tmp_path / "arte.png"
+        Image.new("RGB", (600, 600), (12, 42, 102)).save(arte)
+        saida = tmp_path / "trabalho"
+        desdobrar(arte, ["gdn-300x250"], CompositorPreserva(), saida)
+        arte.unlink()
+        assert (saida / "base.png").exists()
+        Image.open(saida / "base.png").verify()
