@@ -57,6 +57,41 @@ def arquivo(tmp_path):
     ])
 
 
+class TestFidelidade:
+    """Assar o que não anima é o que mantém a peça igual à do Photoshop. Cada
+    camada que sai do fundo é uma chance de a reconstrução derivar — e nunca
+    havia teste disso, só um número anotado num comentário.
+
+    Medido no KV real da Consigaz, no tamanho nativo da prancheta: 0,01/255.
+    """
+
+    def _reconstruir(self, arte, destino):
+        import json
+
+        from api.psd import como_peca, extrair
+        from motor.replica import render_peca
+        leitura = extrair(arte, destino)
+        peca = como_peca(leitura, "nativo", pasta=destino)
+        (destino / "pecas").mkdir(exist_ok=True)
+        arq = destino / "pecas" / "nativo.json"
+        arq.write_text(json.dumps(peca, ensure_ascii=False), encoding="utf-8")
+        render_peca(arq, destino / "nativo.png")
+        return destino / "nativo.png", destino / "arte-mae.png"
+
+    def test_a_reconstrucao_bate_com_o_composite(self, tmp_path):
+        import numpy as np
+        arte = psd_de(tmp_path, [
+            ("fundo", (10, 20, 80, 255), (0, 0, 400, 300)),
+            ("foto", (220, 40, 40, 255), (30, 40, 140, 90)),
+            ("marca", (255, 255, 255, 255), (20, 220, 120, 40)),
+        ])
+        feita, mae = self._reconstruir(arte, tmp_path / "saida")
+        a = np.asarray(Image.open(mae).convert("RGB"), dtype=float)
+        b = np.asarray(Image.open(feita).convert("RGB"), dtype=float)
+        assert a.shape == b.shape, "comparar tamanhos diferentes mede a reamostragem"
+        assert np.abs(a - b).mean() < 1.0
+
+
 class TestPranchetas:
     def test_arquivo_sem_prancheta_vira_uma_so(self, arquivo):
         """PSD sem prancheta é o caso comum: tratar pelo mesmo caminho evita um
@@ -118,13 +153,16 @@ class TestExtrair:
         assert (tmp_path / "camadas" / L.fundo).exists()
         assert any("assadas no fundo" in i for i in L.ignoradas)
 
-    def test_imagem_que_nao_e_assinatura_continua_assada(self, tmp_path):
+    def test_o_fundo_que_sangra_continua_assado(self, tmp_path):
+        """A regra era "só a assinatura se solta". Mudou de novo, pelo vídeo:
+        a foto da colagem também sai, senão metade da peça é um PNG parado
+        atrás do texto. O que sangra pelos quatro lados é fundo, e fica."""
         arte = psd_de(tmp_path, [
             ("fundo", (10, 20, 80, 255), (0, 0, 400, 300)),
-            ("mascote", (255, 0, 0, 255), (20, 30, 120, 40)),
+            ("foto", (255, 0, 0, 255), (20, 30, 120, 40)),
         ])
         L = extrair(arte, tmp_path / "camadas")
-        assert L.camadas == []
+        assert [c.nome for c in L.camadas] == ["foto"]
 
     def test_o_fundo_sai_do_tamanho_da_prancheta(self, arquivo, tmp_path):
         L = extrair(arquivo, tmp_path / "camadas")

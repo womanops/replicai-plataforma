@@ -177,6 +177,46 @@ def _tem_texto(camada) -> bool:
     return False
 
 
+def _clipes_de(raiz) -> dict:
+    """Quais camadas estão recortadas sobre cada base.
+
+    No Photoshop, a camada com `clipping` aparece só onde a de baixo é opaca.
+    Composta sozinha ela sai **vazia**, porque não há base para recortar —
+    foi o que fez três fotos deste KV virarem PNG em branco. A unidade é
+    base + recortadas, e é ela que se compõe.
+    """
+    unidades: dict = {}
+    base = None
+    for _, c in _plano(raiz):
+        if getattr(c, "clipping", False):
+            if base is not None:
+                unidades.setdefault(id(base), []).append(c)
+        else:
+            base = c
+    return unidades
+
+
+def _e_foto(c, prancheta) -> bool:
+    """Imagem que é conteúdo da peça, e não o fundo dela.
+
+    O fundo sangra pelos quatro lados; foto de colagem ocupa um pedaço. A
+    régua é a mesma que separa figura de textura em `_figuras_plantadas`.
+    """
+    if getattr(c, "kind", "") in AJUSTES or getattr(c, "kind", "") == "type":
+        return False
+    if not getattr(c, "visible", True) or getattr(c, "clipping", False):
+        return False
+    try:
+        bb = c.bbox
+    except Exception:
+        return False
+    if not bb or bb == (0, 0, 0, 0):
+        return False
+    x0, y0, x1, y1 = bb
+    cheio = (x1 - x0) >= prancheta.w * 0.98 and (y1 - y0) >= prancheta.h * 0.98
+    return not cheio
+
+
 def separaveis(raiz, prancheta=None) -> list:
     """Quais camadas valem separar.
 
@@ -212,6 +252,12 @@ def separaveis(raiz, prancheta=None) -> list:
                 continue
             if figura not in soltas:
                 soltas.append(figura)
+        # as fotos da colagem saem do fundo para poderem entrar na animação.
+        # Assadas, elas são um PNG parado atrás do texto: metade da peça não
+        # anima. A camada de fundo, que sangra pelos quatro lados, fica.
+        for _, c in _plano(raiz):
+            if c not in soltas and _e_foto(c, prancheta):
+                soltas.append(c)
         # a assinatura também sai do fundo: é ela que fecha o vídeo no centro,
         # e assada no fundo nunca chegava lá. A logo bordada na manga do
         # personagem fica onde está — ela é arte dele, não assinatura da peça
@@ -268,8 +314,12 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
     # o fundo é a prancheta composta pelo próprio Photoshop com as camadas
     # soltas desligadas: assim mesclagem, opacidade e camada de ajuste saem
     # exatas, sem o navegador precisar reproduzir nenhuma delas
-    antes = [(c, c.visible) for c in soltas]
-    for c in soltas:
+    clipes = _clipes_de(raiz)
+    # as recortadas acompanham a base: escondendo só a base, elas ficariam no
+    # fundo sem o recorte e apareceriam espalhadas
+    esconder = list(soltas) + [f for c in soltas for f in clipes.get(id(c), [])]
+    antes = [(c, c.visible) for c in esconder]
+    for c in esconder:
         c.visible = False
     try:
         chapado = raiz.composite()
@@ -294,8 +344,24 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
     camadas = []
     for i, c in enumerate(soltas):
         nome = _nome_limpo(c.name)
+        meus = clipes.get(id(c), [])
         try:
-            im = c.composite()
+            if meus:
+                # base + recortadas, compostas juntas e aparadas na base: a
+                # recortada sozinha sai vazia, porque não há o que recortar
+                unidade = [c] + meus
+                guardado = [(x, x.visible) for x in todas]
+                for x in todas:
+                    x.visible = x in unidade
+                try:
+                    inteira = raiz.composite()
+                finally:
+                    for x, v in guardado:
+                        x.visible = v
+                bb = c.bbox
+                im = inteira.crop(tuple(bb)) if inteira is not None else None
+            else:
+                im = c.composite()
         except Exception as e:
             ignoradas.append(f"`{nome}` não abriu: {type(e).__name__}")
             continue
