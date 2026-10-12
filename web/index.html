@@ -9,7 +9,13 @@
 :root{
   --bg:#0E0A0C; --painel:#160F12; --painel2:#1E1518; --fgRGB:245,236,233;
   --fg:#F5ECE9; --mut:rgba(var(--fgRGB),.58); --linha:rgba(var(--fgRGB),.13);
-  --vinho:#741B47; --rosa:#E8B4C8; --sinal:#B6FF3C; --err:#FF5A5A;
+  /* O vocabulário de cor da tela, e a razão de cada uma:
+     vinho  = a marca, e o botão que aciona o trabalho
+     rosa   = o que VOCÊ escolheu (formato marcado, modo marcado)
+     lima   = o que JÁ SAIU (peça pronta, barra de progresso)
+     Lima era o acento de tudo: botão, seleção e entrega na mesma cor. Quando
+     a cor do "pronto" também é a do "clique aqui", ela para de dizer pronto. */
+  --vinho:#8E2459; --vinho-fundo:#2A0E1C; --rosa:#E8B4C8; --sinal:#B6FF3C; --err:#FF5A5A;
   --disp:'Bebas Neue',sans-serif; --corpo:'Space Grotesk',system-ui,sans-serif;
   --mono:'JetBrains Mono',monospace;
 }
@@ -31,10 +37,10 @@ main{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:26px;padding
 
 /* ---------- a peça ---------- */
 .zona{border:1px dashed rgba(var(--fgRGB),.26);border-radius:14px;background:var(--painel);
-  min-height:200px;display:grid;place-items:center;text-align:center;padding:26px;cursor:pointer}
-.zona:hover{border-color:var(--rosa)}
+  min-height:230px;transition:border-color .15s,background .15s;display:grid;place-items:center;text-align:center;padding:26px;cursor:pointer}
+.zona:hover{border-color:var(--rosa);background:var(--painel2)}
 .zona .arte{max-width:100%;max-height:300px;border-radius:8px;display:block}
-.zona h2{font:400 22px/1 var(--disp);letter-spacing:.04em;margin:0 0 8px}
+.zona h2{font:400 30px/1 var(--disp);letter-spacing:.04em;margin:0 0 10px}
 .zona p{margin:0;font-size:12.5px;color:var(--mut);line-height:1.45}
 .medida{font:500 11px var(--mono);color:var(--mut);margin-top:10px;display:block;letter-spacing:.06em}
 body.recebendo::after{content:'Solte em qualquer lugar';position:fixed;inset:10px;z-index:90;
@@ -60,7 +66,10 @@ textarea{resize:vertical;min-height:70px}
 .titulo h2{font:400 24px/1 var(--disp);letter-spacing:.05em;margin:0}
 .titulo em{font:500 11px var(--mono);color:var(--mut);font-style:normal;letter-spacing:.08em}
 .canal{font:500 10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;
-  color:var(--mut);margin:22px 0 10px;border-top:1px solid var(--linha);padding-top:10px}
+  color:var(--mut);margin:24px 0 11px;padding-top:11px;
+  border-top:1px solid var(--linha);position:relative}
+.canal::before{content:'';position:absolute;top:-1px;left:0;width:34px;height:2px;
+  background:var(--vinho)}
 .grade{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
 .f{background:transparent;border:0;padding:0;cursor:pointer;text-align:left;color:inherit;
   font:inherit;
@@ -68,9 +77,11 @@ textarea{resize:vertical;min-height:70px}
 .f .cx{position:relative;width:100%;border:1.5px solid rgba(var(--fgRGB),.22);border-radius:5px;
   background:repeating-conic-gradient(#141014 0% 25%,#191419 0% 50%) 50%/12px 12px;overflow:hidden}
 .f .cx img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
-.f.on .cx{border-color:var(--sinal);box-shadow:0 0 0 3px rgba(182,255,60,.16)}
+.f.on .cx{border-color:var(--rosa);box-shadow:0 0 0 3px rgba(232,180,200,.16)}
+.f.on b{color:var(--rosa)}
 .f:focus-visible .cx{outline:2px solid var(--rosa);outline-offset:2px}
-.f.feito .cx{border-color:var(--sinal)}
+.f.feito .cx{border-color:var(--sinal);box-shadow:0 0 0 3px rgba(182,255,60,.14)}
+.f.feito b{color:var(--sinal)}
 .f.falhou .cx{border-color:var(--err)}
 .f b{font:500 12px var(--corpo);font-weight:500;line-height:1.25}
 .f i{font:400 10.5px var(--mono);color:var(--mut);font-style:normal;letter-spacing:.04em}
@@ -91,8 +102,9 @@ footer{position:fixed;left:0;right:0;bottom:0;display:flex;align-items:center;ga
 footer .estado{flex:1;min-width:0}
 footer .estado b{display:block;font:400 19px/1 var(--disp);letter-spacing:.05em}
 footer .estado span{font-size:12.5px;color:var(--mut)}
-button.acao{background:var(--sinal);color:#13200A;border:0;border-radius:9px;padding:11px 20px;
-  font:600 14px var(--corpo);cursor:pointer}
+button.acao{background:var(--vinho);color:#FFF1F7;border:0;border-radius:9px;padding:11px 20px;
+  font:600 14px var(--corpo);cursor:pointer;letter-spacing:.01em}
+button.acao:hover:not(:disabled){background:#A32C68}
 button.acao:disabled{background:var(--painel2);color:rgba(var(--fgRGB),.4);cursor:default}
 button.secund{background:transparent;color:var(--fg);border:1px solid var(--linha);
   border-radius:9px;padding:10px 16px;font:500 13px var(--corpo);cursor:pointer}
@@ -211,7 +223,8 @@ label.modo{display:flex;gap:10px;padding:11px 14px;cursor:pointer;
 label.modo input{margin:4px 0 0;accent-color:var(--rosa);flex:none}
 label.modo b{display:block;font-weight:500;font-size:13.5px}
 label.modo small{display:block;color:var(--mut);font-size:12px;line-height:1.4;margin-top:2px}
-label.modo.on{background:rgba(232,180,200,.06)}
+label.modo{border-left:3px solid transparent}
+label.modo.on{background:var(--vinho-fundo);border-left-color:var(--vinho)}
 label.modo.on b{color:var(--rosa)}
 .travado{margin:10px 0 0;font-size:12px;color:var(--mut);border-left:2px solid var(--linha);
   padding-left:10px}
@@ -740,7 +753,10 @@ async function acompanhar(){
     // esperando na fila não é o mesmo que estar sendo feito. A tela dizia
     // "Replicando" nos dois casos, e quem estava atrás de outros via um aviso
     // de trabalho em andamento com nada acontecendo
-    const esperando = d.status === 'na fila' && d.fila && d.fila.a_frente > 0;
+    // "na fila" é esperar, saiba-se ou não quantos estão na frente. Exigir a
+    // posição para dizer isso trazia de volta o "Replicando" com nada
+    // acontecendo sempre que a fila não soubesse responder
+    const esperando = d.status === 'na fila';
     $('#conta').textContent = v.status === 'rodando' || v.status === 'na fila' ? 'Animando'
       : esperando ? 'Na fila'
       : andando ? 'Replicando'
@@ -750,8 +766,10 @@ async function acompanhar(){
     // travamento são iguais de fora, e a diferença é esta linha
     const p = d.progresso;
     $('#detalhe').textContent =
-        esperando ? `${d.fila.a_frente} trabalho${d.fila.a_frente>1?'s':''} na frente`
-                    + (d.fila.segundos ? ` · começa em ~${emTempo(d.fila.segundos)}` : '')
+        esperando ? (!d.fila ? 'esperando uma vaga de processamento'
+                     : !d.fila.a_frente ? 'o próximo a ser feito'
+                     : `${d.fila.a_frente} trabalho${d.fila.a_frente>1?'s':''} na frente`
+                       + (d.fila.segundos ? ` · começa em ~${emTempo(d.fila.segundos)}` : ''))
       : v.status === 'rodando' ? `${(v.prontos||[]).length} de ${(v.formatos||[]).length} vídeos`
       : v.status === 'na fila' ? 'na fila do vídeo'
       : andando && p && p.etapa ? `${p.etapa}${p.formato ? ' · ' + p.formato : ''} · ${p.feito} de ${p.total}`

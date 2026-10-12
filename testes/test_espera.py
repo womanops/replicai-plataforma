@@ -60,3 +60,12 @@ class TestATelaMostra:
         tela = Path("web/index.html").read_text(encoding="utf-8")
         assert "'Na fila'" in tela
         assert "na frente" in tela
+
+    def test_esperar_nao_depende_de_saber_a_posicao(self):
+        """Exigir a posição para dizer "na fila" trazia de volta o
+        "Replicando" com nada acontecendo sempre que a fila não soubesse
+        responder — que é o defeito inteiro."""
+        from pathlib import Path
+        tela = Path("web/index.html").read_text(encoding="utf-8")
+        assert "const esperando = d.status === 'na fila';" in tela
+        assert "esperando uma vaga de processamento" in tela
