@@ -260,3 +260,29 @@ class TestOEnvDeExemplo:
     def test_as_obrigatorias_estao_no_exemplo(self):
         assert {"ANTHROPIC_API_KEY", "REPLICAI_SEGREDO", "ASAAS_API_KEY",
                 "ASAAS_AVISO_TOKEN"} <= self._exemplo()
+
+
+class TestVideoNaoTravaPeca:
+    """Um worker só atendendo as duas filas faz um vídeo de dois minutos
+    travar todas as peças atrás dele — e peça é o que a pessoa está olhando a
+    tela esperando."""
+
+    def test_sao_dois_workers_com_filas_proprias(self, compose):
+        assert "python worker.py replicai\n" in compose
+        assert "python worker.py replicai-video" in compose
+
+    def test_nenhum_worker_atende_as_duas(self, compose):
+        """`worker.py` sem argumento pega as duas filas: é o padrão que a
+        separação existe para evitar."""
+        import re
+        # só as linhas de comando: o comentário acima delas também cita o
+        # arquivo, e cobrá-lo pela regra reprovava a explicação
+        for linha in compose.splitlines():
+            if "command:" in linha and "worker.py" in linha:
+                assert re.search(r"worker\.py\s+replicai", linha), linha
+
+    def test_o_video_roda_um_por_vez(self, compose):
+        """O render já usa o navegador inteiro; dois na mesma máquina disputam
+        CPU sem entregar mais rápido."""
+        bloco = compose[compose.index("\n  worker-video:"):compose.index("\n  faxina:")]
+        assert "replicas: 1" in bloco

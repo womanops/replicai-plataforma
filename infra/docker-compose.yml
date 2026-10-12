@@ -55,14 +55,20 @@ services:
     depends_on:
       - redis
 
+  # Dois tipos de worker, de propósito. Um worker só atendendo as duas filas
+  # faz um vídeo de dois minutos travar todas as peças atrás dele — e peça é o
+  # que a pessoa está olhando a tela esperando. Separados, a peça de um nunca
+  # espera o vídeo de outro.
+  #
+  # Para aumentar a capacidade: suba `replicas`. Peça custa 0,7 GB por worker,
+  # vídeo custa 2 GB — é por isso que não são o mesmo número.
   worker:
     build:
       context: ..
       dockerfile: infra/Dockerfile
     # pelo `worker.py`, e não por `rq worker` direto: é ele que escolhe a
-    # classe de worker por sistema e nomeia as duas filas num lugar só. Dois
-    # jeitos de subir o mesmo worker é um jeito a mais de eles divergirem.
-    command: python worker.py
+    # classe de worker por sistema. O nome da fila vem como argumento.
+    command: python worker.py replicai
     env_file:
       - ../.env
     environment:
@@ -76,9 +82,29 @@ services:
       - higgsfield:/root/.config
     depends_on:
       - redis
-    # Renderizar peça é pesado: suba mais réplicas conforme a demanda.
     deploy:
       replicas: 2
+
+  worker-video:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    command: python worker.py replicai-video
+    env_file:
+      - ../.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_DIR: /dados
+    volumes:
+      - dados:/dados
+      - ../fontes:/app/fontes:ro
+      - higgsfield:/root/.config
+    depends_on:
+      - redis
+    # um por vez: o render já usa o navegador inteiro, e dois ao mesmo tempo
+    # na mesma máquina disputam CPU sem entregar mais rápido
+    deploy:
+      replicas: 1
 
   # Apaga o material bruto de trabalhos com mais de 30 dias, uma vez por dia.
   # Sem ela nenhum disco serve: pelos volumes dos planos, quarenta clientes
