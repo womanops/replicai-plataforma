@@ -16,13 +16,31 @@
 #   docker compose run --rm worker higgsfield auth login
 
 services:
-  # `docker compose up` sobe tudo: a tela responde em :8000
+  # A porta pública e o certificado. Sem ele a senha de quem entra atravessa a
+  # internet legível e o navegador marca o site como não seguro. O Caddy pede
+  # e renova o certificado na Let's Encrypt sozinho, de graça.
+  porta:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMINIO: ${DOMINIO:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-dados:/data
+      - caddy-config:/config
+    depends_on:
+      - api
+
   api:
     build:
       context: ..
       dockerfile: infra/Dockerfile
-    ports:
-      - "8000:8000"
+    # sem `ports`: quem atende a internet é a `porta`, com certificado. Expor
+    # a api direto deixaria uma entrada em HTTP puro aberta ao lado da segura
+    expose:
+      - "8000"
     # o mesmo arquivo que a plataforma lê fora do contêiner: chave do modelo,
     # segredo da sessão e, quando houver, as do Asaas. Sem ele o contêiner
     # sobe compondo pela régua e deslogando todo mundo a cada reinício
@@ -91,3 +109,5 @@ volumes:
   dados:
   redis:
   higgsfield:
+  caddy-dados:
+  caddy-config:

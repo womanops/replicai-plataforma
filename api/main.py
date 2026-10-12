@@ -548,6 +548,11 @@ def ver(job: str, c: contas.Conta = Depends(conta_atual)):
     if estado is None:
         raise HTTPException(404, "trabalho não existe")
     estado = perdido(c.id, job, estado)
+    # quem está esperando precisa saber que está esperando, e quanto
+    if estado.get("status") == "na fila" and hasattr(FILA, "espera"):
+        fila = FILA.espera(estado.get("id_na_fila") or "")
+        if fila:
+            estado = {**estado, "fila": fila}
     # o relógio do servidor vai junto: a tela estima o que falta comparando com
     # `inicio`, e sem isso a conta erra pelo tanto que os dois relógios diferem
     from time import time

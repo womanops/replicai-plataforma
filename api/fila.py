@@ -47,6 +47,26 @@ FILA_VIDEO = "replicai-video"
 LIMITES = {FILA_PECA: 1800, FILA_VIDEO: 3600}
 
 
+# quanto custa cada coisa, medido no PSD de 60 MB da Consigaz. Serve para
+# dizer a quem espera quanto falta — e esperar sem saber quanto é a diferença
+# entre uma fila e um travamento.
+ABRIR_ARTE = 7        # segundos, uma vez por trabalho
+POR_FORMATO = 7
+POR_VIDEO = 21
+
+
+def _custo(nome: str, args) -> int:
+    """Quanto tempo um trabalho parado na fila vai tomar quando começar."""
+    try:
+        if nome.endswith("processar_video"):
+            return POR_VIDEO * max(1, len(args[2]))
+        if nome.endswith("processar"):
+            return ABRIR_ARTE + POR_FORMATO * max(1, len(args[3]))
+    except Exception:
+        pass
+    return ABRIR_ARTE + POR_FORMATO
+
+
 class FilaRQ:
     """Redis + RQ. O worker é outro processo: `rq worker replicai`."""
 
@@ -60,6 +80,32 @@ class FilaRQ:
 
     def enfileirar(self, fn, *args, fila: str = FILA_PECA, **kwargs) -> str:
         return self.filas.get(fila, self.filas[FILA_PECA]).enqueue(fn, *args, **kwargs).id
+
+    def espera(self, ident: str) -> dict | None:
+        """Quantos trabalhos estão na frente deste, e quanto tempo somam.
+
+        A tela dizia "Replicando" para quem só estava esperando: indistinguível
+        de trabalho em andamento, com nada acontecendo na frente. Esperar sem
+        saber quanto é o que faz a pessoa recarregar a página e subir de novo.
+        """
+        for q in self.filas.values():
+            try:
+                ids = q.get_job_ids()
+            except Exception:
+                continue
+            if ident not in ids:
+                continue
+            antes = ids[:ids.index(ident)]
+            segundos = 0
+            for outro in antes:
+                try:
+                    from rq.job import Job
+                    j = Job.fetch(outro, connection=q.connection)
+                    segundos += _custo(j.func_name or "", j.args)
+                except Exception:
+                    segundos += ABRIR_ARTE + POR_FORMATO
+            return {"a_frente": len(antes), "segundos": segundos}
+        return None
 
 
 def fila_do_ambiente() -> Fila:

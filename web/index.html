@@ -737,7 +737,12 @@ async function acompanhar(){
     const feitas = prontas.size, erradas = Object.keys(falhas).length, total = escolhidos.size;
     const andando = d.status === 'rodando' || d.status === 'na fila';
     const v = d.video || {};
+    // esperando na fila não é o mesmo que estar sendo feito. A tela dizia
+    // "Replicando" nos dois casos, e quem estava atrás de outros via um aviso
+    // de trabalho em andamento com nada acontecendo
+    const esperando = d.status === 'na fila' && d.fila && d.fila.a_frente > 0;
     $('#conta').textContent = v.status === 'rodando' || v.status === 'na fila' ? 'Animando'
+      : esperando ? 'Na fila'
       : andando ? 'Replicando'
       : d.status === 'pronto' ? 'Pronto' : d.status === 'parcial' ? 'Pronto com ressalvas' : 'Deu erro';
 
@@ -745,7 +750,9 @@ async function acompanhar(){
     // travamento são iguais de fora, e a diferença é esta linha
     const p = d.progresso;
     $('#detalhe').textContent =
-        v.status === 'rodando' ? `${(v.prontos||[]).length} de ${(v.formatos||[]).length} vídeos`
+        esperando ? `${d.fila.a_frente} trabalho${d.fila.a_frente>1?'s':''} na frente`
+                    + (d.fila.segundos ? ` · começa em ~${emTempo(d.fila.segundos)}` : '')
+      : v.status === 'rodando' ? `${(v.prontos||[]).length} de ${(v.formatos||[]).length} vídeos`
       : v.status === 'na fila' ? 'na fila do vídeo'
       : andando && p && p.etapa ? `${p.etapa}${p.formato ? ' · ' + p.formato : ''} · ${p.feito} de ${p.total}`
       : andando ? `${feitas} de ${total}`

@@ -209,3 +209,54 @@ class TestODiscoPorTrabalho:
         arte.unlink()
         assert (saida / "base.png").exists()
         Image.open(saida / "base.png").verify()
+
+
+class TestAPortaPublica:
+    """Sem certificado, a senha de quem entra atravessa a internet legível e
+    o navegador marca o site como não seguro."""
+
+    def test_existe_porta_com_certificado(self, compose):
+        assert "caddy" in compose.lower()
+
+    def test_a_api_nao_fica_exposta_direto(self, compose):
+        """Expor a api ao lado da porta segura deixa uma entrada em HTTP puro
+        aberta — e quem souber a porta entra por ela."""
+        bloco = compose[compose.index("\n  api:"):compose.index("\n  worker:")]
+        assert "ports:" not in bloco, "a api está publicando porta própria"
+
+    def test_o_dominio_vem_do_ambiente(self, compose):
+        assert "DOMINIO" in compose
+
+    def test_o_caddyfile_existe_e_aponta_para_a_api(self):
+        caddy = (RAIZ / "infra" / "Caddyfile").read_text(encoding="utf-8")
+        assert "reverse_proxy api:8000" in caddy
+
+
+class TestOEnvDeExemplo:
+    """Configuração que não existe é pior do que configuração faltando:
+    parece resolvida. O arquivo prometia HIGGSFIELD_API_KEY e S3_*, que nada
+    no código jamais leu."""
+
+    def _exemplo(self) -> set[str]:
+        nomes = set()
+        for linha in (RAIZ / ".env.example").read_text(encoding="utf-8").splitlines():
+            m = re.match(r"#?\s*([A-Z][A-Z0-9_]+)=", linha.strip())
+            if m:
+                nomes.add(m.group(1))
+        return nomes
+
+    def _lidas(self) -> set[str]:
+        nomes = set()
+        for pasta in ("api", "motor"):
+            for arq in (RAIZ / pasta).rglob("*.py"):
+                nomes.update(re.findall(r'os\.environ(?:\.get)?[\[(]"([A-Z_]+)"',
+                                        arq.read_text(encoding="utf-8")))
+        return nomes
+
+    def test_o_exemplo_nao_promete_o_que_ninguem_le(self):
+        fora = self._exemplo() - self._lidas() - {"DOMINIO"}   # DOMINIO é do Caddy
+        assert not fora, f"prometido no .env.example e nunca lido: {sorted(fora)}"
+
+    def test_as_obrigatorias_estao_no_exemplo(self):
+        assert {"ANTHROPIC_API_KEY", "REPLICAI_SEGREDO", "ASAAS_API_KEY",
+                "ASAAS_AVISO_TOKEN"} <= self._exemplo()

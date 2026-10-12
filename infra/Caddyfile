@@ -1,0 +1,21 @@
+# O endereço público da plataforma, e o certificado dele.
+#
+# Sem isto a api responde em HTTP puro: a senha de quem entra atravessa a
+# internet legível, e o navegador marca o site como não seguro. O Caddy pede
+# e renova o certificado sozinho na Let's Encrypt — de graça, sem cron.
+#
+# O domínio vem do ambiente. Em `localhost` ele serve sem certificado, que é
+# o que se quer ao testar na máquina.
+{$DOMINIO:localhost} {
+	encode gzip
+
+	# O upload da arte vai até 250 MB (REPLICAI_MAX_ARTE_MB). O padrão do
+	# Caddy não limita, mas o tempo sim: um PSD grande numa conexão lenta
+	# leva minutos, e cortar no meio é a pior hora de falhar.
+	reverse_proxy api:8000 {
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
+}
