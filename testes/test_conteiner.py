@@ -286,3 +286,23 @@ class TestVideoNaoTravaPeca:
         CPU sem entregar mais rápido."""
         bloco = compose[compose.index("\n  worker-video:"):compose.index("\n  faxina:")]
         assert "replicas: 1" in bloco
+
+
+class TestOEditorAlcancaTodoMundo:
+    """As caixas do editor se sobrepõem — a logo fica debaixo do CTA, o
+    mascote atrás do texto. Sem ordem por tamanho, o manípulo de quem está
+    embaixo fica coberto pelo vizinho e o arrasto pega a camada errada."""
+
+    def _tela(self) -> str:
+        return (RAIZ / "web" / "index.html").read_text(encoding="utf-8")
+
+    def test_o_menor_fica_por_cima(self):
+        tela = self._tela()
+        assert "200 - Math.round(Math.sqrt(c.w * c.h) / 12)" in tela
+        assert "z-index:${ed.sel === g.chave ? 300 : ordem}" in tela
+
+    def test_o_manipulo_se_acha_sobre_a_arte(self):
+        """Onze pixels sem contorno somem sobre uma foto."""
+        tela = self._tela()
+        bloco = tela[tela.index(".pe-el .puxa{"):tela.index(".pe-el .letra{")]
+        assert "box-shadow" in bloco and "z-index" in bloco

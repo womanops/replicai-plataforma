@@ -278,16 +278,21 @@ header .saldo.apertado .fio i{background:var(--err)}
   user-select:none;touch-action:none}
 #lona .ch{position:absolute;inset:0;background-size:cover;background-position:center}
 #lona .margem{position:absolute;border:1px dashed rgba(232,180,200,.35);pointer-events:none}
+/* as caixas se sobrepõem — a logo fica debaixo do CTA, o mascote atrás do
+   texto. Sem ordem explícita, o manípulo de quem está em cima ficava coberto
+   pelo vizinho e o arrasto pegava a camada errada */
 .pe-el{position:absolute;border:1px solid rgba(182,255,60,.55);cursor:grab;
   background:rgba(182,255,60,.05)}
+.pe-el:hover{border-color:rgba(232,180,200,.7)}
 .pe-el.sel{border-color:var(--rosa);background:rgba(232,180,200,.1);
   box-shadow:0 0 0 1px rgba(232,180,200,.4)}
 .pe-el img{width:100%;height:100%;display:block;object-fit:fill;pointer-events:none}
 .pe-el .rot{position:absolute;left:0;top:-15px;font:500 9px var(--mono);color:var(--sinal);
   letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;pointer-events:none}
 .pe-el.sel .rot{color:var(--rosa)}
-.pe-el .puxa{position:absolute;right:-5px;bottom:-5px;width:11px;height:11px;border-radius:2px;
-  background:var(--rosa);cursor:nwse-resize}
+.pe-el .puxa{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;
+  border-radius:3px;background:var(--rosa);cursor:nwse-resize;z-index:4;
+  box-shadow:0 0 0 2px var(--bg)}
 .pe-el .letra{position:absolute;inset:0;display:flex;align-items:center;padding:0 2px;
   color:rgba(245,236,233,.9);font:500 11px var(--corpo);overflow:hidden;pointer-events:none}
 </style>
@@ -1134,7 +1139,12 @@ function pintarLona(){
     const c = cerca(g.itens);
     const el = document.createElement('div');
     el.className = 'pe-el' + (ed.sel === g.chave ? ' sel' : '');
-    el.style.cssText = `left:${c.x*k}px;top:${c.y*k}px;width:${c.w*k}px;height:${c.h*k}px`;
+    // o menor por cima: a caixa da foto cobre a da linha de texto, e o
+    // manípulo de quem está embaixo fica inalcançável. Em qualquer editor de
+    // caixas a regra é essa, senão só dá para pegar o elemento maior
+    const ordem = Math.max(1, 200 - Math.round(Math.sqrt(c.w * c.h) / 12));
+    el.style.cssText = `left:${c.x*k}px;top:${c.y*k}px;width:${c.w*k}px;`
+      + `height:${c.h*k}px;z-index:${ed.sel === g.chave ? 300 : ordem}`;
     el.innerHTML = `<span class="rot">${g.rotulo}</span><span class="puxa"></span>`;
     for (const i of g.itens){
       const e = ed.peca.elementos[i], b = ed.boxes[i];
