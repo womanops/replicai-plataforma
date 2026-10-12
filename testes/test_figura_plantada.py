@@ -255,3 +255,41 @@ class TestAFiguraNaoEhLockup:
         fonte = inspect.getsource(psd.recompor)
         assert 'e.get("plantado")' in fonte
         assert "_plantar(figuras, formato)" in fonte
+
+
+class TestFotoNaoEhAssinaturaNemEstaPlantada:
+    """Soltar as fotos para a animação quebrou a capa do Facebook de dois
+    jeitos ao mesmo tempo, e os dois só aparecem no `recompor`, que remonta a
+    peça quando a proporção muda muito."""
+
+    def test_a_foto_acompanha_a_arte_e_nao_o_lockup(self):
+        """Escalada pela medida do lockup, a colagem se espatifa: cada foto
+        sai voando para um canto, num tamanho diferente."""
+        import inspect
+
+        from api import psd
+        fonte = inspect.getsource(psd.recompor)
+        assert 'e.get("papel") == "figura"' in fonte
+
+    def test_a_tinta_do_lockup_ignora_as_fotos(self):
+        """É por ela que o lockup é escalado na faixa. Com as fotos dentro, a
+        escala sai pela colagem inteira e o texto some."""
+        import inspect
+
+        from api import psd
+        assert "MARCA.search" in inspect.getsource(psd.tinta_de)
+
+    def test_sangrar_pela_lateral_nao_e_estar_plantada(self):
+        """Estar plantada é apoiar-se no chão. Foto cortada pela lateral do
+        quadro virava "plantada à esquerda" e era grudada na borda — era o que
+        separava a colagem em dois blocos nas pontas da capa."""
+        from psd_tools import PSDImage
+        from pathlib import Path
+        from api.psd import Camada
+        c = Camada(nome="foto", tipo="imagem", src="x.png",
+                   box={"x": 0, "y": 0, "w": 1, "h": 1}, plantada=("esquerda",))
+        # o campo existe, mas a extração só guarda os lados verticais
+        import inspect
+        from api import psd
+        fonte = inspect.getsource(psd.extrair)
+        assert 'if l in ("baixo", "cima")' in fonte

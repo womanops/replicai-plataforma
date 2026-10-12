@@ -392,7 +392,12 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
             fonte=_primeira_fonte(c) if c.kind == "type" else "",
             mesclagem=_mesclagem(c),
             opacidade=_opacidade(c),
-            plantada=plantadas.get(id(c), ()),
+            # só o eixo vertical: estar plantada é apoiar-se no chão (ou pender
+            # do topo). Foto de colagem que sangra pela lateral é só foto
+            # cortada pelo quadro — tratá-la como plantada grudava cada uma
+            # numa borda e espatifava a colagem na capa do Facebook
+            plantada=tuple(l for l in plantadas.get(id(c), ())
+                           if l in ("baixo", "cima")),
         ))
 
     assadas = len(todas) - len(soltas)
@@ -562,7 +567,11 @@ def tinta_de(leitura: Leitura) -> tuple[int, int, int, int] | None:
     # a figura plantada fica de fora: a caixa dela passa da prancheta de
     # propósito (o corpo inteiro está no arquivo), e somá-la à tinta inflaria
     # a área protegida para além do próprio quadro
-    camadas = [c for c in leitura.camadas if not c.plantada] or leitura.camadas
+    # a figura plantada fica de fora; a foto da colagem também. A tinta é o
+    # que a assinatura ocupa, e é por ela que o lockup é escalado na faixa
+    camadas = [c for c in leitura.camadas
+               if not c.plantada and (c.tipo == "texto" or MARCA.search(c.nome or ""))]
+    camadas = camadas or [c for c in leitura.camadas if not c.plantada] or leitura.camadas
     if not camadas:
         return None
     xs0 = min(c.box["x"] for c in camadas)
@@ -680,13 +689,15 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
     cy = y0 + (y1 - y0) * LOCKUP_NO_ALTO / 2
     meio_x, meio_y = (lx0 + lx1) / 2, (ly0 + ly1) / 2
 
-    # a figura plantada acompanha a ARTE, não o lockup: ela é desenho da peça,
-    # e escalá-la pela medida do lockup a encolhia e a jogava para o meio da
-    # faixa, longe do chão em que se apoia
+    # O que é DESENHO acompanha a arte; só o que é ASSINATURA entra na faixa.
+    # Foto e figura são desenho: escaladas pela medida do lockup, a colagem se
+    # espatifa — as fotos saem voando para cantos diferentes, cada uma num
+    # tamanho. Foi o que aconteceu quando elas passaram a ser camadas soltas
+    # para poderem animar, e a capa do Facebook saiu irreconhecível.
     elementos_novos = []
     figuras = []
     for e in base:
-        if e.get("plantado"):
+        if e.get("plantado") or e.get("papel") == "figura":
             figuras.append(dict(e, box=pf.mover(e["box"], info["plano"])))
             continue
         b = e["box"]
