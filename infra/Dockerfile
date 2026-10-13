@@ -8,7 +8,14 @@
 # Imagem base presa por digest: `3.14-slim` é uma etiqueta móvel e um rebuild
 # amanhã traria outro sistema por baixo. Para atualizar, troque o digest de
 # propósito e deixe a esteira renderizar a peça de prova antes de confiar.
-FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
+#
+# Vem do espelho do Google, e não do Docker Hub: o Hub limita quem puxa sem
+# conta, e os runners do GitHub saem todos pelo mesmo punhado de endereços —
+# a cota some com o uso dos outros e o build morre em onze segundos, antes de
+# chegar ao apt. O digest é o mesmo: imagem se endereça pelo conteúdo, então
+# `mirror.gcr.io/library/python@sha256:a2b8…` são os mesmos bytes que
+# `python@sha256:a2b8…`. Trocar de registro não troca a imagem.
+FROM mirror.gcr.io/library/python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 
 # --- dependências de sistema -------------------------------------------------
 # chromium  → renderiza assets/template.html e tira o screenshot da peça

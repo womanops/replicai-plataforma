@@ -51,6 +51,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Separado do build de propósito: quando o registro recusa — cota de
+      # quem puxa sem conta, imagem tirada do ar —, a falha some dentro de
+      # "construir a imagem" e parece defeito nosso. Levou meia hora para
+      # entender que onze segundos não dão nem para chegar ao apt.
+      - name: puxar a imagem base
+        run: |
+          base=$(awk '/^FROM /{print $2; exit}' infra/Dockerfile)
+          echo "imagem base: $base"
+          docker pull "$base"
+
       - name: construir a imagem
         run: docker build -f infra/Dockerfile -t replicai:prova .
 
