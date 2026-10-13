@@ -74,7 +74,14 @@ jobs:
       - name: por que a imagem não construiu
         if: failure()
         run: |
-          echo "::error title=o build parou aqui::$(tail -c 1800 /tmp/build.log | tr '\n' '↵' | sed 's/::/:/g')"
+          # duas anotações: o fim do log, e — quando a trava do Chromium é que
+          # parou — a listagem do apt, que é o número que conserta. Ela some
+          # no fim do log porque o BuildKit repete o comando inteiro depois
+          echo "::error title=o build parou aqui::$(tail -c 1500 /tmp/build.log | tr '\n' '↵' | sed 's/::/:/g')"
+          apt_diz=$(sed -n '/o que o apt tem/,/exit 1/p' /tmp/build.log | tr '\n' '↵' | sed 's/::/:/g')
+          if [ -n "$apt_diz" ]; then
+            echo "::error title=o apt desta imagem tem::${apt_diz}"
+          fi
 
       - name: a imagem leva a plataforma inteira
         # Sem montar nada: é o conteúdo da própria imagem que está em prova.
