@@ -193,7 +193,7 @@ desenhar a API do zero.
 
 ### O Chromium está preso, e por quê
 
-`infra/Dockerfile` fixa `chromium=150.0.7871.181-1~deb13u1` e a imagem base por
+`infra/Dockerfile` fixa `chromium=155.0.8059.39-1~deb13u1` e a imagem base por
 digest. Não é zelo de infraestrutura: **o Chromium é quem mede o texto.** O
 motor acha o corpo da fonte por busca binária perguntando ao navegador se a
 frase cabe na caixa. Outra versão, outra métrica, outro tamanho de texto em toda
@@ -203,10 +203,12 @@ Quando o Debian mexer na versão, o build falha com a instrução no log. É de
 propósito: atualizar é decisão. Para subir, troque `CHROMIUM_VERSAO`,
 reconstrua, e **olhe a peça de prova** antes de aceitar.
 
-E não é só "publicar mais nova": em 12/10/2026 o trixie **voltou atrás** do 154
-para o 150 no meio do dia, a imagem parou de construir e a esteira ficou
-vermelha com a suíte inteira verde. O número que vale é o que está em
-`deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.gz`.
+O número que vale é o **`Candidate` do apt**, e ele vem do `trixie-security`.
+O `trixie/main` carrega uma versão antiga que nem instalável é — o
+`chromium-common` dela é sobreposto pelo da segurança e o apt se recusa a
+misturar os dois. Olhar só o main dá o número errado, e deu: em 13/10/2026 a
+imagem ficou duas rodadas sem construir por causa disso. Para conferir de fora,
+`deb.debian.org/debian-security/dists/trixie-security/main/binary-amd64/Packages.xz`.
 
 As versões de Chromium, fontes e ffmpeg ficam gravadas em `/app-versoes.json` e
 aparecem em `/saude` → `desenhando_com`. É assim que se descobre que duas

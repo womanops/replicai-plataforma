@@ -30,12 +30,17 @@ FROM mirror.gcr.io/library/python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af4982
 # atualizar é decisão, não acidente. Para subir, troque o número abaixo e deixe
 # a esteira renderizar a peça de prova antes de confiar.
 #
-# 13/10/2026: a trava pegou, e não foi por publicação nova — foi o contrário.
-# O trixie tinha o 154.0.8037.92-1~deb13u1 e VOLTOU para o 150: entre as 15h44
-# e as 21h54 de 12/10 o pacote sumiu do repositório e o build parou. O número
-# abaixo é o que existe hoje, conferido em
-# deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.gz.
-ARG CHROMIUM_VERSAO=150.0.7871.181-1~deb13u1
+# 13/10/2026: a trava pegou — o trixie-security publicou o 155 e o 154 saiu do
+# ar entre as 15h44 e as 21h54 de 12/10.
+#
+# O número que vale é o `Candidate` do apt, e ele vem do **trixie-security**,
+# não do trixie/main: o main carrega um 150 antigo que nem instalável é, porque
+# o `chromium-common` dele é sobreposto pelo da segurança e o apt se recusa a
+# misturar os dois. Procurar só em `dists/trixie/main` leva ao número errado —
+# e levou: o 150 foi preso aqui e o build voltou a parar, com a mensagem certa
+# dizendo que a versão não existia. Para conferir de fora:
+#   deb.debian.org/debian-security/dists/trixie-security/main/binary-amd64/Packages.xz
+ARG CHROMIUM_VERSAO=155.0.8059.39-1~deb13u1
 
 RUN set -eux; \
     apt-get update; \
