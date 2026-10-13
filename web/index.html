@@ -269,6 +269,21 @@ header .sair:hover{color:var(--fg)}
 header .marca{height:24px;display:block;margin-right:2px}
 header .marca img{height:100%;display:block}
 
+/* ---------- as fontes da marca ---------- */
+.fontes{margin:18px 0 0;background:var(--painel);border:1px solid var(--linha);
+  border-radius:12px;padding:12px 14px}
+.fontes>.rot{display:block;font:500 10.5px var(--mono);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--mut)}
+.fontes .nota{margin:6px 0 10px;font-size:12px;color:var(--mut);line-height:1.45}
+.fontes .lista{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.fontes .lista:empty{display:none}
+.fontes .lista b{display:flex;align-items:center;gap:7px;font:500 11px var(--mono);
+  background:var(--painel2);border:1px solid var(--linha);border-radius:999px;
+  padding:5px 10px;color:var(--fg)}
+.fontes .lista button{background:none;border:0;color:var(--mut);cursor:pointer;
+  font-size:11px;padding:0;line-height:1}
+.fontes .lista button:hover{color:var(--err)}
+
 /* ---------- os três modos ---------- */
 .modos{margin:20px 0 0;border:1px solid var(--linha);border-radius:12px;overflow:hidden}
 .modos>.rot{display:block;font:500 10.5px var(--mono);letter-spacing:.12em;
@@ -502,6 +517,7 @@ header .saldo.apertado .fio i{background:var(--err)}
       </div>
     </div>
     <input type="file" id="arquivo" hidden accept="image/*,.pdf,.psd,.psb,application/octet-stream">
+    <input type="file" id="fonteArquivo2" hidden multiple accept=".ttf,.otf,.woff,.woff2">
 
     <div class="modos" role="radiogroup" aria-labelledby="rotModos">
       <span class="rot" id="rotModos">Como quer desdobrar</span>
@@ -516,6 +532,14 @@ header .saldo.apertado .fio i{background:var(--err)}
       <label class="modo"><input type="radio" name="modo" value="novo">
         <span><b>Adaptação de formato + Novos Textos</b>
         <small>Além do acima, uma chamada e um CTA novos entram no espaço que sobrou.</small></span></label>
+    </div>
+    <div class="fontes" id="fontes">
+      <span class="rot">Fontes da marca</span>
+      <p class="nota">O PSD diz qual fonte cada linha usa, mas não leva o arquivo dentro
+        dele. Com a fonte aqui, trocar um texto sai na mesma letra; sem ela, sai na letra
+        da casa.</p>
+      <div class="lista" id="listaFontes"></div>
+      <button class="secund" id="btnFonte" type="button">Enviar fonte</button>
     </div>
     <p class="travado" id="travaPsd" hidden>Foto e grafismo só se movem com PSD.
       PNG, JPEG e PDF chegam achatados: aí só dá para mover o que for escrito agora.</p>
@@ -563,7 +587,7 @@ header .saldo.apertado .fio i{background:var(--err)}
     <button class="secund" id="edFecha">Fechar</button>
     <button class="acao" id="edSalva">Atualizar a peça</button>
   </div>
-  <div class="palco"><div id="lona"></div></div>
+  <div class="palco" id="palco"><div id="lona"></div></div>
   <input type="file" id="fonteArquivo" hidden accept=".ttf,.otf,.woff,.woff2">
 </div>
 
@@ -1488,6 +1512,13 @@ function pintarLona(){
   lona.innerHTML = `<div class="ch" style="background-image:url('${fundo}')"></div>`
     + `<div class="veu"><div class="margem" style="left:${sv.left*k}px;top:${sv.top*k}px;`
     + `right:${sv.right*k}px;bottom:${sv.bottom*k}px"></div></div>`;
+  // clicar no vazio solta a seleção. Sem isto o elemento escolhido continua
+  // por cima de todos (ele sobe de camada para o manípulo ficar alcançável) e
+  // rouba o clique do vizinho: a sensação é de que tudo ficou selecionado
+  lona.onpointerdown = ev => {
+    if (ev.target.closest('.pe-el') || ed.sel === null) return;
+    ed.sel = null; pintarLona();
+  };
 
   for (const g of grupos()){
     const c = cerca(g.itens);
@@ -1616,7 +1647,45 @@ const casaFonte = (f, pedida) =>
 async function carregarFontes(){
   try { minhasFontes = (await (await fetch('/eu/fontes')).json()).fontes || []; }
   catch(e){}
+  pintarFontes();
 }
+
+function pintarFontes(){
+  const caixa = $('#listaFontes');
+  if (!caixa) return;
+  caixa.innerHTML = minhasFontes.map(f =>
+    `<b data-id="${f.id}">${f.familia} ${f.estilo || ''}`
+    + `<button type="button" title="Tirar da conta">✕</button></b>`).join('');
+  caixa.querySelectorAll('button').forEach(b => b.onclick = async () => {
+    const id = b.closest('b').dataset.id;
+    minhasFontes = minhasFontes.filter(f => f.id !== id);
+    pintarFontes();
+    try { await fetch('/eu/fontes/' + encodeURIComponent(id), { method: 'DELETE' }); }
+    catch(e){}
+  });
+}
+
+async function enviarFonte(arquivo){
+  const fd = new FormData(); fd.set('fonte', arquivo);
+  const r = await fetch('/eu/fontes', { method: 'POST', body: fd });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok){ aviso(d.detail || 'Não consegui ler esse arquivo como fonte.'); return null; }
+  minhasFontes = d.fontes || [];
+  pintarFontes();
+  aviso(`${d.fonte.familia} ${d.fonte.estilo} guardada: vale para todos os seus trabalhos.`, true);
+  return d.fonte;
+}
+
+$('#btnFonte').onclick = () => {
+  // o campo de fora, e não o do editor: o do editor vive dentro de uma caixa
+  // escondida, e `click()` em input dentro de `display:none` não abre nada
+  const campo = $('#fonteArquivo2');
+  campo.onchange = async ev => {
+    for (const f of ev.target.files) await enviarFonte(f);
+    campo.value = '';
+  };
+  campo.click();
+};
 
 function pedirFonte(familia){
   aviso(`Esta linha é ${familia}. Envie o arquivo dessa fonte para o texto sair `
@@ -1624,16 +1693,20 @@ function pedirFonte(familia){
   const campo = $('#fonteArquivo');
   campo.onchange = async ev => {
     const f = ev.target.files[0]; if (!f) return;
-    const fd = new FormData(); fd.set('fonte', f);
-    const r = await fetch('/eu/fontes', { method: 'POST', body: fd });
-    const d = await r.json();
-    if (!r.ok){ aviso(d.detail || 'Não consegui ler esse arquivo como fonte.'); return; }
-    minhasFontes = d.fontes || [];
-    aviso(`${d.fonte.familia} ${d.fonte.estilo} guardada. Atualize a peça.`, true);
+    if (await enviarFonte(f)) aviso('Fonte guardada. Atualize a peça para desenhar.', true);
     campo.value = '';
   };
   campo.click();
 }
+
+// e fora da lona também: a prancha é menor que a tela, e o clique no escuro
+// em volta é o jeito mais natural de dizer "nenhum"
+document.addEventListener('pointerdown', ev => {
+  if (!ed || $('#editor').classList.contains('hidden')) return;
+  if (ed.sel === null || ev.target.closest('.pe-el') || ev.target.closest('.topo')) return;
+  if (!ev.target.closest('#palco')) return;
+  ed.sel = null; pintarLona();
+});
 
 function tirarDaPeca(g){
   g.itens.forEach(i => ed.fora.add(i));

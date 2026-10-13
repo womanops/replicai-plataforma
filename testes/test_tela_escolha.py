@@ -270,3 +270,40 @@ class TestAjustarTextoEElemento:
     def test_o_modo_diz_o_que_ele_faz(self, tela):
         assert "Adaptação + Ajustes" in tela
         assert "ajustar a diagramação e os textos de cada" in tela
+
+
+class TestASelecaoSolta:
+    """"Ajustamos, clicamos fora da imagem e ela precisa sair do select, senão
+    fica tudo selecionado." O elemento escolhido sobe de camada para o manípulo
+    dele ficar alcançável — e, sem soltar, ele passa a roubar o clique do
+    vizinho inteiro."""
+
+    def test_clicar_no_vazio_da_prancha_solta(self, tela):
+        assert "lona.onpointerdown = ev => {" in tela
+        assert "if (ev.target.closest('.pe-el') || ed.sel === null) return;" in tela
+
+    def test_clicar_fora_da_prancha_tambem(self, tela):
+        """A prancha é menor que a tela: o escuro em volta é o lugar mais
+        natural de dizer "nenhum"."""
+        assert "if (!ev.target.closest('#palco')) return;" in tela
+
+
+class TestFontesDaMarcaNaTela:
+    def test_da_para_enviar_a_fonte_junto_da_arte(self, tela):
+        """Sem isso o único caminho era topar com o aviso no meio de um
+        ajuste."""
+        assert 'id="fontes"' in tela
+        assert "Fontes da marca" in tela
+        assert "$('#btnFonte').onclick" in tela
+
+    def test_o_painel_fica_do_lado_da_arte(self, tela):
+        assert antes(tela, 'id="zona"', 'id="fontes"')
+        assert antes(tela, 'id="fontes"', 'id="formatos"')
+
+    def test_a_lista_mostra_e_tira_o_que_ja_foi_enviado(self, tela):
+        assert "function pintarFontes()" in tela
+        assert "'/eu/fontes/' + encodeURIComponent(id), { method: 'DELETE' }" in tela
+
+    def test_o_campo_de_fora_nao_e_o_do_editor(self, tela):
+        """`click()` num input dentro de `display:none` não abre nada."""
+        assert "const campo = $('#fonteArquivo2');" in tela

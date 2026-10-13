@@ -691,3 +691,85 @@ class TestRascunhoEFinal:
         r = desdobrar(arte, ["ig-feed-1x1"], Serve(), tmp_path / "job",
                       leitor=lambda a: L(True, (0.47, 0.4, 0.46, 0.31), []))
         assert any("exportação final" in a for a in r.avisos["ig-feed-1x1"])
+
+
+class TestCorAbsurdaEDescartada:
+    """O generativo devolveu uma faixa magenta a 230 da paleta de um KV azul e
+    a peça foi entregue "com ressalva". Ninguém publica isso: entregar com
+    aviso é só empurrar o problema para quem está com pressa.
+
+    Daqui para cima o fundo generativo é jogado fora e o determinístico assume
+    — ele erra para o lado da arte, que é o lado certo de errar.
+    """
+
+    def _arte(self, tmp_path):
+        from PIL import Image
+        a = tmp_path / "arte.png"
+        Image.new("RGB", (1200, 1200), (0, 90, 200)).save(a)
+        return a
+
+    def _formato(self, w=1080, h=1920):
+        return {"id": "ig-stories", "w": w, "h": h,
+                "safe": {"top": 250, "bottom": 340, "left": 60, "right": 60}}
+
+    def test_a_faixa_magenta_nao_e_entregue(self, tmp_path, monkeypatch):
+        from PIL import Image
+
+        from api import fundo as pf
+
+        def generativo_ruim(base, ex, *a, **k):
+            """O que o serviço devolveu de verdade: a arte no meio, magenta em
+            volta."""
+            tela = Image.new("RGB", (base.width + ex["left"] + ex["right"],
+                                     base.height + ex["top"] + ex["bottom"]),
+                             (230, 0, 140))
+            tela.paste(base, (ex["left"], ex["top"]))
+            return tela, "", 1
+
+        monkeypatch.setattr(pf, "_melhor_continuacao", generativo_ruim)
+        arte = self._arte(tmp_path)
+        info = pf.preparar(arte, self._formato(), [0, 0, 1200, 1200],
+                           tmp_path / "fundo-ig-stories.png", modo="outpaint")
+        assert info["modo"] == "stretch", "o fundo magenta foi entregue"
+        assert "descartado" in info["caiu_para"]
+
+    def test_o_que_sobrou_e_a_cor_da_arte(self, tmp_path, monkeypatch):
+        import numpy as np
+        from PIL import Image
+
+        from api import fundo as pf
+        monkeypatch.setattr(pf, "_melhor_continuacao", lambda base, ex, *a, **k: (
+            (lambda tela: (tela.paste(base, (ex["left"], ex["top"])), tela)[1])(
+                Image.new("RGB", (base.width + ex["left"] + ex["right"],
+                                  base.height + ex["top"] + ex["bottom"]), (230, 0, 140))),
+            "", 1))
+        arte = self._arte(tmp_path)
+        pf.preparar(arte, self._formato(), [0, 0, 1200, 1200],
+                    tmp_path / "f.png", modo="outpaint")
+        with Image.open(tmp_path / "f.png") as im:
+            topo = np.asarray(im.convert("RGB").crop((0, 0, im.width, 40)), dtype=float)
+        assert topo[..., 2].mean() > topo[..., 0].mean(), "o topo não ficou azul"
+
+    def test_cor_so_um_pouco_fora_segue_entregue_com_aviso(self, tmp_path, monkeypatch):
+        """A régua de recusa é alta de propósito: fundo generativo quase certo
+        continua valendo mais do que esticar a arte."""
+        from PIL import Image
+
+        from api import fundo as pf
+
+        def quase(base, ex, *a, **k):
+            tela = Image.new("RGB", (base.width + ex["left"] + ex["right"],
+                                     base.height + ex["top"] + ex["bottom"]),
+                             (0, 120, 160))      # azul vizinho, não outra peça
+            tela.paste(base, (ex["left"], ex["top"]))
+            return tela, "", 1
+
+        monkeypatch.setattr(pf, "_melhor_continuacao", quase)
+        info = pf.preparar(self._arte(tmp_path), self._formato(), [0, 0, 1200, 1200],
+                           tmp_path / "f.png", modo="outpaint")
+        assert info["modo"] == "outpaint"
+
+    def test_a_regua_do_aviso_continua_valendo(self, tmp_path):
+        """Recusar é o segundo degrau; o primeiro, de avisar, não sai."""
+        from api.fundo import COR_ESTRANHA, COR_RECUSADA
+        assert COR_RECUSADA > COR_ESTRANHA

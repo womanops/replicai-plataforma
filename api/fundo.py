@@ -261,6 +261,25 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
                   # nenhum e passava, mesmo sendo magenta num KV azul
                   + cor_estranha(destino, plano["base_box"], img))
 
+    # cor absurda não é ressalva: o generativo devolveu faixa magenta num KV
+    # azul e a peça saiu "com ressalva" — ninguém publica isso, e entregar é só
+    # empurrar o problema. Aqui o fundo generativo é descartado e o
+    # determinístico assume, que erra para o lado da arte
+    if modo == "outpaint" and any(ex.values()):
+        pior = max(distancias_de_cor(destino, plano["base_box"], img).values(),
+                   default=0.0)
+        if pior >= COR_RECUSADA:
+            tela = base
+            for lado in ("left", "right", "top", "bottom"):
+                tela = _stretch_side(tela, lado, ex[lado])
+            final = tela.resize((w, h), Image.Resampling.LANCZOS) if tela.size != (w, h) else tela
+            final.save(destino)
+            modo = "stretch"
+            caiu_para = (f"o fundo generativo saiu numa cor que não existe na arte "
+                         f"(distância {pior:.0f} da paleta dela) e foi descartado")
+            avisos = (inventou_estrutura(destino, plano["base_box"])
+                      + cor_estranha(destino, plano["base_box"], img))
+
     # a assinatura guarda o plano e se a conferência passou: é com ela que a
     # exportação final sabe o que reaproveitar e o que precisa refazer
     destino.with_suffix(destino.suffix + ".origem.json").write_text(
@@ -376,6 +395,13 @@ def inventou_estrutura(caminho, base_box) -> list[str]:
 # generativo devolveu num KV azul ficou em 193.
 COR_ESTRANHA = 45
 
+# acima disto não é ressalva, é outra peça. O generativo devolveu uma faixa
+# magenta a 230 da paleta de um KV azul, e a peça foi entregue "com ressalva":
+# ninguém publica isso, então entregar é só empurrar o problema. Daqui para
+# cima o fundo generativo é jogado fora e o determinístico assume — ele erra
+# para o lado da arte, que é o lado certo de errar.
+COR_RECUSADA = 90
+
 
 def _paleta(img, quantas: int = 48):
     """As cores que a arte usa, poucas e representativas."""
@@ -401,8 +427,8 @@ def _longe_da_paleta(cores, paleta) -> float:
     return float(np.median(d.min(axis=1)))
 
 
-def cor_estranha(caminho, base_box, arte=None) -> list[str]:
-    """A faixa continuada usa cor que não existe na arte?
+def distancias_de_cor(caminho, base_box, arte=None) -> dict[str, float]:
+    """Quanto cada faixa continuada se afasta da paleta da arte.
 
     `inventou_estrutura` pergunta se apareceu desenho demais. Esta pergunta é a
     oposta e faltava: um bloco chapado não inventa traço nenhum e passa — mesmo
@@ -414,30 +440,34 @@ def cor_estranha(caminho, base_box, arte=None) -> list[str]:
 
     caminho = Path(caminho)
     if not caminho.exists() or not base_box:
-        return []
+        return {}
     with Image.open(caminho) as im:
         peca = im.convert("RGB")
         W, H = peca.size
         dentro = peca.crop(tuple(int(v) for v in base_box))
         paleta = _paleta(arte if arte is not None else dentro)
         if paleta is None or not len(paleta):
-            return []
+            return {}
         x0, y0, x1, y1 = (int(v) for v in base_box)
         faixas = {"topo": (0, 0, W, y0), "rodapé": (0, y1, W, H),
                   "esquerda": (0, y0, x0, y1), "direita": (x1, y0, W, y1)}
-        avisos = []
+        achadas = {}
         for nome, caixa in faixas.items():
             if caixa[2] - caixa[0] < 8 or caixa[3] - caixa[1] < 8:
                 continue
             amostra = peca.crop(caixa).resize((24, 24), Image.Resampling.BILINEAR)
             cores = np.asarray(amostra, dtype=float).reshape(-1, 3)
-            d = _longe_da_paleta(cores, paleta)
-            if d >= COR_ESTRANHA:
-                avisos.append(
-                    f"a continuação do fundo no {nome} saiu numa cor que não existe na "
-                    f"arte (distância {d:.0f} da paleta dela). Isso não é continuação, "
-                    f"é outra peça: vale rodar de novo")
-        return avisos
+            achadas[nome] = _longe_da_paleta(cores, paleta)
+        return achadas
+
+
+def cor_estranha(caminho, base_box, arte=None) -> list[str]:
+    """O aviso de cada faixa que saiu fora da paleta da arte."""
+    return [f"a continuação do fundo no {nome} saiu numa cor que não existe na "
+            f"arte (distância {d:.0f} da paleta dela). Isso não é continuação, "
+            f"é outra peça: vale rodar de novo"
+            for nome, d in distancias_de_cor(caminho, base_box, arte).items()
+            if d >= COR_ESTRANHA]
 
 
 def _ja_feito(destino, plano: dict, modo: str) -> dict | None:

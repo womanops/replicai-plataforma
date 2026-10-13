@@ -363,9 +363,11 @@ class TestCorDeFora:
         peca.save(tmp_path / "f.png")
         assert cor_estranha(tmp_path / "f.png", [0, 0, 200, 400], arte) == []
 
-    def test_a_esteira_avisa_em_vez_de_entregar_calada(self, tmp_path, monkeypatch):
-        """O aviso tem que chegar na entrega: foi a falta dele que deixou a
-        peça magenta passar por boa."""
+    def test_a_esteira_nao_entrega_a_faixa_magenta(self, tmp_path, monkeypatch):
+        """Primeiro ela entregava calada. Depois passou a entregar com aviso —
+        e ninguém publica um KV azul com tarja magenta, então entregar com
+        ressalva é empurrar o problema para quem está com pressa. Agora o
+        generativo absurdo é descartado e o determinístico assume."""
         from api import fundo as pf
         from motor.replica import formato_by_id
         arte = tmp_path / "arte.png"
@@ -385,12 +387,12 @@ class TestCorDeFora:
         monkeypatch.setattr(pf, "_continuar", magenta)
         info = pf.preparar(arte, formato_by_id("ig-stories"), None,
                            tmp_path / "fundo.png", modo="outpaint")
-        assert info["avisos"], "a faixa magenta saiu sem aviso nenhum"
-        assert any("não existe na arte" in a for a in info["avisos"])
-        # e não pode ser reaproveitado na exportação final
+        assert info["modo"] == "stretch", "a faixa magenta foi entregue"
+        assert "descartado" in info["caiu_para"]
+        # e o que ficou em disco é o determinístico, que pode ser reaproveitado
         import json as _j
         assinatura = _j.loads((tmp_path / "fundo.png.origem.json").read_text())
-        assert assinatura["limpo"] is False
+        assert assinatura["modo"] == "stretch"
 
 
 class TestOPacoteSoLevaAsPecas:
