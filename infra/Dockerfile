@@ -22,7 +22,13 @@ FROM python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6
 # Quando o Debian publicar outra versão, o build falha aqui. É de propósito:
 # atualizar é decisão, não acidente. Para subir, troque o número abaixo e deixe
 # a esteira renderizar a peça de prova antes de confiar.
-ARG CHROMIUM_VERSAO=154.0.8037.92-1~deb13u1
+#
+# 13/10/2026: a trava pegou, e não foi por publicação nova — foi o contrário.
+# O trixie tinha o 154.0.8037.92-1~deb13u1 e VOLTOU para o 150: entre as 15h44
+# e as 21h54 de 12/10 o pacote sumiu do repositório e o build parou. O número
+# abaixo é o que existe hoje, conferido em
+# deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.gz.
+ARG CHROMIUM_VERSAO=150.0.7871.181-1~deb13u1
 
 RUN set -eux; \
     apt-get update; \
