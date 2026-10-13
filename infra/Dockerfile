@@ -41,9 +41,11 @@ RUN set -eux; \
     apt-get update; \
     if ! apt-get install -y --no-install-recommends "chromium=${CHROMIUM_VERSAO}"; then \
       echo "=== o Chromium ${CHROMIUM_VERSAO} não está mais no repositório ==="; \
+      echo "Troque CHROMIUM_VERSAO para a versão que o apt listar abaixo,"; \
+      echo "reconstrua, e confira a peça de prova antes de aceitar: o texto"; \
+      echo "pode ter mudado de tamanho."; \
+      echo "=== o que o apt tem, agora, nesta imagem:"; \
       apt-cache policy chromium; \
-      echo "Troque CHROMIUM_VERSAO para a versão acima, reconstrua, e confira a"; \
-      echo "peça de prova antes de aceitar: o texto pode ter mudado de tamanho."; \
       exit 1; \
     fi; \
     apt-get install -y --no-install-recommends ffmpeg curl ca-certificates gnupg \
