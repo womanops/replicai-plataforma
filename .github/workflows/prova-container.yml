@@ -108,12 +108,24 @@ jobs:
           from api.contas import segredo_configurado
           print("api ok; anthropic", anthropic.__version__)'
 
+      # O corpo do texto é medido pelo navegador: é o número que muda quando o
+      # Chromium muda de versão, e é o motivo de a versão dele ser presa. Sai
+      # como anotação porque o log pede login — e conferir tipografia só com
+      # login é conferência que não acontece.
       - name: renderizar uma peça dentro do contêiner
         # O repositório entra montado em /app para o contêiner enxergar testes/
         # e para a peça gerada sobrar aqui fora, onde o passo seguinte a guarda.
         run: |
+          set -o pipefail
           docker run --rm -v "$PWD:/app" -w /app replicai:prova \
-            python testes/prova_container.py
+            python testes/prova_container.py 2>&1 | tee /tmp/prova.log
+
+      - name: a tipografia que o navegador mediu
+        if: always()
+        run: |
+          medido=$(grep -E "desenhando com|corpo [0-9]+px" /tmp/prova.log 2>/dev/null \
+                   | tr '\n' '↵' | sed 's/::/:/g')
+          [ -n "$medido" ] && echo "::notice title=tipografia medida::${medido}" || true
 
       - name: guardar a peça gerada
         if: always()
