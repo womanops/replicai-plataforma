@@ -62,7 +62,19 @@ jobs:
           docker pull "$base"
 
       - name: construir a imagem
-        run: docker build -f infra/Dockerfile -t replicai:prova .
+        run: |
+          set -o pipefail
+          docker build -f infra/Dockerfile -t replicai:prova . 2>&1 | tee /tmp/build.log
+
+      # O log do build só se lê entrando na conta do GitHub. Quem olha de fora
+      # — ou de outra máquina, ou pelo celular — vê "exit code 1" e mais nada,
+      # e aí o conserto vira adivinhação: aconteceu, e custou dois palpites
+      # errados. O fim do log vira anotação, que aparece na página do run e
+      # sai na API pública.
+      - name: por que a imagem não construiu
+        if: failure()
+        run: |
+          echo "::error title=o build parou aqui::$(tail -c 1800 /tmp/build.log | tr '\n' '↵' | sed 's/::/:/g')"
 
       - name: a imagem leva a plataforma inteira
         # Sem montar nada: é o conteúdo da própria imagem que está em prova.
