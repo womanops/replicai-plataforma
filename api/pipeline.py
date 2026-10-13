@@ -310,6 +310,12 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
         avisar("compondo", i, fid)
         for a in _texto_novo(peca, f, pasta, leitura, brief, compositor, info):
             r.avisos.setdefault(fid, []).append(a)
+        # o que o modelo deixou de fora chega à tela nos dois caminhos. Aqui
+        # não chegava nem ao estado do trabalho: ficava só no JSON da montagem
+        if peca.get("descartados"):
+            r.descartados[fid] = peca["descartados"]
+        for a in ficou_de_fora(peca, compositor, brief):
+            r.avisos.setdefault(fid, []).append(a)
         if final:
             for a in manter_a_mao(peca, pasta, fid):
                 r.avisos.setdefault(fid, []).append(a)
@@ -332,6 +338,56 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
             continue
         r.prontas[fid] = destino
         avisar("pronta", i + 1, fid)
+
+
+def _letras(texto: str) -> str:
+    """Só as letras e os números, sem acento nem caixa: é o que permite dizer
+    se a frase pedida está na peça sem tropeçar em pontuação."""
+    import unicodedata
+    cru = unicodedata.normalize("NFD", texto or "").lower()
+    return "".join(c for c in cru if c.isalnum())
+
+
+def _porque(descartados: dict, pedido: str) -> str:
+    """A explicação do modelo para ter deixado `pedido` de fora."""
+    palavras = [w for w in (pedido or "").split() if len(w) >= 4]
+    chave = _letras(max(palavras, key=len)) if palavras else ""
+    if not chave:
+        return ""
+    for o_que, por_que in (descartados or {}).items():
+        if chave in _letras(f"{o_que} {por_que}"):
+            return por_que
+    return ""
+
+
+def ficou_de_fora(peca: dict, compositor, brief: str) -> list[str]:
+    """O que a pessoa escreveu e a peça não trouxe.
+
+    O modelo explica em `descartados` cada coisa que deixou de fora, e essa
+    explicação é metade da entrega. Ela ficava gravada no JSON da montagem e
+    não chegava a lugar nenhum: a peça saiu com "Chegamos a Porto Belo", que é
+    o que está impresso na arte, enquanto a chamada pedida dizia "São Paulo" —
+    e o pedido de tirar o mascote nem podia ser atendido por aqui. Nada disso
+    apareceu na tela. Entregar diferente do que foi pedido sem dizer é o pior
+    jeito de errar: parece que funcionou.
+    """
+    descartados = peca.get("descartados") or {}
+    escrito = " ".join(_letras(e.get("texto") or "")
+                       for e in peca.get("elementos", []))
+    avisos = []
+    for rotulo, pedido in (("A chamada que você escreveu", getattr(compositor, "headline", "")),
+                           ("O botão que você escreveu", getattr(compositor, "cta", ""))):
+        pedido = (pedido or "").strip()
+        if not pedido or _letras(pedido) in escrito:
+            continue
+        porque = _porque(descartados, pedido)
+        avisos.append(f"{rotulo} — \"{pedido}\" — não entrou na peça"
+                      + (f": {porque}" if porque else "."))
+    if (brief or "").strip():
+        porque = _porque(descartados, brief)
+        if porque:
+            avisos.append(f"O ajuste que você pediu não foi aplicado: {porque}")
+    return avisos
 
 
 def _texto_novo(peca: dict, formato: dict, pasta: Path, leitura, brief: str,
@@ -492,6 +548,8 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
         # material para a headline. Guardar e não mostrar foi o erro antigo.
         if peca.get("descartados"):
             r.descartados[fid] = peca["descartados"]
+        for a in ficou_de_fora(peca, compositor, brief):
+            r.avisos.setdefault(fid, []).append(a)
 
         for a in tirar_imagem_fantasma(peca, pasta):
             r.avisos.setdefault(fid, []).append(a)

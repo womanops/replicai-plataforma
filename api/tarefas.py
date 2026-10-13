@@ -107,6 +107,28 @@ def _apresentar(conta: str, job: str, prontas: list[str]) -> str:
     return ""
 
 
+def previas(conta: str, job: str, arte: str) -> None:
+    """Compõe a prévia de cada prancheta de um PSD que tem várias.
+
+    Vai para a fila em vez de entrar na resposta do envio: a lista de
+    pranchetas tem que aparecer na hora, e as imagens chegam atrás, uma por
+    uma. São segundos por prancheta, contra os minutos da extração.
+    """
+    from api import psd
+    try:
+        feitas = psd.previa_das_pranchetas(Path(arte), trabalhos.pasta_do(conta, job))
+    except Exception:
+        return                        # sem prévia a escolha ainda acontece
+    estado = trabalhos.ler(conta, job) or {}
+    lista = estado.get("pranchetas") or []
+    por_nome = {f["nome"]: f["previa"] for f in feitas}
+    # pelo nome, e não pela ordem: se a pessoa já escolheu, o estado mudou
+    # embaixo e sobrescrever a lista inteira apagaria a escolha
+    trabalhos.gravar(conta, job, {"pranchetas": [
+        {**p, "previa": por_nome.get(p.get("nome"), p.get("previa", ""))}
+        for p in lista]})
+
+
 def processar(conta: str, job: str, arte: str, formatos: list[str], headline: str,
               cta: str, brief: str, prancheta: str = "", final: bool = False,
               modo: str = MODO_PADRAO) -> None:

@@ -22,8 +22,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 
 from api import ambiente, cobranca, contas, trabalhos, uso
 from api.pipeline import MARCA_DA_MAO
-from api.tarefas import (MODOS, MODO_PADRAO, TEXTO_NOVO, processar, processar_video,
-                         redesenhar)
+from api.tarefas import (MODOS, MODO_PADRAO, TEXTO_NOVO, previas, processar,
+                         processar_video, redesenhar)
 from api.fila import FILA_VIDEO, fila_do_ambiente
 from motor.replica import formato_by_id, load_formatos
 
@@ -128,6 +128,59 @@ def sair():
 @app.get("/eu")
 def eu(c: contas.Conta = Depends(conta_atual)):
     return c.em_json()
+
+
+@app.get("/eu/medidas")
+def minhas_medidas(c: contas.Conta = Depends(conta_atual)):
+    """As medidas fora do catálogo que a pessoa já usou.
+
+    Elas não mudam nada em como a peça é feita — o motor resolve qualquer
+    `livre-LARGxALT`. O que elas evitam é digitar a mesma medida toda vez.
+    """
+    return {"medidas": c.medidas}
+
+
+@app.post("/eu/medidas", status_code=201)
+def guardar_medida(largura: int = Form(...), altura: int = Form(...),
+                   nome: str = Form(""), c: contas.Conta = Depends(conta_atual)):
+    try:
+        return {"medidas": contas.guardar_medida(c, largura, altura, nome)}
+    except contas.ContaInvalida as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/eu/medidas/{ident}")
+def esquecer_medida(ident: str, c: contas.Conta = Depends(conta_atual)):
+    return {"medidas": contas.esquecer_medida(c, ident)}
+
+
+@app.get("/eu/fontes")
+def minhas_fontes(c: contas.Conta = Depends(conta_atual)):
+    """As fontes da marca que a conta já enviou."""
+    return {"fontes": c.em_json()["fontes"]}
+
+
+@app.post("/eu/fontes", status_code=201)
+async def guardar_fonte(fonte: UploadFile = File(...),
+                        c: contas.Conta = Depends(conta_atual)):
+    """Guarda um arquivo de fonte na conta.
+
+    É o que permite trocar o texto de uma peça do PSD sem trocar a letra: o
+    PSD diz qual fonte a linha usa, mas não leva o arquivo dentro dele.
+    """
+    dados = await fonte.read()
+    try:
+        item = contas.guardar_fonte(c, fonte.filename or "", dados)
+    except contas.ContaInvalida as e:
+        raise HTTPException(400, str(e))
+    return {"fonte": {k: item[k] for k in ("id", "familia", "estilo", "nome")},
+            "fontes": c.em_json()["fontes"]}
+
+
+@app.delete("/eu/fontes/{ident}")
+def esquecer_fonte(ident: str, c: contas.Conta = Depends(conta_atual)):
+    contas.esquecer_fonte(c, ident)
+    return {"fontes": c.em_json()["fontes"]}
 
 
 @app.post("/eu/chaves", status_code=201)
@@ -274,8 +327,25 @@ def saude():
 
 @app.get("/presets")
 def presets():
+    """Os presets com nome, descrição e o exemplo em vídeo de cada um.
+
+    Escolher movimento por uma palavra solta é adivinhar: o exemplo mostra o
+    que vai acontecer com a peça antes de gastar um render em cada formato.
+    """
     from api import animacao
-    return {"presets": list(animacao.PRESETS), "padrao": animacao.PRESET_PADRAO,
+    lista = []
+    for pid in animacao.PRESETS:
+        sobre = animacao.SOBRE.get(pid, {})
+        # WebP animado, e não mp4: vídeo em elemento criado por script fica
+        # parado quando o navegador exige gesto para tocar, e um exemplo de
+        # movimento congelado não explica nada. Imagem sempre anda
+        amostra = WEB / "assets" / f"exemplo-{pid}.webp"
+        lista.append({"id": pid, "nome": sobre.get("nome", pid),
+                      "diz": sobre.get("diz", ""),
+                      # sem o arquivo, a tela mostra só o texto: prometer um
+                      # vídeo que não abre é pior do que não prometer
+                      "exemplo": f"/assets/{amostra.name}" if amostra.exists() else None})
+    return {"presets": lista, "padrao": animacao.PRESET_PADRAO,
             "disponivel": animacao.instalado()}
 
 
@@ -347,6 +417,11 @@ async def criar(
                      for p in achadas]
             trabalhos.gravar(c.id, job, {**comum, "status": "escolha a prancheta",
                                    "pranchetas": lista})
+            # a prévia de cada prancheta vai para a fila: a lista aparece na
+            # hora e as imagens chegam atrás. A miniatura embutida no PSD tem
+            # 256 px para o documento inteiro — recortada numa prancheta, não
+            # dá para reconhecer qual peça é
+            FILA.enfileirar(previas, c.id, job, str(destino))
             # 200, e não o 202 da rota: nada entrou na fila, o trabalho está
             # parado esperando uma escolha
             return JSONResponse(status_code=200, content={
@@ -470,6 +545,85 @@ def finalizar(job: str, c: contas.Conta = Depends(conta_atual)):
 AJUSTAVEL = {"box", "texto", "align", "valign", "cor", "peso", "min", "max",
              "lineHeight", "opacidade"}
 
+# a família que o trabalho declara em `fontes`. Quem desenha é o navegador, e
+# ele só conhece a que foi copiada para a pasta do trabalho
+FAMILIA_DO_TRABALHO = "PecaSans"
+
+
+def _cor_da_linha(caminhos: list[Path]) -> str:
+    """A cor da linha, pela letra que tem mais tinta.
+
+    Não é a média: em "A PORTO BELO!" o A é branco e o resto azul-escuro, e a
+    média dos dois dá um azul lavado que não existe na peça. A letra de maior
+    área manda, que é o que o olho lê como a cor da linha.
+    """
+    from PIL import Image
+    melhor, quanto = "", -1
+    for caminho in caminhos:
+        try:
+            with Image.open(caminho) as im:
+                px = [p for p in im.convert("RGBA").getdata() if p[3] > 128]
+        except Exception:
+            continue
+        if len(px) <= quanto:
+            continue
+        quanto = len(px)
+        n = len(px)
+        melhor = "#%02X%02X%02X" % (sum(p[0] for p in px) // n,
+                                    sum(p[1] for p in px) // n,
+                                    sum(p[2] for p in px) // n)
+    return melhor or "#FFFFFF"
+
+
+def _fonte_da_linha(conta: contas.Conta, base: dict, pasta: Path) -> tuple[str, str]:
+    """A fonte em que a linha vai ser escrita, e o que avisar sobre ela.
+
+    O PSD diz qual fonte a linha usa — "FuturaICG-Bold" — mas não leva o
+    arquivo dentro. Se a conta já enviou essa fonte, ela é copiada para o
+    trabalho e a troca sai na MESMA letra. Se não, o texto sai na letra da
+    casa, e isso tem que ser dito: declarar uma família sem ter o arquivo faz
+    o navegador cair numa fonte do sistema e a peça sai com outra tipografia,
+    calada. É o erro mais difícil de ver no olho.
+    """
+    pedida = (base.get("fonte_mae") or "").strip()
+    if not pedida:
+        return FAMILIA_DO_TRABALHO, ""
+    achada = contas.fonte_de(conta, pedida)
+    if not achada:
+        return (FAMILIA_DO_TRABALHO,
+                f"esta linha é {pedida}, e essa fonte não está na sua conta: o texto "
+                f"novo saiu na letra da casa. Envie o arquivo dela em Fontes da marca "
+                f"e troque de novo para sair igual")
+    origem = contas.pasta_das_fontes(conta) / achada["nome"]
+    destino = Path(pasta) / achada["nome"]
+    if not destino.exists():
+        shutil.copy2(origem, destino)
+    return pedida, ""
+
+
+def _virar_texto(base: dict, pasta: Path, texto: str, familia: str,
+                 irmas: list[dict] | None = None) -> dict:
+    """Troca um recorte de letra do PSD por texto de verdade.
+
+    A linha da arte chega como uma imagem por letra: "a Porto Belo!" são onze
+    PNGs recortados do arquivo. Para trocar a cidade não dá para editar PNG —
+    o jeito é desenhar a frase nova no lugar da linha inteira, com a cor que a
+    linha tinha e a fonte do trabalho.
+
+    A letra MUDA de desenho: a fonte da marca não vem dentro do PSD. É por
+    isso que a tela avisa antes, e não depois.
+    """
+    caixa = base.get("box") or {}
+    alto = int(caixa.get("h") or 40)
+    recortes = [pasta / e["src"] for e in (irmas or [base]) if e.get("src")]
+    return {"tipo": "texto", "papel": base.get("papel") or "apoio",
+            "camada": base.get("camada"), "texto": texto,
+            "box": caixa, "fonte": familia, "peso": 600,
+            "cor": _cor_da_linha(recortes),
+            "min": max(8, round(alto * 0.35)), "max": max(10, alto),
+            "lineHeight": 1.05, "align": "left", "valign": "middle",
+            "trocado": True}
+
 
 def _peca_do(conta: str, job: str, formato: str) -> Path:
     if not formato_by_id(formato):
@@ -516,7 +670,7 @@ async def ajustar_peca(job: str, formato: str, request: Request,
 
     peca = json.loads(arq.read_text(encoding="utf-8"))
     antigos = peca.get("elementos", [])
-    novos = []
+    novos, avisos, fontes_novas = [], [], {}
     for e in pedidos:
         if not isinstance(e, dict):
             raise HTTPException(422, "cada elemento é um objeto")
@@ -525,8 +679,37 @@ async def ajustar_peca(job: str, formato: str, request: Request,
             raise HTTPException(422, "cada elemento precisa do índice `i` que veio na peça")
         base = dict(antigos[i])
         base.update({k: v for k, v in e.items() if k in AJUSTAVEL})
+        # trocar o texto de uma linha que veio do PSD: ela é uma imagem por
+        # letra, então o que acontece é a linha inteira virar texto desenhado.
+        # `src` continua fora do que a tela manda — quem decide o arquivo é o
+        # servidor, pelo elemento que já estava gravado
+        if e.get("tipografar") and base.get("tipo") == "imagem":
+            # as outras letras da mesma linha dizem a cor dela, e elas não
+            # voltam no pedido: quem as tem é a peça gravada
+            irmas = [a for a in antigos
+                     if a.get("camada") and a.get("camada") == base.get("camada")]
+            pasta_job = trabalhos.pasta_do(c.id, job)
+            familia, aviso = _fonte_da_linha(c, base, pasta_job)
+            if aviso:
+                avisos.append(aviso)
+            base = _virar_texto(base, pasta_job, str(e.get("texto") or ""),
+                                familia, irmas)
+            if familia != FAMILIA_DO_TRABALHO:
+                arq_fonte = contas.fonte_de(c, familia)
+                fontes_novas[familia] = {"familia": familia,
+                                         "arquivo": arq_fonte["nome"],
+                                         "peso": "100 900"}
         novos.append(base)
     peca["elementos"] = novos
+    if any(e.get("trocado") for e in novos):
+        from api.pipeline import _fonte_do_trabalho
+        declaradas = {f.get("familia"): f for f in (peca.get("fontes") or [])}
+        for f in _fonte_do_trabalho(trabalhos.pasta_do(c.id, job)):
+            declaradas.setdefault(f["familia"], f)
+        # a fonte da marca entra declarada COM arquivo: família declarada sem
+        # arquivo é o navegador caindo numa fonte do sistema sem avisar
+        declaradas.update(fontes_novas)
+        peca["fontes"] = list(declaradas.values())
     # a marca é o que faz a exportação final devolver esta montagem em vez de
     # recompor por cima dela
     via = peca.get("via") or ""
@@ -536,7 +719,7 @@ async def ajustar_peca(job: str, formato: str, request: Request,
     trabalhos.gravar(c.id, job, {"ajuste": {"status": "na fila", "formato": formato}})
     trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
         redesenhar, c.id, job, formato)})
-    return {"job": job, "formato": formato, "ajuste": "na fila"}
+    return {"job": job, "formato": formato, "ajuste": "na fila", "avisos": avisos}
 
 
 @app.get("/jobs/{job}")

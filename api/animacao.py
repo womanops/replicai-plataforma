@@ -23,6 +23,33 @@ VIDEO = RAIZ / "video"
 
 PRESETS = ("editorial", "lettering", "energia", "seco")
 PRESET_PADRAO = "editorial"
+
+# O que cada um faz, na língua de quem escolhe. A tela mostrava "seco",
+# "energia", "editorial", "lettering" e mais nada: quatro palavras soltas que
+# não dizem o que vai acontecer com a peça. O nome de exibição é o mesmo que
+# está em `video/src/peca/movimento.ts`, e um teste confere que não divergem.
+SOBRE = {
+    "editorial": {
+        "nome": "Editorial",
+        "diz": "Zoom lento no fundo e o texto aparecendo letra a letra, saindo "
+               "de desfoque. Para peça em que a imagem é a protagonista.",
+    },
+    "lettering": {
+        "nome": "Lettering",
+        "diz": "Cada letra com movimento próprio: gira, cresce e assenta "
+               "passando do ponto. É animação de letra, não revelação.",
+    },
+    "energia": {
+        "nome": "Impacto",
+        "diz": "Palavra por palavra, com estalo de escala. A figura chega com "
+               "peso, passa do ponto e volta.",
+    },
+    "seco": {
+        "nome": "Corte",
+        "diz": "A linha sobe por trás de um corte duro, sem desfoque, e acaba "
+               "em menos de um segundo. É a de banner e formato pequeno.",
+    },
+}
 SEGUNDOS_PADRAO = 5.0
 
 # cada formato vira um render do Chrome: 9 minutos cobre uma peça grande sem

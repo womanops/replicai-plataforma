@@ -104,6 +104,58 @@ class TestPranchetas:
         assert Prancheta("x", 0, 0, 1920, 1080).proporcao == pytest.approx(1.78, abs=0.01)
 
 
+class TestPreviaDasPranchetas:
+    """A tela recortava a MINIATURA embutida do PSD — 256 px para o documento
+    inteiro — e mostrava isso como prévia de cada prancheta. Num arquivo de
+    seis, a pessoa escolhia entre seis borrões azuis, e escolher errado é
+    refazer tudo."""
+
+    def test_escreve_uma_previa_por_prancheta(self, arquivo, tmp_path):
+        from api.psd import previa_das_pranchetas
+        feitas = previa_das_pranchetas(arquivo, tmp_path / "saida")
+        assert [f["previa"] for f in feitas] == ["prancheta-0.png"]
+        assert (tmp_path / "saida" / "prancheta-0.png").exists()
+
+    def test_tem_resolucao_de_ler(self, arquivo, tmp_path):
+        """Não é a miniatura de 256 px: é composta do arquivo, no tamanho
+        nativo da prancheta até o teto."""
+        from api.psd import previa_das_pranchetas
+        previa_das_pranchetas(arquivo, tmp_path / "saida", largura=720)
+        with Image.open(tmp_path / "saida" / "prancheta-0.png") as im:
+            assert im.width == 400          # a prancheta é menor que o teto
+            assert im.size == (400, 300)
+
+    def test_nao_estica_prancheta_pequena(self, arquivo, tmp_path):
+        from api.psd import previa_das_pranchetas
+        previa_das_pranchetas(arquivo, tmp_path / "saida", largura=200)
+        with Image.open(tmp_path / "saida" / "prancheta-0.png") as im:
+            assert im.width == 200
+
+    def test_e_a_peca_composta_e_nao_um_recorte_da_miniatura(self, arquivo, tmp_path):
+        """A prévia TEM que ser o composite da prancheta. A outra rota — a
+        única que existia — era recortar a miniatura embutida, que é o mesmo
+        desenho a um vigésimo da resolução."""
+        import numpy as np
+        from psd_tools import PSDImage
+
+        from api.psd import previa_das_pranchetas
+        previa_das_pranchetas(arquivo, tmp_path / "saida")
+        feita = np.asarray(
+            Image.open(tmp_path / "saida" / "prancheta-0.png").convert("RGB"), dtype=float)
+        certo = np.asarray(PSDImage.open(arquivo).composite().convert("RGB"), dtype=float)
+        assert feita.shape == certo.shape
+        assert np.abs(feita - certo).mean() < 1.0
+
+    def test_arquivo_que_nao_compoe_nao_derruba_o_envio(self, tmp_path):
+        """Prévia é conforto: sem ela a escolha ainda acontece, com o recorte
+        da miniatura. O que não pode é o envio falhar por causa dela."""
+        from api.psd import previa_das_pranchetas
+        ruim = tmp_path / "nao-e-psd.psd"
+        ruim.write_bytes(b"8BPS" + b"\0" * 100)
+        with pytest.raises(Exception):
+            previa_das_pranchetas(ruim, tmp_path / "saida")
+
+
 class TestEscolher:
     def _seis(self):
         return [Prancheta(f"Prancheta {i}", i * 2000, 0, 1920, 1080) for i in range(1, 7)]
@@ -508,3 +560,41 @@ class TestOndeOLockupPousa:
         util = f["h"] - f["safe"]["bottom"]
         # sobra abaixo do lockup pelo menos tanto quanto ele ocupa de margem
         assert (util - fim_lockup) > (fim_lockup - fim_arte) * 0.25
+
+
+class TestAPreviaChegaNoEstado:
+    """A tarefa que o worker executa: compor as prévias e ligá-las às
+    pranchetas que já estão no estado, para a tela trocar o borrão pela peça
+    sem precisar de outro endereço."""
+
+    def test_liga_a_previa_a_prancheta_pelo_nome(self, arquivo, tmp_path, monkeypatch):
+        monkeypatch.setenv("STORAGE_DIR", str(tmp_path / "dados"))
+        import importlib
+
+        from api import tarefas, trabalhos
+        importlib.reload(trabalhos)
+        importlib.reload(tarefas)
+        trabalhos.gravar("conta", "job", {"status": "escolha a prancheta",
+                                          "pranchetas": [{"nome": "", "w": 400, "h": 300}]})
+        tarefas.previas("conta", "job", str(arquivo))
+        pr = trabalhos.ler("conta", "job")["pranchetas"][0]
+        assert pr["previa"] == "prancheta-0.png"
+        assert (trabalhos.pasta_do("conta", "job") / "prancheta-0.png").exists()
+
+    def test_arquivo_que_nao_abre_nao_derruba_o_trabalho(self, tmp_path, monkeypatch):
+        """A prévia é conforto. Falhar nela não pode apagar o estado de quem
+        está esperando para escolher."""
+        monkeypatch.setenv("STORAGE_DIR", str(tmp_path / "dados"))
+        import importlib
+
+        from api import tarefas, trabalhos
+        importlib.reload(trabalhos)
+        importlib.reload(tarefas)
+        trabalhos.gravar("conta", "job", {"status": "escolha a prancheta",
+                                          "pranchetas": [{"nome": "x"}]})
+        ruim = tmp_path / "ruim.psd"
+        ruim.write_bytes(b"nao e psd")
+        tarefas.previas("conta", "job", str(ruim))
+        estado = trabalhos.ler("conta", "job")
+        assert estado["status"] == "escolha a prancheta"
+        assert estado["pranchetas"] == [{"nome": "x"}]

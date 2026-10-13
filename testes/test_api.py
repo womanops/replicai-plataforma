@@ -305,14 +305,208 @@ class TestPranchetasNaResposta:
 
 
 class TestRespostaDaEscolha:
-    def test_esperar_escolha_nao_e_aceito(self, cliente, monkeypatch):
-        """202 diz "entrou na fila". Esperando escolha, nada entrou."""
+    def _mandar(self, cliente, monkeypatch):
         from api import psd
         monkeypatch.setattr(psd, "pranchetas", lambda a: [
             psd.Prancheta("Prancheta 1", 0, 0, 1920, 1080),
             psd.Prancheta("Prancheta 4", 4040, 0, 1920, 1080)])
-        r = cliente.post("/jobs", files={"arte": ("a.psd", b"8BPS" + b"\0" * 60,
-                                                  "application/octet-stream")},
-                         data={"formatos": "ig-feed-1x1", "headline": "Oi"})
+        return cliente.post("/jobs", files={"arte": ("a.psd", b"8BPS" + b"\0" * 60,
+                                                     "application/octet-stream")},
+                            data={"formatos": "ig-feed-1x1", "headline": "Oi"})
+
+    def test_esperar_escolha_nao_e_aceito(self, cliente, monkeypatch):
+        """202 diz "entrou na fila". Esperando escolha, nenhuma peça entrou."""
+        r = self._mandar(cliente, monkeypatch)
         assert r.status_code == 200
-        assert cliente.fila.pedidos == []
+        assert [n for n, _ in cliente.fila.pedidos if n == "processar"] == []
+
+    def test_a_previa_de_cada_prancheta_e_pedida(self, cliente, monkeypatch):
+        """A miniatura embutida no PSD tem 256 px para o documento inteiro:
+        recortada numa prancheta, não dá para reconhecer qual peça é. A prévia
+        composta vai para a fila para a lista não ficar esperando por ela."""
+        self._mandar(cliente, monkeypatch)
+        assert [n for n, _ in cliente.fila.pedidos] == ["previas"]
+
+
+class TestMinhasMedidas:
+    """A medida fora do catálogo fica guardada na conta. O motor resolve
+    qualquer `livre-LARGxALT` sozinho — o que está em jogo aqui é só o atalho,
+    e que ele seja de quem pediu."""
+
+    def test_guardar_e_listar(self, cliente):
+        r = cliente.post("/eu/medidas", data={"largura": 1200, "altura": 1600})
+        assert r.status_code == 201
+        assert cliente.get("/eu/medidas").json()["medidas"][0]["id"] == "livre-1200x1600"
+
+    def test_a_medida_guardada_serve_como_formato(self, cliente):
+        """De nada adianta lembrar a medida se ela não puder ser pedida."""
+        cliente.post("/eu/medidas", data={"largura": 1200, "altura": 1600})
+        assert enviar(cliente, formatos="livre-1200x1600", modo="sem").status_code == 202
+
+    def test_medida_impossivel_volta_com_o_motivo(self, cliente):
+        r = cliente.post("/eu/medidas", data={"largura": 10, "altura": 10})
+        assert r.status_code == 400
+        assert "pixels" in r.json()["detail"]
+
+    def test_esquecer(self, cliente):
+        cliente.post("/eu/medidas", data={"largura": 1200, "altura": 1600})
+        assert cliente.delete("/eu/medidas/livre-1200x1600").json()["medidas"] == []
+
+    def test_sem_conta_nao_lista_nem_guarda(self, anonimo):
+        assert anonimo.get("/eu/medidas").status_code == 401
+        assert anonimo.post("/eu/medidas", data={"largura": 100, "altura": 100}).status_code == 401
+
+
+class TestTrocarOTextoDaPeca:
+    """A linha da arte chega como uma imagem POR LETRA: "a Porto Belo!" são
+    onze PNGs recortados do PSD. Trocar a cidade não é editar PNG — é desenhar
+    a frase nova no lugar da linha inteira. O `src` continua fora do que a tela
+    pode mandar: quem decide o arquivo é o servidor."""
+
+    def _peca_de_letras(self, cliente, tmp_path):
+        import json
+
+        from PIL import Image
+        pasta = tmp_path / cliente.conta.id / "trab" / "pecas"
+        pasta.mkdir(parents=True)
+        for n, cor in ((0, (255, 255, 255, 255)), (1, (1, 78, 163, 255)),
+                       (2, (1, 78, 163, 255))):
+            # a segunda e a terceira são maiores: é delas a cor da linha
+            tam = (6, 10) if n == 0 else (40, 30)
+            Image.new("RGBA", tam, cor).save(pasta.parent / f"l{n}.png")
+        (pasta / "ig-feed-1x1.json").write_text(json.dumps({
+            "formato": "ig-feed-1x1", "canvas": {"w": 1080, "h": 1080},
+            "fundo": {"tipo": "cor", "cor": "#000"}, "via": "psd-reenquadra",
+            "elementos": [
+                {"tipo": "imagem", "papel": "headline", "camada": "a Porto Belo!",
+                 "src": f"l{n}.png", "de": "a Porto Belo!",
+                 "box": {"x": 10 + n * 50, "y": 100, "w": 40, "h": 60}}
+                for n in range(3)],
+        }, ensure_ascii=False))
+        from api import trabalhos
+        trabalhos.gravar(cliente.conta.id, "trab", {"status": "pronto",
+                                                    "prontas": ["ig-feed-1x1"]})
+        return pasta / "ig-feed-1x1.json"
+
+    def _trocar(self, cliente, tmp_path, texto="a São Paulo!"):
+        import json
+        arq = self._peca_de_letras(cliente, tmp_path)
+        r = cliente.post("/jobs/trab/pecas/ig-feed-1x1", json={"elementos": [
+            {"i": 0, "box": {"x": 10, "y": 100, "w": 150, "h": 60},
+             "texto": texto, "tipografar": True}]})
+        return r, json.loads(arq.read_text())
+
+    def test_a_linha_inteira_vira_um_texto_so(self, cliente, tmp_path):
+        r, peca = self._trocar(cliente, tmp_path)
+        assert r.status_code == 202
+        assert len(peca["elementos"]) == 1
+        assert peca["elementos"][0]["tipo"] == "texto"
+        assert peca["elementos"][0]["texto"] == "a São Paulo!"
+
+    def test_herda_a_cor_da_letra_de_mais_tinta(self, cliente, tmp_path):
+        """Não é a média: em "A PORTO BELO!" o A é branco e o resto azul, e a
+        média dá um azul lavado que não existe na peça."""
+        _, peca = self._trocar(cliente, tmp_path)
+        assert peca["elementos"][0]["cor"] == "#014EA3"
+
+    def test_declara_a_fonte_do_trabalho(self, cliente, tmp_path):
+        """Sem fonte declarada o navegador cai na letra do sistema."""
+        _, peca = self._trocar(cliente, tmp_path)
+        assert peca["fontes"] and peca["fontes"][0]["familia"] == "PecaSans"
+
+    def test_a_tela_nao_escolhe_arquivo_nenhum(self, cliente, tmp_path):
+        """`src` fora da lista do que a tela pode mexer: um pedido forjado
+        faria o motor desenhar — e devolver no PNG — qualquer arquivo."""
+        import json
+        self._peca_de_letras(cliente, tmp_path)
+        r = cliente.post("/jobs/trab/pecas/ig-feed-1x1", json={"elementos": [
+            {"i": 0, "box": {"x": 0, "y": 0, "w": 10, "h": 10},
+             "src": "../../../etc/passwd"}]})
+        assert r.status_code == 202
+        from api import trabalhos
+        peca = json.loads((trabalhos.pasta_do(cliente.conta.id, "trab")
+                           / "pecas" / "ig-feed-1x1.json").read_text())
+        assert peca["elementos"][0]["src"] == "l0.png"
+
+    def test_a_peca_fica_marcada_como_remontada_a_mao(self, cliente, tmp_path):
+        """É a marca que faz a exportação final devolver esta montagem em vez
+        de recompor por cima dela."""
+        _, peca = self._trocar(cliente, tmp_path)
+        assert "+mao" in peca["via"]
+
+
+class TestATrocaPreservaAFonte:
+    """"Ao trocar o texto, preciso preservar a fonte: a usada para escrever
+    São Paulo tem que ser igual à de Porto Belo."
+
+    O PSD diz qual fonte a linha usa e não leva o arquivo dentro. Com a fonte
+    guardada na conta, a troca sai na MESMA letra; sem ela, sai na letra da
+    casa — e isso tem que ser dito, porque família declarada sem arquivo faz o
+    navegador cair numa fonte do sistema sem avisar.
+    """
+
+    def _peca(self, cliente, tmp_path, fonte_mae="FuturaICG-Bold"):
+        import json
+
+        from PIL import Image
+        pasta = tmp_path / cliente.conta.id / "trab" / "pecas"
+        pasta.mkdir(parents=True)
+        Image.new("RGBA", (40, 30), (1, 78, 163, 255)).save(pasta.parent / "l0.png")
+        (pasta / "ig-feed-1x1.json").write_text(json.dumps({
+            "formato": "ig-feed-1x1", "canvas": {"w": 1080, "h": 1080},
+            "fundo": {"tipo": "cor", "cor": "#000"}, "via": "psd-reenquadra",
+            "elementos": [{"tipo": "imagem", "papel": "headline",
+                           "camada": "a Porto Belo!", "src": "l0.png",
+                           "fonte_mae": fonte_mae, "de": "a Porto Belo!",
+                           "box": {"x": 10, "y": 100, "w": 150, "h": 60}}],
+        }, ensure_ascii=False))
+        from api import trabalhos
+        trabalhos.gravar(cliente.conta.id, "trab", {"status": "pronto"})
+        return pasta / "ig-feed-1x1.json"
+
+    def _trocar(self, cliente, arq):
+        import json
+        r = cliente.post("/jobs/trab/pecas/ig-feed-1x1", json={"elementos": [
+            {"i": 0, "box": {"x": 10, "y": 100, "w": 150, "h": 60},
+             "texto": "a São Paulo!", "tipografar": True}]})
+        return r, json.loads(arq.read_text())
+
+    def _enviar_fonte(self, cliente, nome="FuturaICG-Bold"):
+        """Guarda a fonte do projeto na conta e devolve como o PSD a pediria."""
+        from pathlib import Path
+
+        from api import contas
+        item = contas.guardar_fonte(cliente.conta, "f.ttf",
+                                    Path("motor/assets/fontes/grotesk.ttf").read_bytes())
+        return f"{item['familia'].replace(' ', '')}-{item['estilo']}", item
+
+    def test_sem_a_fonte_avisa_qual_esta_faltando(self, cliente, tmp_path):
+        arq = self._peca(cliente, tmp_path)
+        r, peca = self._trocar(cliente, arq)
+        avisos = " ".join(r.json()["avisos"])
+        assert "FuturaICG-Bold" in avisos
+        assert peca["elementos"][0]["fonte"] == "PecaSans"
+
+    def test_com_a_fonte_na_conta_a_letra_e_a_mesma(self, cliente, tmp_path):
+        pedida, item = self._enviar_fonte(cliente)
+        arq = self._peca(cliente, tmp_path, fonte_mae=pedida)
+        r, peca = self._trocar(cliente, arq)
+        assert r.json()["avisos"] == []
+        assert peca["elementos"][0]["fonte"] == pedida
+
+    def test_a_fonte_vai_declarada_COM_arquivo(self, cliente, tmp_path):
+        """Declarar a família sem o arquivo é o erro que a peça não denuncia:
+        o Chrome cai numa fonte do sistema e a tipografia troca calada."""
+        pedida, item = self._enviar_fonte(cliente)
+        arq = self._peca(cliente, tmp_path, fonte_mae=pedida)
+        _, peca = self._trocar(cliente, arq)
+        declarada = next(f for f in peca["fontes"] if f["familia"] == pedida)
+        assert declarada["arquivo"] == item["nome"]
+        from api import trabalhos
+        assert (trabalhos.pasta_do(cliente.conta.id, "trab") / item["nome"]).exists()
+
+    def test_linha_sem_fonte_declarada_no_psd_usa_a_da_casa(self, cliente, tmp_path):
+        arq = self._peca(cliente, tmp_path, fonte_mae="")
+        r, peca = self._trocar(cliente, arq)
+        assert r.json()["avisos"] == []
+        assert peca["elementos"][0]["fonte"] == "PecaSans"

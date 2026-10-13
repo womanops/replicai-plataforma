@@ -94,6 +94,48 @@ def _abrir(caminho: Path):
     return PSDImage.open(Path(caminho))
 
 
+# largura da prévia de cada prancheta. Em 720 px dá para LER a peça — qual
+# chamada, qual foto —, que é a decisão que está sendo tomada ali
+PREVIA_LARGURA = 720
+
+
+def previa_das_pranchetas(caminho: Path, destino: Path,
+                          largura: int = PREVIA_LARGURA) -> list[dict]:
+    """Uma imagem de verdade de cada prancheta, para escolher vendo.
+
+    A tela recortava a MINIATURA embutida do PSD, que o Photoshop grava com
+    256 px para o documento inteiro. Recortada numa prancheta, ela vira um
+    borrão de sessenta pixels: dá para ver que tem algo azul, não para
+    reconhecer qual é a peça — e escolher a prancheta errada é refazer tudo.
+
+    Compor é barato perto de extrair: 0,5 a 3 segundos por prancheta no PSD de
+    144 MB, contra os minutos da extração em camadas. Por isso dá para fazer
+    enquanto a pessoa olha a lista.
+    """
+    caminho, destino = Path(caminho), Path(destino)
+    destino.mkdir(parents=True, exist_ok=True)
+    psd = _abrir(caminho)
+    por_nome = {g.name: g for g in psd
+                if getattr(g, "is_group", lambda: False)()}
+    feitas = []
+    for i, pr in enumerate(pranchetas(caminho)):
+        arq = destino / f"prancheta-{i}.png"
+        grupo = por_nome.get(pr.nome)
+        try:
+            caixa = (pr.x, pr.y, pr.x + pr.w, pr.y + pr.h)
+            im = (grupo or psd).composite(viewport=caixa)
+            if im is None:
+                continue
+            im = im.convert("RGB")
+            if im.width > largura:
+                im = im.resize((largura, max(1, round(im.height * largura / im.width))))
+            im.save(arq)
+        except Exception:
+            continue          # prévia é conforto: sem ela a escolha ainda dá
+        feitas.append({"nome": pr.nome, "previa": arq.name})
+    return feitas
+
+
 def pranchetas(caminho: Path) -> list[Prancheta]:
     """As pranchetas do arquivo, ou uma só com o quadro inteiro.
 
@@ -513,6 +555,10 @@ def como_elementos(leitura: Leitura, pasta: Path | None = None) -> list[dict]:
         ordem = ORDEM.get(papel, 9)
         comum = {"tipo": "imagem", "papel": papel, "fit": "fill", "ancorado": True,
                  "camada": c.nome, "ordem": ordem}
+        # a fonte que o PSD pede viaja com a linha: é por ela que trocar o
+        # texto depois pode sair na MESMA letra, em vez de na fonte da casa
+        if c.tipo == "texto" and c.fonte:
+            comum["fonte_mae"] = c.fonte
         if c.plantada:
             comum["plantado"] = list(c.plantada)
         if c.mesclagem:

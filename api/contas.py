@@ -61,6 +61,12 @@ class Conta:
     plano_pedido: str = ""
     pago_ate: str = ""
     em_atraso: bool = False
+    # as medidas que a pessoa usa e o catálogo não tem. Digitar 1200×1600 a
+    # cada trabalho é trabalho que a plataforma devia lembrar
+    medidas: list[dict] = field(default_factory=list)
+    # as fontes da marca. Sem elas, trocar o texto de uma peça do PSD sai na
+    # letra da casa — que é o erro mais difícil de ver no olho
+    fontes: list[dict] = field(default_factory=list)
 
     def em_json(self) -> dict:
         """Sem segredo: é isto que pode sair da API."""
@@ -68,9 +74,134 @@ class Conta:
                 "criada": self.criada, "plano": self.plano, "ativa": self.ativa,
                 "pago_ate": self.pago_ate, "em_atraso": self.em_atraso,
                 "assinatura": bool(self.asaas_assinatura),
+                "medidas": list(self.medidas),
+                "fontes": [{k: f.get(k) for k in ("id", "familia", "estilo", "nome")}
+                           for f in self.fontes],
                 "chaves": [{"id": c["id"], "apelido": c.get("apelido", ""),
                             "criada": c.get("criada", ""), "fim": c.get("fim", "")}
                            for c in self.chaves]}
+
+
+# quantas medidas próprias cabem na conta. É lista de atalho, não catálogo:
+# passando disso a grade vira a lista enorme de que ela é o remédio
+MAX_MEDIDAS = 40
+
+
+def guardar_medida(conta: Conta, w: int, h: int, nome: str = "") -> list[dict]:
+    """Guarda uma medida fora do catálogo na conta de quem pediu.
+
+    O motor resolve qualquer `livre-LARGxALT` sozinho, então o que fica
+    gravado é só o atalho: o id, a medida e o apelido. Nada aqui muda como a
+    peça é feita.
+    """
+    # o mesmo limite do motor, lido de lá: duas constantes iguais em arquivos
+    # diferentes é uma delas errada daqui a um mês
+    from motor.replica import LIVRE_MAX, LIVRE_MIN
+    try:
+        w, h = int(w), int(h)
+    except (TypeError, ValueError):
+        raise ContaInvalida("a medida é em pixels, nos dois lados")
+    if not (LIVRE_MIN <= w <= LIVRE_MAX and LIVRE_MIN <= h <= LIVRE_MAX):
+        raise ContaInvalida(
+            f"a medida vai de {LIVRE_MIN} a {LIVRE_MAX} pixels de cada lado")
+    ident = f"livre-{w}x{h}"
+    if any(m.get("id") == ident for m in conta.medidas):
+        return list(conta.medidas)          # já era dela: não duplica
+    if len(conta.medidas) >= MAX_MEDIDAS:
+        raise ContaInvalida(f"são no máximo {MAX_MEDIDAS} medidas guardadas; "
+                            "tire uma que não usa mais")
+    conta.medidas.append({"id": ident, "w": w, "h": h,
+                          "nome": (nome or f"{w}×{h}").strip()[:40],
+                          "criada": _agora()})
+    _gravar(conta)
+    return list(conta.medidas)
+
+
+def esquecer_medida(conta: Conta, ident: str) -> list[dict]:
+    """Tira uma medida guardada. As peças já feitas com ela não são tocadas."""
+    conta.medidas = [m for m in conta.medidas if m.get("id") != ident]
+    _gravar(conta)
+    return list(conta.medidas)
+
+
+# o teto de cada arquivo de fonte e quantos cabem na conta. Uma fonte de
+# texto completa passa longe de 2 MB; o que passa de 6 é arquivo errado
+FONTE_MAX = 6_000_000
+MAX_FONTES = 24
+TIPOS_DE_FONTE = {".ttf", ".otf", ".woff", ".woff2"}
+
+
+def chave_da_fonte(*partes: str) -> str:
+    """O nome da fonte sem espaço, hífen nem caixa.
+
+    O PSD pede `FuturaICG-Bold`; o arquivo se apresenta como família
+    "Futura ICG" e estilo "Bold". É a mesma fonte, e só comparando assim um
+    acha o outro.
+    """
+    junto = "".join(p or "" for p in partes)
+    return "".join(c for c in junto.lower() if c.isalnum())
+
+
+def _nomes_da_fonte(caminho: Path) -> tuple[str, str]:
+    """Família e estilo, lidos de dentro do arquivo — não do nome dele."""
+    from PIL import ImageFont
+    f = ImageFont.truetype(str(caminho), 16)
+    familia, estilo = f.getname()
+    return (familia or "").strip(), (estilo or "").strip()
+
+
+def pasta_das_fontes(conta: Conta) -> Path:
+    p = pasta() / "fontes" / conta.id
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def guardar_fonte(conta: Conta, nome: str, dados: bytes) -> dict:
+    """Guarda um arquivo de fonte na conta e devolve o que foi guardado."""
+    ext = Path(nome or "").suffix.lower()
+    if ext not in TIPOS_DE_FONTE:
+        raise ContaInvalida("mande .ttf, .otf, .woff ou .woff2")
+    if len(dados) > FONTE_MAX:
+        raise ContaInvalida(f"a fonte passa de {FONTE_MAX // 1_000_000} MB")
+    if len(conta.fontes) >= MAX_FONTES:
+        raise ContaInvalida(f"são no máximo {MAX_FONTES} fontes guardadas")
+    destino = pasta_das_fontes(conta) / re.sub(r"[^A-Za-z0-9._-]", "_", Path(nome).name)
+    destino.write_bytes(dados)
+    try:
+        familia, estilo = _nomes_da_fonte(destino)
+    except Exception:
+        destino.unlink(missing_ok=True)
+        raise ContaInvalida("não consegui ler esse arquivo como fonte")
+    item = {"id": chave_da_fonte(familia, estilo) or destino.stem.lower(),
+            "familia": familia, "estilo": estilo,
+            "nome": destino.name, "criada": _agora()}
+    conta.fontes = [f for f in conta.fontes if f.get("id") != item["id"]] + [item]
+    _gravar(conta)
+    return item
+
+
+def esquecer_fonte(conta: Conta, ident: str) -> list[dict]:
+    achada = next((f for f in conta.fontes if f.get("id") == ident), None)
+    if achada:
+        (pasta_das_fontes(conta) / achada["nome"]).unlink(missing_ok=True)
+    conta.fontes = [f for f in conta.fontes if f.get("id") != ident]
+    _gravar(conta)
+    return list(conta.fontes)
+
+
+def fonte_de(conta: Conta, familia: str) -> dict | None:
+    """A fonte guardada que atende `familia`, como o PSD a pede."""
+    procurada = chave_da_fonte(familia)
+    if not procurada:
+        return None
+    for f in conta.fontes:
+        if f.get("id") == procurada or chave_da_fonte(f.get("familia"), f.get("estilo")) == procurada:
+            return f
+    # `FuturaICG-Bold` quando só a família foi enviada, sem o corpo bold
+    for f in conta.fontes:
+        if chave_da_fonte(f.get("familia")) == procurada:
+            return f
+    return None
 
 
 def _agora() -> str:
@@ -114,7 +245,9 @@ def _gravar(c: Conta) -> None:
                     "chaves": c.chaves, "asaas_cliente": c.asaas_cliente,
                     "asaas_assinatura": c.asaas_assinatura,
                     "plano_pedido": c.plano_pedido, "pago_ate": c.pago_ate,
-                    "em_atraso": c.em_atraso}, ensure_ascii=False, indent=1),
+                    "em_atraso": c.em_atraso, "medidas": c.medidas,
+                    "fontes": c.fontes},
+                   ensure_ascii=False, indent=1),
         encoding="utf-8")
 
 

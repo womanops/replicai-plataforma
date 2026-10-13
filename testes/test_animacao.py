@@ -113,3 +113,33 @@ class TestSemProjeto:
         monkeypatch.setattr(animacao, "instalado", lambda: False)
         with pytest.raises(VideoImpossivel, match="npm install"):
             animacao.renderizar(job / "x.json", job / "y.mp4")
+
+
+class TestOQueAJanelaMostra:
+    """Escolher movimento por uma palavra solta é adivinhar. A janela de
+    Animar mostrava "seco", "energia", "editorial", "lettering" e mais nada:
+    quatro palavras que não dizem o que vai acontecer com a peça, e o render
+    é caro demais para se descobrir testando."""
+
+    def test_todo_preset_tem_nome_e_descricao(self):
+        assert set(animacao.SOBRE) == set(animacao.PRESETS)
+        for pid, s in animacao.SOBRE.items():
+            assert s["nome"] and len(s["diz"]) > 40, pid
+
+    def test_o_nome_e_o_mesmo_do_movimento(self):
+        """O nome de exibição existe aqui e no `movimento.ts`. Divergir é
+        mostrar na tela um nome que o vídeo não usa."""
+        import re
+        from pathlib import Path
+        fonte = Path("video/src/peca/movimento.ts").read_text(encoding="utf-8")
+        for pid, s in animacao.SOBRE.items():
+            bloco = re.search(rf"^  {pid}: \{{(.+?)^  \}},", fonte, re.S | re.M)
+            assert bloco, f"`{pid}` não está no movimento.ts"
+            assert f"nome: '{s['nome']}'" in bloco.group(1), pid
+
+    def test_o_exemplo_de_cada_um_esta_no_lugar(self):
+        """O arquivo que a tela promete. Sem ele a janela mostra só o texto —
+        o que é correto, mas é a entrega pela metade."""
+        from pathlib import Path
+        for pid in animacao.PRESETS:
+            assert (Path("web/assets") / f"exemplo-{pid}.webp").exists(), pid

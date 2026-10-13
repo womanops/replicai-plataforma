@@ -23,7 +23,10 @@
 body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.5 var(--corpo);
   -webkit-font-smoothing:antialiased}
 header{display:flex;align-items:baseline;gap:14px;padding:22px 26px 0}
-header .saldo b{font:500 13px var(--mono);color:var(--fg);letter-spacing:0}
+header .saldo b{font:500 16px var(--mono);color:var(--fg);letter-spacing:0}
+header .saldo .rot{text-transform:uppercase;letter-spacing:.12em;font-size:9.5px}
+header .saldo .mais{color:var(--mut)}
+@media (max-width:1100px){header .saldo .mais{display:none}}
 header>span{font:500 11px var(--mono);color:var(--mut);letter-spacing:.14em;
   text-transform:uppercase}
 @media (max-width:1100px){header>span:first-of-type{display:none}}
@@ -71,6 +74,22 @@ textarea{resize:vertical;min-height:70px}
 .canal::before{content:'';position:absolute;top:-1px;left:0;width:34px;height:2px;
   background:var(--vinho)}
 .grade{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+
+/* ---------- os canais, no alto, como atalho de escolha ---------- */
+.canais{display:flex;flex-wrap:wrap;gap:7px;margin:0 0 6px}
+.canais button{background:var(--painel);color:var(--mut);border:1px solid var(--linha);
+  border-radius:999px;padding:7px 14px;cursor:pointer;display:flex;align-items:baseline;gap:7px;
+  font:500 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase}
+.canais button:hover{color:var(--fg);border-color:rgba(var(--fgRGB),.32)}
+/* parte = alguns daquele canal marcados; on = o canal inteiro */
+.canais button.parte{color:var(--rosa);border-color:rgba(232,180,200,.45)}
+.canais button.on{background:var(--rosa);border-color:var(--rosa);color:#2A0E1C}
+/* `vendo` = este canal está à vista na grade. O ponto fica do lado do nome
+   porque a ficha já usa cor para dizer quanto dele está marcado */
+.canais button.vendo::before{content:'';width:5px;height:5px;border-radius:50%;
+  background:var(--sinal);flex:none;align-self:center}
+.canais button em{font-style:normal;font-size:9.5px;opacity:.75;letter-spacing:.06em}
+.canais button.limpa{border-style:dashed}
 .f{background:transparent;border:0;padding:0;cursor:pointer;text-align:left;color:inherit;
   font:inherit;
   display:flex;flex-direction:column;gap:5px;width:132px}
@@ -91,7 +110,7 @@ textarea{resize:vertical;min-height:70px}
 .f.falhou .selo{color:var(--err)}
 .pulsa{animation:p 1.2s ease-in-out infinite}
 .f .ressalva{font:500 9.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;
-  color:var(--sinal);cursor:help}
+  color:var(--sinal);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 .f .ressalva::before{content:'▲ ';font-size:8px;vertical-align:1px}
 @keyframes p{0%,100%{opacity:.35}50%{opacity:.9}}
 
@@ -140,23 +159,59 @@ button.secund{background:transparent;color:var(--fg);border:1px solid var(--linh
   padding:24px;max-width:min(980px,94vw);max-height:88vh;overflow:auto}
 .folha h2{font:400 24px/1 var(--disp);letter-spacing:.04em;margin:0 0 4px}
 .folha p{margin:0 0 18px;color:var(--mut);font-size:13px}
-#prGrade{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+/* cartões grandes: a decisão aqui é "qual destas é a minha peça", e em
+   190 px de largura seis pranchetas azuis são seis retângulos iguais */
+#prGrade{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
 .pr{background:var(--painel2);border:1px solid var(--linha);border-radius:12px;padding:10px;
   cursor:pointer;text-align:left}
 .pr:hover{border-color:var(--rosa)}
-.pr canvas{width:100%;border-radius:7px;display:block;background:#000}
+.pr .cx{position:relative;border-radius:7px;overflow:hidden;background:#000;display:block}
+.pr canvas,.pr img{width:100%;border-radius:7px;display:block;background:#000}
+/* enquanto só há o recorte da miniatura, a tela diz que o bom está vindo */
+.pr .carregando{position:absolute;left:0;right:0;bottom:0;padding:5px 8px;
+  background:rgba(14,10,12,.8);color:var(--mut);font:500 9.5px var(--mono);
+  letter-spacing:.1em;text-transform:uppercase}
+.pr img+.carregando,.pr .cx:has(img) .carregando{display:none}
 .pr b{display:block;font:500 12px var(--mono);margin-top:9px;letter-spacing:.04em}
 .pr span{color:var(--mut);font-size:11.5px}
+
+/* ---------- o que ficou de fora ----------
+   O aviso morava no `title` do selo "com ressalva": texto que só aparece se a
+   pessoa parar o mouse em cima e esperar, numa linha só, sem quebra. O que o
+   modelo deixou de fora é metade da entrega e precisa de uma folha. */
+#ressalvas{position:fixed;inset:0;z-index:160;background:rgba(0,0,0,.72);
+  display:grid;place-items:center;padding:24px}
+#ressalvas.hidden{display:none}
+#ressalvas .folha{max-width:min(620px,94vw)}
+#resLista{display:flex;flex-direction:column;gap:12px;margin:0 0 20px}
+#resLista .item{border-left:2px solid var(--sinal);padding:2px 0 2px 12px;font-size:13.5px;
+  line-height:1.5}
+#resLista .item.fora{border-left-color:var(--rosa)}
+#resLista .item b{display:block;font:500 11px var(--mono);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--mut);margin-bottom:3px}
 
 /* ---------- animar ---------- */
 #animar{position:fixed;inset:0;z-index:150;background:rgba(0,0,0,.72);
   display:grid;place-items:center;padding:24px}
 #animar.hidden{display:none}
-.presets{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 18px}
-.presets button{background:var(--painel2);border:1px solid var(--linha);border-radius:999px;
-  color:var(--mut);padding:7px 15px;font:500 11.5px var(--mono);cursor:pointer;
-  letter-spacing:.06em}
-.presets button.ativa{border-color:var(--rosa);color:var(--fg)}
+/* um cartão por preset, com o exemplo rodando: a pastilha redonda só com o
+   nome obrigava a escolher no escuro */
+.presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:10px;margin:6px 0 18px}
+.presets button.preset{display:block;text-align:left;padding:0 0 11px;overflow:hidden;
+  background:var(--painel);border:1px solid var(--linha);border-radius:11px;cursor:pointer;
+  color:var(--fg);font:inherit}
+.presets button.preset:hover{border-color:rgba(var(--fgRGB),.32)}
+.presets button.preset.ativa{border-color:var(--rosa);box-shadow:0 0 0 3px rgba(232,180,200,.16)}
+.presets button.preset .amostra{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;
+  background:#0A0714;margin-bottom:9px}
+.presets button.preset .sem{display:grid;place-items:center;width:100%;aspect-ratio:4/5;
+  background:var(--painel2);color:var(--mut);font:500 10px var(--mono);
+  letter-spacing:.1em;text-transform:uppercase;margin-bottom:9px}
+.presets button.preset b{display:block;padding:0 11px;font:500 13px var(--corpo)}
+.presets button.preset.ativa b{color:var(--rosa)}
+.presets button.preset small{display:block;padding:3px 11px 0;color:var(--mut);
+  font-size:11.5px;line-height:1.4}
 .f video{width:100%;border-radius:7px;display:block}
 
 /* ---------- planos ---------- */
@@ -196,8 +251,8 @@ header .sair{background:none;border:0;color:var(--mut);cursor:pointer;font:500 1
 header .sair:hover{color:var(--fg)}
 
 /* ---------- medida que não está no catálogo ---------- */
-.livre{display:flex;align-items:center;gap:8px;margin:22px 0 0;border-top:1px solid var(--linha);
-  padding-top:14px;flex-wrap:wrap}
+.livre{display:flex;align-items:center;gap:8px;margin:0 0 16px;flex-wrap:wrap;
+  background:var(--painel);border:1px solid var(--linha);border-radius:11px;padding:12px 14px}
 .livre .rot{font:500 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase;
   color:var(--mut);width:100%}
 .livre input{width:92px;background:var(--painel);color:var(--fg);border:1px solid var(--linha);
@@ -229,7 +284,30 @@ label.modo.on b{color:var(--rosa)}
 .travado{margin:10px 0 0;font-size:12px;color:var(--mut);border-left:2px solid var(--linha);
   padding-left:10px}
 
-/* ---------- progresso ---------- */
+/* ---------- progresso ----------
+   Ele morava só no rodapé, numa tira de 3 px embaixo de tudo: quem está
+   olhando a grade de formatos não vê o pé da tela, e a sensação é de que
+   nada acontece. Agora ele abre no alto, grudado abaixo do cabeçalho, e o
+   rodapé segue dizendo o mesmo para quem está lá embaixo. */
+#andamento{position:sticky;top:0;z-index:70;margin:14px 26px 0;padding:13px 16px 15px;
+  background:var(--painel);border:1px solid var(--linha);border-left:3px solid var(--sinal);
+  border-radius:11px;display:grid;grid-template-columns:1fr auto;gap:2px 16px;
+  align-items:baseline}
+#andamento[hidden]{display:none}
+#andamento b{font:400 22px/1.1 var(--disp);letter-spacing:.05em}
+#andamento .det{grid-column:1;font-size:12.5px;color:var(--mut)}
+#andamento .pct{grid-column:2;grid-row:1/3;align-self:center;
+  font:500 24px var(--mono);color:var(--sinal);letter-spacing:-.02em}
+#andamento .trilha{grid-column:1/3;height:5px;border-radius:3px;background:var(--painel2);
+  overflow:hidden;margin-top:10px}
+#andamento .trilha i{display:block;height:100%;width:0;background:var(--sinal);
+  transition:width .5s linear}
+/* sem fração ainda (na fila, abrindo o PSD): vai-e-vem, que diz "trabalhando"
+   sem fingir uma porcentagem que ninguém mediu */
+#andamento.sem .trilha i{width:30%;animation:vaivem 1.6s ease-in-out infinite}
+@keyframes vaivem{0%{margin-left:-30%}100%{margin-left:100%}}
+
+/* ---------- progresso no rodapé ---------- */
 footer .trilha{height:3px;background:var(--painel2);border-radius:2px;margin-top:8px;
   overflow:hidden;max-width:420px}
 footer .trilha i{display:block;height:100%;width:0;background:var(--sinal);
@@ -252,10 +330,15 @@ header .saldo.apertado .fio i{background:var(--err)}
 #lupa.hidden{display:none}
 /* contra a janela, e não contra a célula da grade: a célula cresce com a
    imagem, e `100%` dela não limitava nada — a peça saía maior que a tela */
-#lupa img{max-width:calc(100vw - 60px);max-height:calc(100vh - 70px);object-fit:contain;
+#lupa img,#lupa video{max-width:calc(100vw - 60px);max-height:calc(100vh - 70px);object-fit:contain;
   border-radius:4px;display:block;box-shadow:0 30px 90px rgba(0,0,0,.7)}
+#lupa img[hidden],#lupa video[hidden]{display:none}
 #lupa .pe{position:fixed;left:0;right:0;bottom:18px;text-align:center;color:var(--mut);
   font:500 11px var(--mono);letter-spacing:.1em;text-transform:uppercase}
+#lupa .ajustar{position:fixed;right:24px;top:22px;background:var(--painel);cursor:pointer}
+#lupa .ajustar[hidden]{display:none}
+/* peça pronta: o cartão inteiro amplia */
+.f.feito{cursor:zoom-in}
 .f .cx .olho{position:absolute;right:5px;bottom:5px;z-index:3;width:22px;height:22px;
   border-radius:4px;background:rgba(14,10,12,.82);color:var(--fg);display:none;
   place-items:center;font-size:12px;cursor:zoom-in;border:0}
@@ -277,22 +360,55 @@ header .saldo.apertado .fio i{background:var(--err)}
 #lona{position:relative;background:#000;box-shadow:0 20px 70px rgba(0,0,0,.6);
   user-select:none;touch-action:none}
 #lona .ch{position:absolute;inset:0;background-size:cover;background-position:center}
-#lona .margem{position:absolute;border:1px dashed rgba(232,180,200,.35);pointer-events:none}
+/* a margem de recorte é a única linha que NÃO é um elemento: ela é o limite
+   da rede. Rosa pontilhado fino, no meio de uma caixa por elemento, era mais
+   uma linha entre dez. Agora ela é vermelha e o que fica FORA dela escurece —
+   a área boa se vê, não se deduz */
+/* o véu existe só para recortar a sombra da margem: sem ele os 9999 px
+   escureceriam a tela inteira, e `overflow` na lona cortaria os manípulos
+   dos elementos encostados na borda */
+#lona .veu{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:250}
+#lona .margem{position:absolute;pointer-events:none;
+  border:1.5px dashed rgba(255,90,90,.95);
+  box-shadow:0 0 0 9999px rgba(8,5,7,.45)}
+#lona .margem::after{content:'margem de recorte · nada de texto passa daqui';
+  position:absolute;left:-1px;top:-16px;white-space:nowrap;
+  font:500 9px var(--mono);letter-spacing:.09em;text-transform:uppercase;color:#FF8A8A}
 /* as caixas se sobrepõem — a logo fica debaixo do CTA, o mascote atrás do
    texto. Sem ordem explícita, o manípulo de quem está em cima ficava coberto
    pelo vizinho e o arrasto pegava a camada errada */
-.pe-el{position:absolute;border:1px solid rgba(182,255,60,.55);cursor:grab;
-  background:rgba(182,255,60,.05)}
-.pe-el:hover{border-color:rgba(232,180,200,.7)}
+.pe-el{position:absolute;border:1px solid rgba(var(--fgRGB),.22);cursor:grab;
+  background:transparent;z-index:1}
+.pe-el:hover{border-color:var(--sinal);background:rgba(182,255,60,.07)}
 .pe-el.sel{border-color:var(--rosa);background:rgba(232,180,200,.1);
   box-shadow:0 0 0 1px rgba(232,180,200,.4)}
 .pe-el img{width:100%;height:100%;display:block;object-fit:fill;pointer-events:none}
 .pe-el .rot{position:absolute;left:0;top:-15px;font:500 9px var(--mono);color:var(--sinal);
-  letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;pointer-events:none}
+  letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;pointer-events:none;
+  display:none}
+.pe-el:hover .rot,.pe-el.sel .rot{display:block}
 .pe-el.sel .rot{color:var(--rosa)}
+/* a caixa escolhida sobe acima da margem; as outras ficam embaixo dela, e é
+   por isso que a linha vermelha continua legível com a peça cheia */
+.pe-el.sel{z-index:8}
 .pe-el .puxa{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;
   border-radius:3px;background:var(--rosa);cursor:nwse-resize;z-index:4;
   box-shadow:0 0 0 2px var(--bg)}
+/* a lixeira só existe no elemento escolhido: uma por caixa, em dez caixas,
+   seria um campo minado em cima da peça */
+.pe-el .lixo{position:absolute;right:-9px;top:-9px;width:22px;height:22px;border:0;
+  border-radius:50%;background:var(--err);color:#fff;font-size:11px;line-height:1;
+  cursor:pointer;z-index:5;display:grid;place-items:center;
+  box-shadow:0 0 0 2px var(--bg)}
+.pe-el .lixo:hover{background:#FF8A8A}
+.pe-el .lapis{position:absolute;right:17px;top:-9px;width:22px;height:22px;border:0;
+  border-radius:50%;background:var(--rosa);color:#2A0E1C;font-size:11px;line-height:1;
+  cursor:pointer;z-index:5;display:grid;place-items:center;
+  box-shadow:0 0 0 2px var(--bg)}
+/* o texto trocado, como ele vai sair: a letra é a do trabalho, não a da arte */
+.pe-el .trocado{position:absolute;inset:0;display:flex;align-items:center;
+  color:var(--sinal);font:600 13px var(--corpo);padding:0 2px;overflow:hidden;
+  pointer-events:none;text-shadow:0 1px 3px rgba(0,0,0,.8)}
 .pe-el .letra{position:absolute;inset:0;display:flex;align-items:center;padding:0 2px;
   color:rgba(245,236,233,.9);font:500 11px var(--corpo);overflow:hidden;pointer-events:none}
 </style>
@@ -343,6 +459,16 @@ header .saldo.apertado .fio i{background:var(--err)}
   </div>
 </div>
 
+<div id="ressalvas" class="hidden">
+  <div class="folha">
+    <h2 id="resTitulo">O que você precisa saber desta peça</h2>
+    <p>A peça foi entregue. Isto é o que saiu diferente do pedido, ou o que
+      precisa de conferência antes de publicar.</p>
+    <div id="resLista"></div>
+    <button class="acao" id="resOk">Entendi</button>
+  </div>
+</div>
+
 <div id="animar" class="hidden">
   <div class="folha">
     <h2>Animar</h2>
@@ -358,6 +484,13 @@ header .saldo.apertado .fio i{background:var(--err)}
   <span id="quemCompoe" class="quem"></span>
   <span class="saldo" id="saldo" hidden></span>
   <button class="sair" id="btnSair" hidden>sair</button></header>
+
+<div id="andamento" hidden>
+  <b id="andEtapa">Replicando</b>
+  <span class="pct" id="andPct"></span>
+  <span class="det" id="andDet"></span>
+  <span class="trilha" id="andTrilha"><i></i></span>
+</div>
 
 <main>
   <section>
@@ -376,8 +509,10 @@ header .saldo.apertado .fio i{background:var(--err)}
         <span><b>Adaptação de formato</b>
         <small>Preserva 100% da peça. Nada é escrito por cima: só o quadro muda.</small></span></label>
       <label class="modo on"><input type="radio" name="modo" value="com" checked>
-        <span><b>Adaptação de formato + Diagramação</b>
-        <small>Gera os formatos e deixa você ajustar a diagramação de cada um antes de exportar.</small></span></label>
+        <span><b>Adaptação + Ajustes</b>
+        <small>Gera os formatos e deixa você ajustar a diagramação e os textos de cada
+        peça antes de exportar: mover, redimensionar, trocar o texto e tirar o que não
+        cabe.</small></span></label>
       <label class="modo"><input type="radio" name="modo" value="novo">
         <span><b>Adaptação de formato + Novos Textos</b>
         <small>Além do acima, uma chamada e um CTA novos entram no espaço que sobrou.</small></span></label>
@@ -397,7 +532,6 @@ header .saldo.apertado .fio i{background:var(--err)}
 
   <section>
     <div class="titulo"><h2>Para onde vai</h2><em id="resumoSel">nenhum formato escolhido</em></div>
-    <div id="formatos"></div>
     <div class="livre">
       <span class="rot">Outra medida</span>
       <input type="number" id="livreW" min="50" max="10000" placeholder="largura" aria-label="largura em pixels">
@@ -407,21 +541,30 @@ header .saldo.apertado .fio i{background:var(--err)}
       <p class="nota">Para destinos que não estão na lista. A margem de recorte vira
         proporcional, porque não há regra de rede conhecida para herdar.</p>
     </div>
+    <div class="canais" id="canais" aria-label="escolher por canal"></div>
+    <div id="formatos"></div>
   </section>
 </main>
 
-<div id="lupa" class="hidden"><img alt=""><div class="pe">clique em qualquer lugar para fechar</div></div>
+<div id="lupa" class="hidden"><img alt="">
+  <video hidden autoplay loop muted playsinline controls></video>
+  <button class="secund ajustar" type="button" hidden>Ajustar esta peça</button>
+  <div class="pe">clique em qualquer lugar para fechar</div></div>
 
 <div id="editor" class="hidden">
   <div class="topo">
     <h2 id="edTitulo">Ajustar</h2>
-    <p id="edDica">Arraste para mover, puxe o canto para redimensionar, Delete tira o elemento.
-      A peça atualizada é a que vai na exportação.</p>
+    <p id="edDica">Arraste para mover, puxe o canto para redimensionar. Clique num
+      elemento e use a <b style="color:#FF8A8A;font-weight:500">lixeira</b> para tirá-lo
+      da peça — é assim que sai um mascote, um selo ou uma linha que não cabe.
+      <b style="color:#FF8A8A;font-weight:500">A linha vermelha é o limite da rede</b>: o que
+      passa dela pode ser cortado na publicação. A peça atualizada é a que vai na exportação.</p>
     <button class="secund" id="edVolta">Desfazer tudo</button>
     <button class="secund" id="edFecha">Fechar</button>
     <button class="acao" id="edSalva">Atualizar a peça</button>
   </div>
   <div class="palco"><div id="lona"></div></div>
+  <input type="file" id="fonteArquivo" hidden accept=".ttf,.otf,.woff,.woff2">
 </div>
 
 <div class="aviso hidden" id="aviso"></div>
@@ -541,53 +684,140 @@ async function carregarFormatos(){
   pintarFormatos();
 }
 const LARG = 132;
+function porCanal(){
+  const m = {};
+  for (const f of catalogo.concat(livres)) (m[f.canal] ||= []).push(f);
+  return m;
+}
+
+/* ---------- os canais como atalho de escolha ----------
+   Marcar catorze formatos de Instagram um a um é trabalho que a tela devia
+   fazer. O atalho SOMA: clicar em Instagram marca os de Instagram; clicar
+   depois em LinkedIn mantém os de Instagram e acrescenta os de LinkedIn. E
+   dentro do canal a escolha continua sua — dá para desmarcar os que não
+   quiser. Clicar de novo num canal já inteiro desmarca só o dele. */
+// os canais que a pessoa ligou, na ORDEM em que ligou: é a ordem em que eles
+// aparecem na grade. Vazio = mostra o catálogo inteiro
+const filtro = [];
+
+function pintarCanais(){
+  const m = porCanal();
+  const fichas = Object.entries(m).map(([canal, fs]) => {
+    const n = fs.filter(f => escolhidos.has(f.id)).length;
+    const como = (n === 0 ? '' : n === fs.length ? ' on' : ' parte')
+               + (filtro.includes(canal) ? ' vendo' : '');
+    return `<button type="button" class="${como.trim()}" data-canal="${canal}">${canal}
+      <em>${n ? n + '/' : ''}${fs.length}</em></button>`;
+  });
+  if (filtro.length || escolhidos.size)
+    fichas.push(`<button type="button" class="limpa" data-canal="">`
+      + `${filtro.length ? 'ver tudo' : 'limpar'}</button>`);
+  $('#canais').innerHTML = fichas.join('');
+  $('#canais').querySelectorAll('button').forEach(b => b.onclick = () => {
+    if (job) return;
+    const canal = b.dataset.canal;
+    if (!canal){ filtro.length = 0; escolhidos.clear(); }
+    else {
+      const fs = porCanal()[canal] || [];
+      const inteiro = fs.every(f => escolhidos.has(f.id));
+      // clicar no canal faz as duas coisas, que é como ela descreveu: ele
+      // vira o que está à vista E os formatos dele entram na escolha. Clicar
+      // de novo no mesmo canal desfaz só o dele
+      fs.forEach(f => inteiro ? escolhidos.delete(f.id) : escolhidos.add(f.id));
+      const i = filtro.indexOf(canal);
+      if (inteiro && i >= 0) filtro.splice(i, 1);
+      else if (!inteiro && i < 0) filtro.push(canal);
+    }
+    pintarFormatos(); pintarRodape();
+  });
+}
+
 function pintarFormatos(){
-  const porCanal = {};
-  for (const f of catalogo.concat(livres)) (porCanal[f.canal] ||= []).push(f);
-  $('#formatos').innerHTML = Object.entries(porCanal).map(([canal, fs]) => `
+  // com filtro ligado, só os canais ligados — e na ordem em que foram
+  // ligados. Sem filtro, o catálogo inteiro, que é a lista enorme de sempre
+  const m = porCanal();
+  const canais = filtro.length ? filtro.filter(c => m[c]) : Object.keys(m);
+  $('#formatos').innerHTML = canais.map(canal => `
     <div class="canal">${canal}</div>
-    <div class="grade">${fs.map(cartao).join('')}</div>`).join('');
+    <div class="grade">${(m[canal] || []).map(cartao).join('')}</div>`).join('');
+  pintarCanais();
   $('#formatos').querySelectorAll('.f').forEach(b => {
     const vira = () => {
-      if (job) return;
+      // peça pronta: o clique é para VER. Antes só o botãozinho de canto
+      // ampliava, e clicar na peça não fazia nada — para decidir se quer
+      // ajustar, primeiro é preciso enxergar
+      const vd = b.querySelector('.cx video'), im = b.querySelector('.cx img');
+      if (job){ if (vd || im) ampliar((vd || im).src, b.dataset.id, !!vd); return; }
       escolhidos.has(b.dataset.id) ? escolhidos.delete(b.dataset.id) : escolhidos.add(b.dataset.id);
-      b.classList.toggle('on'); pintarRodape();
+      b.classList.toggle('on'); pintarCanais(); pintarRodape();
     };
     b.onclick = vira;
     // o cartão deixou de ser <button> para poder ter botões dentro; a tecla
     // volta na mão para quem não usa mouse
     b.onkeydown = e => { if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); vira(); } };
   });
-  $('#formatos').querySelectorAll('.tira').forEach(x => x.onclick = ev => {
+  $('#formatos').querySelectorAll('.tira').forEach(x => x.onclick = async ev => {
     ev.stopPropagation();
     const id = x.closest('.f').dataset.id;
     livres = livres.filter(f => f.id !== id); escolhidos.delete(id);
     pintarFormatos(); pintarRodape();
+    // sai da conta também: a lista é dela, e tirar "só desta vez" de uma
+    // lista que se lembra é uma promessa que a tela não cumpriria
+    try { await fetch('/eu/medidas/' + encodeURIComponent(id), { method: 'DELETE' }); }
+    catch(e){}
   });
 }
 
 /* ---------- medida que não está no catálogo ----------
    O catálogo cobre os destinos conhecidos, com a margem que cada rede recorta
    de verdade. Fora deles havia só o impasse: ou o formato existia na lista, ou
-   a peça não saía. */
+   a peça não saía.
+
+   A medida digitada fica GUARDADA NA CONTA: quem publica num lugar fora do
+   catálogo publica lá toda semana, e digitar 1200×1600 a cada trabalho é
+   trabalho que a plataforma devia lembrar. Some com um clique no ✕, que a
+   tira da conta — não só desta vez. */
 let livres = [];
 const LIVRE_MIN = 50, LIVRE_MAX = 10000;
+const CANAL_MEU = 'Minhas medidas';
 
-$('#btnLivre').onclick = () => {
+function comoFormato(m){
+  return { id: m.id, canal: CANAL_MEU, nome: m.nome || `${m.w}×${m.h}`,
+           w: m.w, h: m.h, livre: true };
+}
+
+async function carregarMedidas(){
+  try {
+    const r = await fetch('/eu/medidas');
+    if (!r.ok) return;
+    livres = (await r.json()).medidas.map(comoFormato);
+  } catch(e){}      // sem as guardadas a tela segue: dá para digitar de novo
+}
+
+$('#btnLivre').onclick = async () => {
   const w = parseInt($('#livreW').value, 10), h = parseInt($('#livreH').value, 10);
   if (!(w >= LIVRE_MIN && w <= LIVRE_MAX && h >= LIVRE_MIN && h <= LIVRE_MAX)){
     aviso(`A medida vai de ${LIVRE_MIN} a ${LIVRE_MAX} pixels de cada lado.`); return;
   }
   const id = `livre-${w}x${h}`;
-  if (catalogo.some(f => f.w === w && f.h === h)){
-    const j = catalogo.find(f => f.w === w && f.h === h);
-    escolhidos.add(j.id); aviso(`Essa medida já está na lista: ${j.nome}.`, true);
+  const igual = catalogo.find(f => f.w === w && f.h === h);
+  if (igual){
+    escolhidos.add(igual.id);
+    aviso(`Essa medida já está na lista: ${igual.nome}.`, true);
   } else if (livres.some(f => f.id === id)){
-    aviso('Essa medida já foi adicionada.');
-  } else {
-    livres.push({ id, canal: 'Medida livre', nome: `${w}×${h}`, w, h, livre: true });
     escolhidos.add(id);
+    aviso('Essa medida já está nas suas.', true);
+  } else {
+    const fd = new FormData();
+    fd.set('largura', w); fd.set('altura', h);
+    const r = await fetch('/eu/medidas', { method: 'POST', body: fd });
+    if (!r.ok){ aviso((await r.json()).detail || 'Não consegui guardar a medida.'); return; }
+    livres = (await r.json()).medidas.map(comoFormato);
+    escolhidos.add(id);
+    aviso(`${w}×${h} guardada: ela aparece em todo trabalho seu daqui em diante.`, true);
   }
+  // com filtro ligado, a medida nova entraria escondida atrás dele
+  if (filtro.length && !filtro.includes(CANAL_MEU)) filtro.push(CANAL_MEU);
   $('#livreW').value = ''; $('#livreH').value = '';
   pintarFormatos(); pintarRodape();
 };
@@ -598,10 +828,28 @@ function cartao(f){
   // altura pela proporção verdadeira do destino: o retângulo É o formato
   const alt = Math.max(26, Math.min(190, Math.round(LARG * f.h / f.w)));
   const on = escolhidos.has(f.id) ? ' on' : '';
-  const tira = f.livre && !job ? `<button class="tira" type="button" title="Tirar">✕</button>` : '';
+  const tira = f.livre && !job
+    ? `<button class="tira" type="button" title="Tirar das minhas medidas">✕</button>` : '';
+  const medida = `${f.w}×${f.h}`;
   return `<div class="f${on}" data-id="${f.id}" role="button" tabindex="0" title="${f.nome}">
     <div class="cx" style="height:${alt}px">${tira}</div>
-    <b>${f.livre ? 'Medida livre' : f.nome}</b><i>${f.w}×${f.h}</i></div>`;
+    <b>${f.nome}</b><i>${f.livre && f.nome === medida ? 'guardada' : medida}</i></div>`;
+}
+
+/* ---------- o andamento, no alto ----------
+   O rodapé continua dizendo tudo para quem está lá embaixo; isto repete o
+   mesmo colado abaixo do cabeçalho, que é onde o olho está enquanto as peças
+   aparecem na grade. */
+function espelhar(ligado, f){
+  const a = $('#andamento');
+  a.hidden = !ligado;
+  if (!ligado) return;
+  $('#andEtapa').textContent = $('#conta').textContent;
+  $('#andDet').textContent = $('#detalhe').textContent;
+  const tem = f !== null && f !== undefined;
+  a.classList.toggle('sem', !tem);
+  $('#andPct').textContent = tem ? Math.round(f * 100) + '%' : '';
+  $('#andTrilha').firstElementChild.style.width = tem ? Math.round(f * 100) + '%' : '';
 }
 
 /* ---------- rodapé ---------- */
@@ -618,6 +866,7 @@ function pintarRodape(){
     : falta ? 'A chamada é o texto principal da peça.'
     : !n ? 'Cada retângulo está na proporção real do destino.'
     : 'Leva cerca de um minuto por peça.';
+  espelhar(false);
 }
 /* ---------- os três modos ----------
    Sem esta escolha a tela travava o começo do trabalho pedindo uma chamada
@@ -711,9 +960,15 @@ async function acompanhar(){
       if (!escolhidos.has(id)) { b.style.opacity = .25; continue; }
       const aviso = (d.avisos || {})[id];
       if (aviso && aviso.length && !b.querySelector('.ressalva')){
-        // peça entregue, mas com ressalva: quem publica decide se serve
+        // peça entregue, mas com ressalva: quem publica decide se serve. O
+        // texto abre numa folha, e não só no `title`: aviso que só aparece
+        // parando o mouse em cima é aviso que não foi dado
         b.insertAdjacentHTML('beforeend',
-          `<span class="ressalva" title="${aviso.join(' · ').replace(/"/g,'')}">com ressalva</span>`);
+          `<span class="ressalva" title="clique para ler">com ressalva</span>`);
+        b.querySelector('.ressalva').onclick = ev => {
+          ev.stopPropagation();
+          verRessalvas(id, aviso, (d.descartados || {})[id]);
+        };
       }
       if (prontas.has(id) && (!cx.querySelector('img') || refazer.has(id))){
         // pelo nome exato: `fundo-ig-stories.png` também contém "ig-stories" e
@@ -731,7 +986,11 @@ async function acompanhar(){
           `<button class="olho" title="Ampliar">⤢</button>`
           + (d.modo === 'sem' || d.arquivado ? ''
              : `<button class="mao" title="Ajustar a diagramação">ajustar</button>`));
-        cx.querySelector('.olho').onclick = ev => { ev.stopPropagation(); ampliar(cx.querySelector('img').src, id); };
+        cx.querySelector('.olho').onclick = ev => {
+          ev.stopPropagation();
+          const vd = cx.querySelector('video'), im = cx.querySelector('img');
+          if (vd || im) ampliar((vd || im).src, id, !!vd);
+        };
         const mao = cx.querySelector('.mao');
         if (mao) mao.onclick = ev => { ev.stopPropagation(); abrirEditor(id); };
         b.classList.add('feito'); b.classList.remove('pulsa');
@@ -748,8 +1007,15 @@ async function acompanhar(){
       const cx = b.querySelector('.cx');
       if (cx.querySelector('video')) continue;
       const arq = (d.entregas||[]).find(e => e.nome.startsWith('video/') && e.nome.includes(fid));
-      if (arq) cx.innerHTML = `<video src="/jobs/${job}/arquivos/${encodeURIComponent(arq.nome)}"`
-        + ` autoplay muted loop playsinline></video>`;
+      if (!arq) continue;
+      // o vídeo substitui o conteúdo do cartão e levava junto o botão de
+      // ampliar: a peça animada ficava sem jeito nenhum de ser vista grande
+      cx.innerHTML = `<video src="/jobs/${job}/arquivos/${encodeURIComponent(arq.nome)}"`
+        + ` autoplay muted loop playsinline></video>`
+        + `<button class="olho" title="Ver grande">⤢</button>`;
+      cx.querySelector('.olho').onclick = ev => {
+        ev.stopPropagation(); ampliar(cx.querySelector('video').src, fid, true);
+      };
     }
 
     const feitas = prontas.size, erradas = Object.keys(falhas).length, total = escolhidos.size;
@@ -796,6 +1062,7 @@ async function acompanhar(){
       const resta = falta(d, f);
       if (resta) $('#detalhe').textContent += ' · ' + resta;
     }
+    espelhar(andandoAlgo, f);
 
     const parado = ['pronto','parcial','erro'].includes(d.status)
                 && !['rodando','na fila'].includes(v.status || '')
@@ -803,6 +1070,7 @@ async function acompanhar(){
     if (parado){
       clearInterval(pulso);
       trilha.classList.add('hidden');
+      espelhar(false);
       if ((d.ajuste||{}).status === 'erro') aviso(d.ajuste.erro || 'O ajuste não desenhou.');
       // só avisa de ajuste pedido agora: ao reabrir um trabalho antigo o
       // estado ainda diz "pronto", e a tela anunciava um redesenho que não houve
@@ -840,13 +1108,17 @@ async function quemCompoe(){
     if (s.limite_arte_mb) limiteMB = s.limite_arte_mb;
     const dica = $('#dicaLimite');
     if (dica) dica.textContent = `Até ${limiteMB} MB.`;
+    // só aparece quando é NOTÍCIA: compondo pela régua, sem o modelo. O
+    // normal não precisa de aviso — "compondo com o modelo" fixo no alto é
+    // ruído que ninguém lê, e ruído fixo é o que faz o aviso de verdade
+    // passar despercebido no dia em que ele aparecer
     const el = $('#quemCompoe');
     const simples = s.compositor === 'regra';
-    el.textContent = simples ? 'compondo por regra · sem o modelo' : 'compondo com o modelo';
+    el.textContent = simples ? 'compondo por regra · sem o modelo' : '';
     el.classList.toggle('simples', simples);
     el.title = simples
       ? 'ANTHROPIC_API_KEY não foi lida: as peças saem pela regra determinística, que não sabe o que sacrificar quando o formato aperta.'
-      : 'O modelo decide a estrutura; as caixas são calculadas pela máquina.';
+      : '';
   } catch(e){}
 }
 
@@ -948,23 +1220,29 @@ $('#btnSair').onclick = async () => { await fetch('/sair', { method:'POST' }); l
 function abrir(conta){
   $('#porta').classList.add('hidden');
   $('#btnSair').hidden = false;
-  carregarFormatos(); pintarRodape(); quemCompoe(); verPlano();
+  carregarMedidas().then(carregarFormatos);
+  carregarFontes();
+  pintarRodape(); quemCompoe(); verPlano();
 }
 
 async function verPlano(){
   try {
     const u = await (await fetch('/eu/uso')).json();
     const el = $('#saldo');
-    // usadas sobre franquia, e não só o que resta: quem produz precisa ver o
-    // ritmo do ciclo, não um número que só desce
-    const cheio = Math.min(100, Math.round(100 * u.pecas / Math.max(1, u.plano.pecas)));
-    el.innerHTML = `<b>${u.pecas}/${u.plano.pecas}</b> peças`
+    // SALDO: o que ainda dá para fazer, sobre a franquia do ciclo. Antes era
+    // "usadas/franquia", que é o mesmo par de números dizendo o contrário —
+    // e quem olha de passagem lê o primeiro número como o que tem
+    const resta = Math.max(0, u.resta.pecas);
+    const cheio = Math.min(100, Math.round(100 * resta / Math.max(1, u.plano.pecas)));
+    el.innerHTML = `<span class="rot">saldo de peças</span>`
+      + `<b>${resta}/${u.plano.pecas}</b>`
       + `<span class="fio"><i style="width:${cheio}%"></i></span>`
-      + `${u.videos}/${u.plano.videos} vídeos · ${u.plano.nome}`;
+      + `<span class="mais">${Math.max(0, u.resta.videos)}/${u.plano.videos} vídeos`
+      + ` · ${u.plano.nome}</span>`;
     el.hidden = false;
-    el.classList.toggle('apertado', u.resta.pecas <= 0);
-    el.title = `Ciclo ${u.mes}. Restam ${u.resta.pecas} peças e ${u.resta.videos} vídeos. `
-             + `Clique para ver os planos.`;
+    el.classList.toggle('apertado', resta <= 0);
+    el.title = `Ciclo ${u.mes}. Você já fez ${u.pecas} de ${u.plano.pecas} peças e `
+             + `${u.videos} de ${u.plano.videos} vídeos. Clique para ver os planos.`;
   } catch(e){}
 }
 
@@ -972,27 +1250,61 @@ async function verPlano(){
    A miniatura do PSD já foi lida no navegador; recortá-la por prancheta deixa
    a escolha visual. Escolher entre "Prancheta 1" e "Prancheta 7" pelo nome é
    adivinhar — e no arquivo real as seis têm a mesma proporção. */
+/* ---------- escolher a prancheta ----------
+   O recorte da miniatura embutida do PSD é o que dá para mostrar na hora: ela
+   tem 256 px para o documento inteiro, então numa prancheta vira um borrão.
+   Serve de primeiro quadro; a prévia composta de verdade chega atrás, pela
+   fila, e entra no lugar sozinha. */
+let olhoNaPrancheta = null;
+
 function escolherPrancheta(lista){
   const grade = $('#prGrade'); grade.innerHTML = '';
   const capa = $('#zona img');
   for (const pr of lista){
     const cartao = document.createElement('button');
     cartao.className = 'pr';
-    cartao.innerHTML = `<canvas width="380" height="${Math.round(380*pr.h/pr.w)}"></canvas>`
+    cartao.dataset.nome = pr.nome || '';
+    cartao.innerHTML = `<div class="cx"><canvas width="760" `
+      + `height="${Math.round(760*pr.h/pr.w)}"></canvas>`
+      + `<span class="carregando">compondo a prévia…</span></div>`
       + `<b>${pr.nome || 'a arte'}</b><span>${pr.w}×${pr.h}</span>`;
     const cv = cartao.querySelector('canvas');
     if (capa && capa.naturalWidth && peca.w){
       const k = capa.naturalWidth / peca.w;       // a miniatura é menor que o PSD
-      cv.getContext('2d').drawImage(capa, pr.x*k, pr.y*k, pr.w*k, pr.h*k,
-                                    0, 0, cv.width, cv.height);
+      const cx = cv.getContext('2d');
+      cx.imageSmoothingEnabled = true; cx.imageSmoothingQuality = 'high';
+      cx.drawImage(capa, pr.x*k, pr.y*k, pr.w*k, pr.h*k, 0, 0, cv.width, cv.height);
     }
     cartao.onclick = () => mandarPrancheta(pr.nome);
     grade.appendChild(cartao);
   }
   $('#pranchetas').classList.remove('hidden');
+  trocarPorPrevias();
+}
+
+/* A prévia composta troca o borrão assim que fica pronta, uma por uma. */
+async function trocarPorPrevias(){
+  clearInterval(olhoNaPrancheta);
+  const tentar = async () => {
+    let d; try { d = await (await fetch(`/jobs/${job}`)).json(); } catch(e){ return; }
+    let faltam = 0;
+    for (const pr of (d.pranchetas || [])){
+      const cartao = $(`#prGrade .pr[data-nome="${(pr.nome||'').replace(/"/g,'')}"]`);
+      if (!cartao) continue;
+      if (!pr.previa){ faltam++; continue; }
+      const cx = cartao.querySelector('.cx');
+      if (cx.querySelector('img')) continue;
+      cx.innerHTML = `<img src="/jobs/${job}/arquivos/${encodeURIComponent(pr.previa)}" alt="">`;
+    }
+    if (!faltam || $('#pranchetas').classList.contains('hidden'))
+      clearInterval(olhoNaPrancheta);
+  };
+  await tentar();
+  olhoNaPrancheta = setInterval(tentar, 2000);
 }
 
 async function mandarPrancheta(nome){
+  clearInterval(olhoNaPrancheta);
   $('#pranchetas').classList.add('hidden');
   $('#conta').textContent = 'Enviando'; $('#detalhe').textContent = `Usando ${nome}.`;
   const fd = new FormData(); fd.set('nome', nome);
@@ -1010,11 +1322,18 @@ async function abrirAnimar(){
   if (!p.disponivel){ aviso('A animação não está instalada neste servidor.'); return; }
   const caixa = $('#presets'); caixa.innerHTML = '';
   presetEscolhido = p.padrao;
-  for (const nome of p.presets){
+  // o exemplo rodando ao lado do nome: "seco" e "energia" não dizem o que vai
+  // acontecer com a peça, e o render é caro demais para se descobrir testando
+  for (const it of p.presets){
+    const id = typeof it === 'string' ? it : it.id;
     const b = document.createElement('button');
-    b.textContent = nome;
-    b.classList.toggle('ativa', nome === presetEscolhido);
-    b.onclick = () => { presetEscolhido = nome;
+    b.type = 'button';
+    b.className = 'preset' + (id === presetEscolhido ? ' ativa' : '');
+    b.innerHTML = (it.exemplo
+        ? `<img class="amostra" src="${it.exemplo}" alt="exemplo do movimento ${it.nome || id}">`
+        : `<span class="sem">sem exemplo</span>`)
+      + `<b>${it.nome || id}</b><small>${it.diz || ''}</small>`;
+    b.onclick = () => { presetEscolhido = id;
       caixa.querySelectorAll('button').forEach(x => x.classList.toggle('ativa', x===b)); };
     caixa.appendChild(b);
   }
@@ -1053,10 +1372,45 @@ $('#btnAnimarOk').onclick = async () => {
    O cartão está na proporção do destino, com 132 px de largura: serve para
    escolher o formato, não para conferir a peça. Sem isto a única forma de ver
    o que saiu era baixar o zip. */
-function ampliar(url, fid){
+/* o que a peça não trouxe, em folha aberta. `descartados` é a explicação do
+   modelo para cada coisa que ficou de fora — ela estava sendo gravada e nunca
+   mostrada, e foi assim que uma peça saiu dizendo "Porto Belo" com a chamada
+   pedida dizendo "São Paulo" */
+function verRessalvas(fid, avisos, fora){
+  $('#resTitulo').textContent = `O que você precisa saber · ${fid}`;
+  const todos = (avisos || []).join(' ');
+  const itens = (avisos || []).map(a => `<div class="item">${a}</div>`);
+  for (const [oque, porque] of Object.entries(fora || {})){
+    // o aviso de cima já carrega o motivo quando é sobre o que foi pedido:
+    // repetir a mesma frase duas vezes é o que faz a folha parar de ser lida
+    if (porque && todos.includes(porque)) continue;
+    itens.push(`<div class="item fora"><b>ficou de fora: ${oque}</b>${porque}</div>`);
+  }
+  $('#resLista').innerHTML = itens.join('') || '<div class="item">Nada a relatar.</div>';
+  $('#ressalvas').classList.remove('hidden');
+}
+$('#resOk').onclick = () => $('#ressalvas').classList.add('hidden');
+$('#ressalvas').onclick = e => {
+  if (e.target.id === 'ressalvas') $('#ressalvas').classList.add('hidden');
+};
+
+function ampliar(url, fid, filme){
   const l = $('#lupa');
-  l.querySelector('img').src = url;
+  // a peça animada também amplia: o vídeo do cartão tem 132 px de largura, e
+  // julgar movimento nesse tamanho não dá. Com controles, para poder parar
+  const im = l.querySelector('img'), vd = l.querySelector('video');
+  im.hidden = !!filme; vd.hidden = !filme;
+  if (filme){ vd.src = url; vd.play().catch(() => {}); }
+  else { vd.pause(); vd.removeAttribute('src'); }
+  im.src = filme ? '' : url;
   l.querySelector('.pe').textContent = fid ? `${fid} · clique para fechar` : 'clique para fechar';
+  // de ver para ajustar sem fechar e procurar o botão de novo: é a decisão
+  // que se toma olhando a peça grande
+  const cartao = fid && document.querySelector(`.f[data-id="${fid}"]`);
+  const da = !!(cartao && cartao.classList.contains('ajustavel'));
+  const bt = l.querySelector('.ajustar');
+  bt.hidden = !da;
+  bt.onclick = ev => { ev.stopPropagation(); l.classList.add('hidden'); abrirEditor(fid); };
   l.classList.remove('hidden');
 }
 $('#lupa').onclick = () => $('#lupa').classList.add('hidden');
@@ -1086,7 +1440,7 @@ async function abrirEditor(fid){
     aviso('Esta peça é a arte reenquadrada: não há elemento solto para mover.');
     return;
   }
-  ed = { fid, peca: pc, k: 1, sel: null,
+  ed = { fid, peca: pc, k: 1, sel: null, trocas: {},
          boxes: pc.elementos.map(e => ({...e.box})),
          orig: pc.elementos.map(e => ({...e.box})),
          fora: new Set() };
@@ -1100,7 +1454,7 @@ $('#edFecha').onclick = fecharEditor;
 $('#edVolta').onclick = () => {
   if (!ed) return;
   ed.boxes = ed.orig.map(b => ({...b}));
-  ed.fora.clear(); ed.sel = null; pintarLona();
+  ed.fora.clear(); ed.trocas = {}; ed.sel = null; pintarLona();
 };
 
 function grupos(){
@@ -1132,8 +1486,8 @@ function pintarLona(){
   const sv = peca.safe || {left:0,right:0,top:0,bottom:0};
   const fundo = (peca.fundo || {}).src ? arquivoUrl(peca.fundo.src) : '';
   lona.innerHTML = `<div class="ch" style="background-image:url('${fundo}')"></div>`
-    + `<div class="margem" style="left:${sv.left*k}px;top:${sv.top*k}px;`
-    + `right:${sv.right*k}px;bottom:${sv.bottom*k}px"></div>`;
+    + `<div class="veu"><div class="margem" style="left:${sv.left*k}px;top:${sv.top*k}px;`
+    + `right:${sv.right*k}px;bottom:${sv.bottom*k}px"></div></div>`;
 
   for (const g of grupos()){
     const c = cerca(g.itens);
@@ -1145,7 +1499,35 @@ function pintarLona(){
     const ordem = Math.max(1, 200 - Math.round(Math.sqrt(c.w * c.h) / 12));
     el.style.cssText = `left:${c.x*k}px;top:${c.y*k}px;width:${c.w*k}px;`
       + `height:${c.h*k}px;z-index:${ed.sel === g.chave ? 300 : ordem}`;
-    el.innerHTML = `<span class="rot">${g.rotulo}</span><span class="puxa"></span>`;
+    const ehTexto = g.itens.some(i => {
+      const e = ed.peca.elementos[i];
+      return e.tipo === 'texto' || e.tipo === 'botao' || e.de || e.texto;
+    });
+    el.innerHTML = `<span class="rot">${g.rotulo}</span><span class="puxa"></span>`
+      + (ed.sel === g.chave
+         ? (ehTexto ? `<button class="lapis" type="button" title="Trocar o texto">✎</button>` : '')
+           + `<button class="lixo" type="button" title="Tirar da peça">🗑</button>` : '');
+    const lapis = el.querySelector('.lapis');
+    if (lapis) lapis.onpointerdown = ev => {
+      ev.preventDefault(); ev.stopPropagation(); trocarTexto(g);
+    };
+    const lixo = el.querySelector('.lixo');
+    // a tecla Delete continua valendo, mas ninguém descobre tecla: a lixeira
+    // aparece no elemento escolhido, que é onde a mão já está
+    if (lixo) lixo.onpointerdown = ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      tirarDaPeca(g);
+    };
+    if (ed.trocas[g.chave] !== undefined){
+      // mostra como vai ficar, no lugar dos recortes antigos
+      const cx = document.createElement('div');
+      cx.className = 'trocado';
+      cx.textContent = ed.trocas[g.chave];
+      el.appendChild(cx);
+      pegar(el, g);
+      lona.appendChild(el);
+      continue;
+    }
     for (const i of g.itens){
       const e = ed.peca.elementos[i], b = ed.boxes[i];
       const dentro = document.createElement('div');
@@ -1193,6 +1575,72 @@ function pegar(el, g){
   };
 }
 
+/* ---------- trocar o texto ----------
+   A linha da arte chega como uma imagem POR LETRA: "a Porto Belo!" são onze
+   PNGs recortados do PSD. Trocar a cidade não é editar um PNG — é desenhar a
+   frase nova no lugar da linha inteira, com a cor que ela tinha e a fonte do
+   trabalho. A letra muda de desenho, porque a fonte da marca não vem dentro
+   do PSD, e por isso o aviso é ANTES. */
+function textoDoGrupo(g){
+  if (g.textoNovo !== undefined) return g.textoNovo;
+  const e = ed.peca.elementos[g.itens[0]] || {};
+  return e.de || e.texto || '';
+}
+
+function trocarTexto(g){
+  const e0 = ed.peca.elementos[g.itens[0]] || {};
+  const fonte = e0.fonte_mae || '';
+  const temFonte = !fonte || minhasFontes.some(f => casaFonte(f, fonte));
+  const atual = textoDoGrupo(g);
+  const novo = prompt(
+    fonte ? `Texto desta linha (fonte da arte: ${fonte}${temFonte ? '' : ' — não enviada'}):`
+          : 'Texto desta linha:', atual);
+  if (novo === null || novo === atual) return;
+  ed.trocas[g.chave] = novo;
+  ed.sel = g.chave; pintarLona();
+  if (fonte && !temFonte) pedirFonte(fonte);
+  else aviso('Texto trocado. Atualize a peça para desenhar.', true);
+}
+
+/* ---------- a fonte da marca ----------
+   O PSD diz qual fonte a linha usa, mas não leva o arquivo dentro dele. Sem
+   ele o texto novo sai na letra da casa — e família declarada sem arquivo faz
+   o navegador cair numa fonte do sistema sem avisar, que é o erro mais
+   difícil de ver no olho. */
+let minhasFontes = [];
+const soLetras = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const casaFonte = (f, pedida) =>
+  soLetras(f.familia + f.estilo) === soLetras(pedida)
+  || soLetras(f.familia) === soLetras(pedida);
+
+async function carregarFontes(){
+  try { minhasFontes = (await (await fetch('/eu/fontes')).json()).fontes || []; }
+  catch(e){}
+}
+
+function pedirFonte(familia){
+  aviso(`Esta linha é ${familia}. Envie o arquivo dessa fonte para o texto sair `
+      + `na mesma letra — sem ele a peça sai na letra da casa.`);
+  const campo = $('#fonteArquivo');
+  campo.onchange = async ev => {
+    const f = ev.target.files[0]; if (!f) return;
+    const fd = new FormData(); fd.set('fonte', f);
+    const r = await fetch('/eu/fontes', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok){ aviso(d.detail || 'Não consegui ler esse arquivo como fonte.'); return; }
+    minhasFontes = d.fontes || [];
+    aviso(`${d.fonte.familia} ${d.fonte.estilo} guardada. Atualize a peça.`, true);
+    campo.value = '';
+  };
+  campo.click();
+}
+
+function tirarDaPeca(g){
+  g.itens.forEach(i => ed.fora.add(i));
+  ed.sel = null; pintarLona();
+  aviso(`${g.rotulo} saiu da peça. "Desfazer tudo" traz de volta.`, true);
+}
+
 addEventListener('keydown', e => {
   if (!ed || $('#editor').classList.contains('hidden')) return;
   if (e.key !== 'Delete' && e.key !== 'Backspace') return;
@@ -1200,22 +1648,37 @@ addEventListener('keydown', e => {
   const g = grupos().find(x => x.chave === ed.sel);
   if (!g) return;
   e.preventDefault();
-  g.itens.forEach(i => ed.fora.add(i));
-  ed.sel = null; pintarLona();
+  tirarDaPeca(g);
 });
 
 $('#edSalva').onclick = async () => {
   if (!ed) return;
   const fid = ed.fid;
-  const elementos = ed.peca.elementos
-    .map((e, i) => ed.fora.has(i) ? null : { i, box: ed.boxes[i] })
-    .filter(Boolean);
+  // a linha trocada vai como UM elemento: o primeiro recorte dela, com a
+  // caixa da linha inteira e o texto novo. Os outros recortes não voltam, e
+  // é assim que o servidor sabe que saíram
+  const trocado = new Map(), sumiu = new Set();
+  for (const g of grupos()){
+    const novo = ed.trocas[g.chave];
+    if (novo === undefined) continue;
+    const c = cerca(g.itens);
+    trocado.set(g.itens[0], { texto: novo, box: { x: c.x, y: c.y, w: c.w, h: c.h } });
+    g.itens.slice(1).forEach(i => sumiu.add(i));
+  }
+  const elementos = ed.peca.elementos.map((e, i) => {
+    if (ed.fora.has(i) || sumiu.has(i)) return null;
+    const tr = trocado.get(i);
+    return tr ? { i, box: tr.box, texto: tr.texto, tipografar: true }
+              : { i, box: ed.boxes[i] };
+  }).filter(Boolean);
   if (!elementos.length && !confirm('Isto tira todos os elementos da peça. Seguir?')) return;
   $('#edSalva').disabled = true;
   try {
     const r = await fetch(`/jobs/${job}/pecas/${fid}`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ elementos }) });
+    const resposta = r.ok ? await r.clone().json().catch(() => ({})) : {};
+    for (const a of resposta.avisos || []) aviso(a);
     if (!r.ok){ aviso((await r.json()).detail || 'Não deu para salvar.');
                 $('#edSalva').disabled = false; return; }
   } catch(e){ aviso('Não consegui falar com o servidor.'); $('#edSalva').disabled = false; return; }

@@ -171,3 +171,74 @@ class TestAsVerificacoesRodam:
         r = desdobrar(arte, ["gdn-300x250"], CompositorSimples("Chegamos"), tmp_path / "job")
         gravado = json.loads((r.pasta / "resultado.json").read_text(encoding="utf-8"))
         assert "avisos" in gravado
+
+
+class TestOQueFoiPedidoENaoEntrou:
+    """Entregar diferente do que foi pedido sem dizer é o pior jeito de errar:
+    parece que funcionou.
+
+    Caso real, 12/10/2026: modo "novos textos", chamada "Chegamos a São
+    Paulo!", ajuste "elimina o boneco da peça". A peça saiu com o "Chegamos a
+    Porto Belo" impresso na arte e com o mascote no lugar. O modelo tinha
+    explicado as duas coisas em `descartados` — e `descartados` era gravado no
+    JSON da montagem e não chegava a lugar nenhum.
+    """
+
+    class Compositor:
+        headline = "Chegamos a São Paulo!"
+        cta = ""
+
+    def _peca(self):
+        return {"elementos": [{"tipo": "texto", "texto": "CANDIDATE-SE"}],
+                "descartados": {
+                    "a Porto Belo! / Chegamos":
+                        "Já vêm impressos na arte. Atenção: a arte diz 'Chegamos a "
+                        "Porto Belo!' e a headline diz 'São Paulo'.",
+                    "elimina o boneco da peça":
+                        "É um ajuste pedido, não texto da peça: a composição só "
+                        "posiciona texto e não edita a arte.",
+                }}
+
+    def test_a_chamada_que_nao_entrou_vira_aviso(self):
+        from api.pipeline import ficou_de_fora
+        avisos = ficou_de_fora(self._peca(), self.Compositor(), "")
+        assert any("São Paulo" in a and "não entrou" in a for a in avisos)
+
+    def test_o_aviso_leva_o_motivo_do_modelo(self):
+        """Dizer "não entrou" sem dizer por quê devolve a pessoa ao escuro."""
+        from api.pipeline import ficou_de_fora
+        avisos = ficou_de_fora(self._peca(), self.Compositor(), "")
+        assert "Porto Belo" in avisos[0]
+
+    def test_o_ajuste_que_nao_pode_ser_feito_vira_aviso(self):
+        from api.pipeline import ficou_de_fora
+        avisos = ficou_de_fora(self._peca(), self.Compositor(), "elimina o boneco da peça")
+        assert any("ajuste que você pediu" in a for a in avisos)
+
+    def test_chamada_que_entrou_nao_vira_aviso(self):
+        """Senão todo trabalho sai com ressalva e a ressalva perde o sentido."""
+        from api.pipeline import ficou_de_fora
+        peca = {"elementos": [{"tipo": "texto", "texto": "Chegamos a São Paulo!"}]}
+        assert ficou_de_fora(peca, self.Compositor(), "") == []
+
+    def test_pontuacao_e_acento_nao_enganam_a_comparacao(self):
+        from api.pipeline import ficou_de_fora
+        peca = {"elementos": [{"tipo": "texto", "texto": "CHEGAMOS A SAO PAULO"}]}
+        assert ficou_de_fora(peca, self.Compositor(), "") == []
+
+    def test_sem_nada_pedido_nao_inventa_ressalva(self):
+        from api.pipeline import ficou_de_fora
+
+        class Vazio:
+            headline = ""
+            cta = ""
+        assert ficou_de_fora(self._peca(), Vazio(), "") == []
+
+    def test_o_caminho_do_psd_guarda_o_que_ficou_de_fora(self):
+        """No caminho do PSD nem ao estado do trabalho isso chegava."""
+        import inspect
+
+        from api import pipeline
+        fonte = inspect.getsource(pipeline._psd_e_render)
+        assert 'r.descartados[fid] = peca["descartados"]' in fonte
+        assert "ficou_de_fora(peca, compositor, brief)" in fonte
