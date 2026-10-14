@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from api import ambiente, cobranca, contas, trabalhos, uso
 from api.pipeline import MARCA_DA_MAO
 from api.tarefas import (MODOS, MODO_PADRAO, TEXTO_NOVO, previas, processar,
-                         processar_video, redesenhar)
+                         processar_video, redesenhar, refazer_fundo)
 from api.fila import FILA_VIDEO, fila_do_ambiente
 from motor.replica import formato_by_id, load_formatos
 
@@ -504,6 +504,35 @@ def animar(job: str, formatos: str = Form(""), preset: str = Form("editorial"),
     return {"job": job, "video": trabalhos.ler(c.id, job)["video"]}
 
 
+@app.post("/jobs/{job}/pecas/{formato}/fundo", status_code=202)
+def refazer_o_fundo(job: str, formato: str, c: contas.Conta = Depends(conta_atual)):
+    """Refaz o fundo de uma peça só, insistindo no generativo.
+
+    A ressalva do fundo dizia "vale rodar de novo" e a única saída era refazer
+    o trabalho inteiro pelo rodapé. Quem viu o problema está olhando uma peça:
+    a saída tem que valer para ela.
+    """
+    try:
+        estado = trabalhos.ler(c.id, job)
+    except ValueError:
+        raise HTTPException(400, "identificador inválido")
+    if estado is None:
+        raise HTTPException(404, "trabalho não existe")
+    if formato not in (estado.get("prontas") or []):
+        raise HTTPException(409, f"não há peça pronta em `{formato}`")
+    if estado.get("arquivado"):
+        raise HTTPException(409, "o material bruto deste trabalho já foi apagado por "
+                                 "idade: sem a arte não dá para refazer o fundo")
+    if estado.get("status") in ("na fila", "rodando"):
+        raise HTTPException(409, "este trabalho ainda está rodando")
+
+    trabalhos.gravar(c.id, job, {"ajuste": {"status": "na fila", "formato": formato,
+                                            "oque": "fundo"}})
+    trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
+        refazer_fundo, c.id, job, formato)})
+    return {"job": job, "formato": formato, "ajuste": "na fila"}
+
+
 @app.post("/jobs/{job}/finalizar", status_code=202)
 def finalizar(job: str, c: contas.Conta = Depends(conta_atual)):
     """Refaz o trabalho em modo final.
@@ -752,6 +781,35 @@ def ver(job: str, c: contas.Conta = Depends(conta_atual)):
             "entregas": trabalhos.entregas(c.id, job)}
 
 
+# quanto tempo de silêncio conta como queda. O passo mais longo medido é o
+# fundo generativo, que espera o serviço responder; o dobro dele dá folga sem
+# deixar ninguém olhando para uma tela parada por meia hora
+SILENCIO_DEMAIS = int(os.environ.get("REPLICAI_SILENCIO_SEG", 900))
+
+
+def _parou_no_relogio(estado: dict) -> str:
+    """O trabalho parou de dar sinal? Devolve o motivo, ou vazio."""
+    from datetime import datetime, timezone
+    bruto = estado.get("atualizado")
+    if not bruto:
+        return ""
+    try:
+        quando = datetime.fromisoformat(bruto)
+    except ValueError:
+        return ""
+    if quando.tzinfo is None:
+        quando = quando.replace(tzinfo=timezone.utc)
+    quieto = (datetime.now(timezone.utc) - quando).total_seconds()
+    if quieto < SILENCIO_DEMAIS:
+        return ""
+    p = estado.get("progresso") or {}
+    onde = f" em \"{p.get('etapa')}\"" if p.get("etapa") else ""
+    onde += f", no formato {p['formato']}" if p.get("formato") else ""
+    return (f"o trabalho parou de dar sinal{onde} há {int(quieto // 60)} minutos. "
+            f"Provavelmente o servidor reiniciou no meio. As peças que já saíram "
+            f"continuam aqui; mande de novo para refazer o resto")
+
+
 def perdido(conta: str, job: str, estado: dict) -> dict:
     """Trabalho que a fila perdeu não pode ficar esperando para sempre.
 
@@ -762,6 +820,18 @@ def perdido(conta: str, job: str, estado: dict) -> dict:
     """
     if estado.get("status") not in ("na fila", "rodando"):
         return estado
+
+    # Sem fila de verdade o trabalho roda DENTRO da api, e aí não há vaga para
+    # perguntar: se o processo cai — um reinício, um erro fatal —, o estado
+    # fica "rodando" para sempre e a tela diz "Replicando" com nada
+    # acontecendo. Aqui o relógio é a testemunha: o passo a passo grava a cada
+    # etapa, então silêncio longo é queda, não lentidão.
+    parado = _parou_no_relogio(estado)
+    if parado:
+        novo = {"status": "erro", "erro": parado, "progresso": None}
+        trabalhos.gravar(conta, job, novo)
+        return {**estado, **novo}
+
     ident = estado.get("id_na_fila")
     if not ident or not hasattr(FILA, "filas"):
         return estado

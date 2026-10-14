@@ -96,6 +96,11 @@ textarea{resize:vertical;min-height:70px}
 .f .cx{position:relative;width:100%;border:1.5px solid rgba(var(--fgRGB),.22);border-radius:5px;
   background:repeating-conic-gradient(#141014 0% 25%,#191419 0% 50%) 50%/12px 12px;overflow:hidden}
 .f .cx img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+/* a arte-mãe aparecendo de leve no cartão ainda vazio: é a prévia do corte.
+   Apagada de propósito — ela mostra o enquadramento, não a peça pronta */
+.f .cx .fantasma{opacity:.3;filter:saturate(.5)}
+.f.on .cx .fantasma{opacity:.52;filter:none}
+.f:hover .cx .fantasma{opacity:.6}
 .f.on .cx{border-color:var(--rosa);box-shadow:0 0 0 3px rgba(232,180,200,.16)}
 .f.on b{color:var(--rosa)}
 .f:focus-visible .cx{outline:2px solid var(--rosa);outline-offset:2px}
@@ -175,15 +180,47 @@ button.secund{background:transparent;color:var(--fg);border:1px solid var(--linh
 .pr b{display:block;font:500 12px var(--mono);margin-top:9px;letter-spacing:.04em}
 .pr span{color:var(--mut);font-size:11.5px}
 
-/* ---------- as campanhas de antes ----------
-   A API guardava a lista desde sempre e a tela nunca a pedia: fechar a aba
-   era perder o caminho de volta para a campanha, com as peças inteiras no
-   disco. Para quem gera a campanha X hoje e quer baixá-la de novo depois de
-   amanhã, isso não era um detalhe — era o produto não existir. */
-#trabalhos{position:fixed;inset:0;z-index:160;background:rgba(0,0,0,.72);
+/* ---------- a conta: quem sou eu aqui, o que me resta, o que já é meu ----------
+   Estava tudo espalhado pelo cabeçalho — um número de saldo, um botão de
+   campanhas em letra miúda e um "sair" —, e as fontes da marca, que são da
+   CONTA, moravam no meio do formulário de um trabalho. Agora é uma ficha só:
+   identidade, franquia, fontes e campanhas, na ordem em que se pergunta. */
+#minhaConta{position:fixed;inset:0;z-index:160;background:rgba(0,0,0,.72);
   display:grid;place-items:center;padding:24px}
-#trabalhos.hidden{display:none}
-#trabalhos .folha{max-width:min(680px,94vw)}
+#minhaConta.hidden{display:none}
+#minhaConta .folha{max-width:min(620px,94vw)}
+#minhaConta .ficha{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+#minhaConta .ficha h2{font:400 34px/1 var(--disp);letter-spacing:.04em;margin:0}
+#minhaConta .mail{margin:4px 0 0;font:500 11.5px var(--mono);color:var(--mut);letter-spacing:.04em}
+#minhaConta .bloco{margin-top:26px;padding-top:18px;border-top:1px solid var(--linha)}
+#minhaConta .bloco h3{font:500 10.5px var(--mono);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--mut);margin:0 0 12px}
+#minhaConta .bloco .nota{margin:0 0 12px;font-size:12.5px;color:var(--mut);line-height:1.5}
+#minhaConta .plano-linha{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+#minhaConta .plano-linha b{font:500 17px var(--corpo)}
+#minhaConta .ciclo{margin:6px 0 0;font:500 11px var(--mono);color:var(--mut);letter-spacing:.04em}
+#minhaConta .medidor{display:grid;gap:10px;margin-top:14px}
+#minhaConta .medidor div{display:grid;grid-template-columns:1fr auto;gap:4px 12px;
+  font:500 12.5px var(--corpo);align-items:baseline}
+#minhaConta .medidor i{grid-column:1/3;height:5px;border-radius:3px;background:var(--painel2);
+  overflow:hidden;display:block}
+#minhaConta .medidor i span{display:block;height:100%;background:var(--rosa)}
+/* só a barra, não o rótulo: `.vazio span` pegava o texto junto e a linha
+   inteira virava um bloco vermelho */
+#minhaConta .medidor .vazio i span{background:var(--err)}
+#minhaConta .medidor .vazio > span b{color:var(--err)}
+#minhaConta .medidor em{font:500 11px var(--mono);color:var(--mut);font-style:normal}
+#minhaConta .atraso{margin-top:12px;font-size:12.5px;color:var(--err)}
+#minhaConta .folha > .secund{margin-top:24px}
+
+/* o botão da conta: o nome da empresa, que é como ela se reconhece */
+header .conta-btn{display:flex;align-items:center;gap:8px;background:none;border:0;
+  cursor:pointer;color:var(--fg);font:500 12px var(--corpo);padding:4px 2px}
+header .conta-btn i{width:24px;height:24px;border-radius:50%;background:var(--vinho);
+  color:#FFF1F7;display:grid;place-items:center;font:500 11px var(--mono);font-style:normal}
+header .conta-btn b{font-weight:500;max-width:22ch;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+header .conta-btn:hover b{color:var(--rosa)}
 #listaTrabalhos{display:flex;flex-direction:column;gap:2px;margin:0 0 18px}
 #listaTrabalhos button{display:grid;grid-template-columns:1fr auto;gap:2px 14px;
   align-items:baseline;text-align:left;background:none;border:0;border-bottom:1px solid var(--linha);
@@ -212,6 +249,11 @@ header .campanhas:hover{color:var(--fg)}
 #resLista .item.fora{border-left-color:var(--rosa)}
 #resLista .item b{display:block;font:500 11px var(--mono);letter-spacing:.08em;
   text-transform:uppercase;color:var(--mut);margin-bottom:3px}
+/* a saída de cada caso, dentro da folha: ler o problema e fechar a janela não
+   é ler o problema e resolver */
+#resAcoes{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
+#resAcoes .semSaida{width:100%;margin:0;font-size:12.5px;line-height:1.5;color:var(--mut);
+  border-left:2px solid var(--err);padding-left:11px}
 
 /* ---------- animar ---------- */
 #animar{position:fixed;inset:0;z-index:150;background:rgba(0,0,0,.72);
@@ -292,12 +334,19 @@ header .sair:hover{color:var(--fg)}
 header .marca{height:24px;display:block;margin-right:2px}
 header .marca img{height:100%;display:block}
 
-/* ---------- as fontes da marca ---------- */
+/* ---------- as fontes da marca, no fluxo do upload ----------
+   Eu as tinha levado para a ficha da conta, por serem guardadas na conta. Mas
+   o que manda não é onde ficam guardadas: é de quem é a arte. Cada PSD pede a
+   fonte do cliente dele, e quem descobre isso é quem está subindo a peça. */
 .fontes{margin:18px 0 0;background:var(--painel);border:1px solid var(--linha);
   border-radius:12px;padding:12px 14px}
 .fontes>.rot{display:block;font:500 10.5px var(--mono);letter-spacing:.12em;
   text-transform:uppercase;color:var(--mut)}
 .fontes .nota{margin:6px 0 10px;font-size:12px;color:var(--mut);line-height:1.45}
+.fontes .pedidas{margin:0 0 10px;font-size:12.5px;line-height:1.5}
+.fontes .pedidas b{color:var(--fg);font-weight:500}
+.fontes .pedidas .falta{color:var(--err)}
+.fontes .pedidas .tem{color:var(--sinal)}
 .fontes .lista{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
 .fontes .lista:empty{display:none}
 .fontes .lista b{display:flex;align-items:center;gap:7px;font:500 11px var(--mono);
@@ -307,6 +356,15 @@ header .marca img{height:100%;display:block}
   font-size:11px;padding:0;line-height:1}
 .fontes .lista button:hover{color:var(--err)}
 
+#minhaConta .lista{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+#minhaConta .lista:empty{display:none}
+#minhaConta .lista b{display:flex;align-items:center;gap:7px;font:500 11px var(--mono);
+  background:var(--painel2);border:1px solid var(--linha);border-radius:999px;
+  padding:5px 10px;color:var(--fg)}
+#minhaConta .lista button{background:none;border:0;color:var(--mut);cursor:pointer;
+  font-size:11px;padding:0;line-height:1}
+#minhaConta .lista button:hover{color:var(--err)}
+
 /* ---------- os três modos ---------- */
 .modos{margin:20px 0 0;border:1px solid var(--linha);border-radius:12px;overflow:hidden}
 .modos>.rot{display:block;font:500 10.5px var(--mono);letter-spacing:.12em;
@@ -315,12 +373,17 @@ label.modo{display:flex;gap:10px;padding:11px 14px;cursor:pointer;
   border-top:1px solid var(--linha);align-items:flex-start}
 label.modo input{margin:4px 0 0;accent-color:var(--rosa);flex:none}
 label.modo b{display:block;font-weight:500;font-size:13.5px}
-label.modo small{display:block;color:var(--mut);font-size:12px;line-height:1.4;margin-top:2px}
+/* a explicação só no escolhido: três parágrafos abertos no alto da coluna são
+   um muro, e quem já sabe o que quer lê o mesmo texto toda vez */
+label.modo small{display:none;color:var(--mut);font-size:12px;line-height:1.4;margin-top:2px}
+label.modo.on small{display:block}
 label.modo{border-left:3px solid transparent}
 label.modo.on{background:var(--vinho-fundo);border-left-color:var(--vinho)}
 label.modo.on b{color:var(--rosa)}
-.travado{margin:10px 0 0;font-size:12px;color:var(--mut);border-left:2px solid var(--linha);
-  padding-left:10px}
+/* o aviso mora DENTRO do modo de que ele fala, e não solto embaixo da caixa:
+   ele é o limite daquela promessa, não um recado geral da tela */
+label.modo.on small.travado{display:block;margin-top:8px;padding-left:9px;
+  border-left:2px solid var(--err);color:rgba(var(--fgRGB),.75)}
 
 /* ---------- progresso ----------
    Ele morava só no rodapé, numa tira de 3 px embaixo de tudo: quem está
@@ -344,6 +407,16 @@ label.modo.on b{color:var(--rosa)}
    sem fingir uma porcentagem que ninguém mediu */
 #andamento.sem .trilha i{width:30%;animation:vaivem 1.6s ease-in-out infinite}
 @keyframes vaivem{0%{margin-left:-30%}100%{margin-left:100%}}
+
+/* ---------- o "mais" do rodapé ---------- */
+footer .mais{position:relative}
+footer .menu{position:absolute;right:0;bottom:calc(100% + 10px);min-width:220px;
+  background:var(--painel);border:1px solid var(--linha);border-radius:12px;
+  padding:6px;display:grid;gap:2px;box-shadow:0 20px 50px rgba(0,0,0,.5)}
+footer .menu[hidden]{display:none}
+footer .menu button{background:none;border:0;color:var(--fg);text-align:left;
+  padding:10px 12px;border-radius:8px;font:500 13.5px var(--corpo);cursor:pointer}
+footer .menu button:hover{background:var(--painel2);color:var(--rosa)}
 
 /* ---------- progresso no rodapé ---------- */
 footer .trilha{height:3px;background:var(--painel2);border-radius:2px;margin-top:8px;
@@ -373,8 +446,9 @@ header .saldo.apertado .fio i{background:var(--err)}
 #lupa img[hidden],#lupa video[hidden]{display:none}
 #lupa .pe{position:fixed;left:0;right:0;bottom:18px;text-align:center;color:var(--mut);
   font:500 11px var(--mono);letter-spacing:.1em;text-transform:uppercase}
-#lupa .ajustar{position:fixed;right:24px;top:22px;background:var(--painel);cursor:pointer}
-#lupa .ajustar[hidden]{display:none}
+#lupa .acoes{position:fixed;right:24px;top:22px;display:flex;gap:8px}
+#lupa .acoes button{background:var(--painel);cursor:pointer}
+#lupa .acoes button[hidden]{display:none}
 /* peça pronta: o cartão inteiro amplia */
 .f.feito{cursor:zoom-in}
 .f .cx .olho{position:absolute;right:5px;bottom:5px;z-index:3;width:22px;height:22px;
@@ -532,12 +606,33 @@ header .saldo.apertado .fio i{background:var(--err)}
   </div>
 </div>
 
-<div id="trabalhos" class="hidden">
+<div id="minhaConta" class="hidden">
   <div class="folha">
-    <h2>Suas campanhas</h2>
-    <p>Tudo que você já gerou fica aqui. Abrir uma traz as peças de volta para
-      a tela: dá para ver, baixar o pacote e a apresentação.</p>
-    <div id="listaTrabalhos"></div>
+    <div class="ficha">
+      <div>
+        <h2 id="fichaNome">—</h2>
+        <p id="fichaEmail" class="mail"></p>
+      </div>
+      <button class="secund" id="fichaSair">Sair</button>
+    </div>
+
+    <section class="bloco">
+      <h3>Plano e saldo</h3>
+      <div class="plano-linha">
+        <b id="fichaPlano">—</b>
+        <button class="secund" id="fichaPlanos">Ver planos</button>
+      </div>
+      <p class="ciclo" id="fichaCiclo"></p>
+      <div class="medidor" id="fichaMedidor"></div>
+    </section>
+
+    <section class="bloco">
+      <h3>Campanhas</h3>
+      <p class="nota">Abrir uma traz as peças de volta para a tela: dá para ver,
+        baixar o pacote e a apresentação.</p>
+      <div id="listaTrabalhos"></div>
+    </section>
+
     <button class="secund" id="trabFecha">Fechar</button>
   </div>
 </div>
@@ -548,7 +643,8 @@ header .saldo.apertado .fio i{background:var(--err)}
     <p>A peça foi entregue. Isto é o que saiu diferente do pedido, ou o que
       precisa de conferência antes de publicar.</p>
     <div id="resLista"></div>
-    <button class="acao" id="resOk">Entendi</button>
+    <div class="acoes" id="resAcoes"></div>
+    <button class="secund" id="resOk">Fechar</button>
   </div>
 </div>
 
@@ -563,11 +659,10 @@ header .saldo.apertado .fio i{background:var(--err)}
 
 <header>
   <a class="marca" href="/" title="ReplicAI"><img src="/assets/replicai-horizontal-escuro.svg" alt="ReplicAI"></a>
-  <span>uma peça aprovada, todos os formatos</span>
   <span id="quemCompoe" class="quem"></span>
   <span class="saldo" id="saldo" hidden></span>
-  <button class="campanhas" id="btnCampanhas" hidden>minhas campanhas</button>
-  <button class="sair" id="btnSair" hidden>sair</button></header>
+  <button class="conta-btn" id="btnConta" hidden aria-haspopup="dialog">
+    <i id="contaInicial">·</i><b id="contaNome">conta</b></button></header>
 
 <div id="andamento" hidden>
   <b id="andEtapa">Replicando</b>
@@ -588,6 +683,9 @@ header .saldo.apertado .fio i{background:var(--err)}
     <input type="file" id="arquivo" hidden accept="image/*,.pdf,.psd,.psb,application/octet-stream">
     <input type="file" id="fonteArquivo2" hidden multiple accept=".ttf,.otf,.woff,.woff2">
 
+    <label class="campo"><span>Nome da campanha</span>
+      <input type="text" id="titulo" placeholder="Dê um nome a esta campanha"></label>
+
     <div class="modos" role="radiogroup" aria-labelledby="rotModos">
       <span class="rot" id="rotModos">Como quer desdobrar</span>
       <label class="modo"><input type="radio" name="modo" value="sem">
@@ -597,39 +695,40 @@ header .saldo.apertado .fio i{background:var(--err)}
         <span><b>Adaptação + Ajustes</b>
         <small>Gera os formatos e deixa você ajustar a diagramação e os textos de cada
         peça antes de exportar: mover, redimensionar, trocar o texto e tirar o que não
-        cabe.</small></span></label>
+        cabe.</small>
+        <small class="travado" id="travaPsd" hidden>Esta arte é uma imagem só, sem
+        camadas: não há foto, logo nem texto para mover separado. Mande o PSD para
+        poder mexer dentro dela.</small></span></label>
       <label class="modo"><input type="radio" name="modo" value="novo">
-        <span><b>Adaptação de formato + Novos Textos</b>
+        <span><b>Adaptação + Novos Textos</b>
         <small>Além do acima, uma chamada e um CTA novos entram no espaço que sobrou.</small></span></label>
     </div>
+    <label class="campo" id="campoHead" hidden><span>Chamada <i class="conta" id="cHead"></i></span>
+      <input type="text" id="headline" placeholder="Insira a nova chamada" maxlength="120"></label>
+    <label class="campo" id="campoCta" hidden><span>Botão <i class="conta" id="cCta"></i></span>
+      <input type="text" id="cta" placeholder="Insira o novo call to action" maxlength="60"></label>
+
     <div class="fontes" id="fontes">
       <span class="rot">Fontes da marca</span>
-      <p class="nota">O PSD diz qual fonte cada linha usa, mas não leva o arquivo dentro
-        dele. Com a fonte aqui, trocar um texto sai na mesma letra; sem ela, sai na letra
-        da casa.</p>
+      <p class="nota">Cada arte pede a fonte do cliente dela, e o PSD diz qual é sem levar
+        o arquivo dentro. Mande a desta arte: ela fica guardada e vale para os próximos
+        trabalhos do mesmo cliente.</p>
+      <p class="pedidas" id="fontesPedidas" hidden></p>
       <div class="lista" id="listaFontes"></div>
       <button class="secund" id="btnFonte" type="button">Enviar fonte</button>
     </div>
-    <p class="travado" id="travaPsd" hidden>Foto e grafismo só se movem com PSD.
-      PNG, JPEG e PDF chegam achatados: aí só dá para mover o que for escrito agora.</p>
 
-    <label class="campo" id="campoHead" hidden><span>Chamada <i class="conta" id="cHead"></i></span>
-      <input type="text" id="headline" placeholder="Chegamos a Porto Belo" maxlength="120"></label>
-    <label class="campo" id="campoCta" hidden><span>Botão <i class="conta" id="cCta"></i></span>
-      <input type="text" id="cta" placeholder="Candidate-se" maxlength="60"></label>
-    <label class="campo"><span>Nome da campanha</span>
-      <input type="text" id="titulo" placeholder="Save the Date Energiza"></label>
     <label class="campo"><span>O que ajustar</span>
-      <textarea id="brief" placeholder="ex.: no Stories a chamada desce; não encostar nada no logo."></textarea></label>
+      <textarea id="brief" placeholder="Diga o que esta peça precisa respeitar"></textarea></label>
   </section>
 
   <section>
     <div class="titulo"><h2>Para onde vai</h2><em id="resumoSel">nenhum formato escolhido</em></div>
     <div class="livre">
       <span class="rot">Outra medida</span>
-      <input type="number" id="livreW" min="50" max="10000" placeholder="largura" aria-label="largura em pixels">
+      <input type="number" id="livreW" min="50" max="10000" placeholder="Largura" aria-label="largura em pixels">
       <b>×</b>
-      <input type="number" id="livreH" min="50" max="10000" placeholder="altura" aria-label="altura em pixels">
+      <input type="number" id="livreH" min="50" max="10000" placeholder="Altura" aria-label="altura em pixels">
       <button class="secund" id="btnLivre" type="button">Adicionar</button>
       <p class="nota">Para destinos que não estão na lista. A margem de recorte vira
         proporcional, porque não há regra de rede conhecida para herdar.</p>
@@ -641,7 +740,11 @@ header .saldo.apertado .fio i{background:var(--err)}
 
 <div id="lupa" class="hidden"><img alt="">
   <video hidden autoplay loop muted playsinline controls></video>
-  <button class="secund ajustar" type="button" hidden>Ajustar esta peça</button>
+  <div class="acoes">
+    <button class="secund verressalva" type="button" hidden>Ver ressalvas</button>
+    <button class="secund refundo" type="button" hidden>Refazer o fundo</button>
+    <button class="secund ajustar" type="button" hidden>Ajustar esta peça</button>
+  </div>
   <div class="pe">clique em qualquer lugar para fechar</div></div>
 
 <div id="editor" class="hidden">
@@ -671,12 +774,20 @@ header .saldo.apertado .fio i{background:var(--err)}
 <footer>
   <div class="estado"><b id="conta">Comece pela peça</b><span id="detalhe">Arraste a arte aprovada em qualquer lugar da tela.</span>
     <div class="trilha hidden" id="trilha"><i></i></div></div>
-  <button class="secund" id="btnFinal" style="display:none"
-    title="Refaz só os fundos que saíram com ressalva, insistindo no generativo. Mantém a diagramação que você ajustou.">Refazer fundos</button>
-  <button class="secund" id="btnAnimar" style="display:none">Animar</button>
-  <button class="secund" id="btnPdf" style="display:none"
-    title="Capa, a arte aprovada e uma página por formato">Apresentação</button>
-  <button class="secund" id="btnZip" style="display:none">Baixar tudo</button>
+  <!-- depois da entrega o rodapé virava um balcão de cinco botões do mesmo
+       tamanho. Baixar é o que se faz sempre; refazer fundo, animar e montar a
+       apresentação são ocasionais e cabem atrás de um "mais" -->
+  <div class="mais" id="mais" style="display:none">
+    <button class="secund" id="btnMais" aria-expanded="false">Mais ⌄</button>
+    <div class="menu" id="menuMais" hidden>
+      <button type="button" id="btnPdf"
+        title="Capa, a arte aprovada e uma página por formato">Apresentação em PDF</button>
+      <button type="button" id="btnAnimar">Animar as peças</button>
+      <button type="button" id="btnFinal"
+        title="Refaz só os fundos que saíram com ressalva, insistindo no generativo. Mantém a diagramação que você ajustou.">Refazer fundos</button>
+    </div>
+  </div>
+  <button class="acao" id="btnZip" style="display:none">Baixar tudo</button>
   <button class="acao" id="btnIr" disabled>Replicar</button>
 </footer>
 
@@ -685,6 +796,9 @@ const $ = s => document.querySelector(s);
 const escolhidos = new Set();
 let catalogo = [], peca = null, job = null, pulso = null;
 const refazer = new Set();          // formatos cuja miniatura ficou velha
+// as ressalvas do trabalho aberto, por formato: a folha e a lupa oferecem a
+// saída a partir delas, e as duas precisam das mesmas
+let avisosDoJob = {}, descartadosDoJob = {};
 let esperandoAjuste = null;         // formato remontado esperando o redesenho
 
 /* ---------- avisos ---------- */
@@ -930,8 +1044,14 @@ function cartao(f){
   const tira = f.livre && !job
     ? `<button class="tira" type="button" title="Tirar das minhas medidas">✕</button>` : '';
   const medida = `${f.w}×${f.h}`;
+  // a arte-mãe apagada dentro do cartão vazio: antes de rodar, dá para VER o
+  // que cada formato vai cortar. Um xadrez cinza não diz nada; a própria peça,
+  // recortada naquela proporção, responde a pergunta que se está fazendo ali
+  const previa = $('#zona img');
+  const fantasma = previa && !job
+    ? `<img class="fantasma" src="${previa.src}" alt="">` : '';
   return `<div class="f${on}" data-id="${f.id}" role="button" tabindex="0" title="${f.nome}">
-    <div class="cx" style="height:${alt}px">${tira}</div>
+    <div class="cx" style="height:${alt}px">${fantasma}${tira}</div>
     <b>${f.nome}</b><i>${f.livre && f.nome === medida ? 'guardada' : medida}</i></div>`;
 }
 
@@ -1054,6 +1174,11 @@ async function acompanhar(){
   const ver = async () => {
     let d; try { d = await (await fetch(`/jobs/${job}`)).json(); } catch(e){ return; }
     const prontas = new Set(d.prontas || []), falhas = d.falhas || {};
+    avisosDoJob = d.avisos || {}; descartadosDoJob = d.descartados || {};
+    const pedidas = (d.psd || {}).fontes || [];
+    if (pedidas.join() !== fontesDaArte.join()){
+      fontesDaArte = pedidas; pintarFontesPedidas(pedidas);
+    }
     for (const b of document.querySelectorAll('.f')){
       const id = b.dataset.id, cx = b.querySelector('.cx');
       if (!escolhidos.has(id)) { b.style.opacity = .25; continue; }
@@ -1065,8 +1190,7 @@ async function acompanhar(){
         b.insertAdjacentHTML('beforeend',
           `<span class="ressalva" title="clique para ler">com ressalva</span>`);
         b.querySelector('.ressalva').onclick = ev => {
-          ev.stopPropagation();
-          verRessalvas(id, aviso, (d.descartados || {})[id]);
+          ev.stopPropagation(); verRessalvas(id);
         };
       }
       if (prontas.has(id) && (!cx.querySelector('img') || refazer.has(id))){
@@ -1178,18 +1302,20 @@ async function acompanhar(){
         aviso('Peça atualizada. É esta que vai na exportação.', true);
       }
       if (feitas){
+        // baixar é o que se faz sempre: fica em destaque, sozinho
         const z=$('#btnZip'); z.style.display=''; z.onclick=()=>location.href=`/jobs/${job}/zip`;
         // o PDF só aparece quando existe: prometer botão que não abre nada é
         // pior do que não ter botão
         const temPdf = (d.entregas||[]).some(e => e.nome === 'apresentacao.pdf');
-        const pf=$('#btnPdf'); pf.style.display = temPdf ? '' : 'none';
+        const pf=$('#btnPdf'); pf.hidden = !temPdf;
         pf.onclick = () => open(`/jobs/${job}/arquivos/apresentacao.pdf`, '_blank');
-        const a=$('#btnAnimar'); a.style.display=''; a.onclick=abrirAnimar;
+        const a=$('#btnAnimar'); a.hidden = false; a.onclick=abrirAnimar;
         // a exportação final só aparece enquanto o trabalho ainda é rascunho —
         // e some de vez quando o bruto foi apagado por idade: sem a arte não
         // há o que refazer, e botão que falha é pior do que botão ausente
-        const f=$('#btnFinal'); f.style.display = (d.final || d.arquivado) ? 'none' : '';
+        const f=$('#btnFinal'); f.hidden = !!(d.final || d.arquivado);
         f.onclick = finalizar;
+        $('#mais').style.display = [pf, a, f].some(b => !b.hidden) ? '' : 'none';
       }
       document.querySelectorAll('.pulsa').forEach(b => b.classList.remove('pulsa'));
       if (d.erro) aviso(d.erro);
@@ -1314,12 +1440,16 @@ async function assinarPlano(p){
   } catch(e){ aviso('Não consegui falar com o servidor.'); }
 }
 
-$('#btnSair').onclick = async () => { await fetch('/sair', { method:'POST' }); location.reload(); };
+async function sair(){ await fetch('/sair', { method:'POST' }); location.reload(); }
 
 function abrir(conta){
   $('#porta').classList.add('hidden');
-  $('#btnSair').hidden = false;
-  $('#btnCampanhas').hidden = false;
+  $('#btnConta').hidden = false;
+  // o nome da empresa no cabeçalho: é como ela se reconhece, e é a porta da
+  // ficha. A inicial existe para o botão não sumir quando o nome é comprido
+  const nome = (conta && conta.nome) || 'Minha conta';
+  $('#contaNome').textContent = nome;
+  $('#contaInicial').textContent = nome.trim().charAt(0).toUpperCase() || '·';
   carregarMedidas().then(carregarFormatos);
   carregarFontes();
   pintarRodape(); quemCompoe(); verPlano();
@@ -1428,10 +1558,49 @@ function quando(iso){
   return d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'2-digit'});
 }
 
+/* ---------- a ficha da conta ----------
+   Uma pergunta de cada vez, na ordem em que ela aparece: quem sou eu aqui,
+   quanto me resta, com que letra eu escrevo, e o que já é meu. */
+// "2026-10-01 a 2026-10-31" é o jeito do servidor falar, não o nosso
+function diaMes(periodo){
+  const meses = ['janeiro','fevereiro','março','abril','maio','junho','julho',
+                 'agosto','setembro','outubro','novembro','dezembro'];
+  const dias = (periodo || '').split(' a ').map(s => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.trim());
+    return m ? { d: +m[3], m: +m[2] - 1 } : null;
+  });
+  if (dias.length !== 2 || dias.some(x => !x)) return periodo;
+  const [a, b] = dias;
+  return a.m === b.m ? `${a.d} a ${b.d} de ${meses[a.m]}`
+                     : `${a.d} de ${meses[a.m]} a ${b.d} de ${meses[b.m]}`;
+}
+
+async function abrirConta(){
+  $('#minhaConta').classList.remove('hidden');
+  pintarFontes();
+  abrirCampanhas();
+  let eu = {}, u = null;
+  try { eu = await (await fetch('/eu')).json(); } catch(e){}
+  try { u = await (await fetch('/eu/uso')).json(); } catch(e){}
+  $('#fichaNome').textContent = eu.nome || 'Minha conta';
+  $('#fichaEmail').textContent = eu.email || '';
+  if (!u) return;
+  const atraso = u.em_atraso ? ' · pagamento em atraso' : '';
+  $('#fichaPlano').textContent = (u.plano.nome || u.plano.id || '—') + atraso;
+  $('#fichaCiclo').textContent = u.mes ? `ciclo de ${diaMes(u.mes)}` : '';
+  $('#fichaMedidor').innerHTML = [
+    ['peças', u.resta.pecas, u.plano.pecas],
+    ['vídeos', u.resta.videos, u.plano.videos],
+  ].map(([oque, resta, total]) => {
+    const cheio = Math.min(100, Math.round(100 * resta / Math.max(1, total)));
+    return `<div class="${resta ? '' : 'vazio'}"><span>restam <b>${resta}</b> ${oque}</span>`
+      + `<em>de ${total} no ciclo</em><i><span style="width:${cheio}%"></span></i></div>`;
+  }).join('');
+}
+
 async function abrirCampanhas(){
   const caixa = $('#listaTrabalhos');
   caixa.innerHTML = '<div class="vazio">procurando…</div>';
-  $('#trabalhos').classList.remove('hidden');
   let lista = [];
   try { lista = (await (await fetch('/jobs')).json()).trabalhos || []; }
   catch(e){ caixa.innerHTML = '<div class="vazio">não consegui falar com o servidor.</div>'; return; }
@@ -1455,7 +1624,7 @@ async function abrirCampanhas(){
    peças prontas e os botões de baixar. É o mesmo caminho de quando ela
    acabou de ser gerada — só que começando pelo estado que está no disco. */
 async function reabrir(ident){
-  $('#trabalhos').classList.add('hidden');
+  $('#minhaConta').classList.add('hidden');
   let d;
   try { d = await (await fetch(`/jobs/${ident}`)).json(); }
   catch(e){ aviso('Não consegui abrir essa campanha.'); return; }
@@ -1477,10 +1646,12 @@ async function reabrir(ident){
   acompanhar();
 }
 
-$('#btnCampanhas').onclick = abrirCampanhas;
-$('#trabFecha').onclick = () => $('#trabalhos').classList.add('hidden');
-$('#trabalhos').onclick = e => {
-  if (e.target.id === 'trabalhos') $('#trabalhos').classList.add('hidden');
+$('#btnConta').onclick = abrirConta;
+$('#fichaSair').onclick = sair;
+$('#fichaPlanos').onclick = () => { $('#minhaConta').classList.add('hidden'); $('#saldo').click(); };
+$('#trabFecha').onclick = () => $('#minhaConta').classList.add('hidden');
+$('#minhaConta').onclick = e => {
+  if (e.target.id === 'minhaConta') $('#minhaConta').classList.add('hidden');
 };
 
 /* ---------- animar ---------- */
@@ -1544,10 +1715,17 @@ $('#btnAnimarOk').onclick = async () => {
    modelo para cada coisa que ficou de fora — ela estava sendo gravada e nunca
    mostrada, e foi assim que uma peça saiu dizendo "Porto Belo" com a chamada
    pedida dizendo "São Paulo" */
-function verRessalvas(fid, avisos, fora){
+const temRessalva = fid => !!(avisosDoJob[fid] || []).length;
+const ehDoFundo = fid => /fundo|continuação|cor que não existe/i
+  .test((avisosDoJob[fid] || []).join(' '));
+const ehDeServico = fid => /recusou|credencial|crédito/i
+  .test((avisosDoJob[fid] || []).join(' '));
+
+function verRessalvas(fid){
+  const avisos = avisosDoJob[fid] || [], fora = descartadosDoJob[fid];
   $('#resTitulo').textContent = `O que você precisa saber · ${fid}`;
-  const todos = (avisos || []).join(' ');
-  const itens = (avisos || []).map(a => `<div class="item">${a}</div>`);
+  const todos = avisos.join(' ');
+  const itens = avisos.map(a => `<div class="item">${a}</div>`);
   for (const [oque, porque] of Object.entries(fora || {})){
     // o aviso de cima já carrega o motivo quando é sobre o que foi pedido:
     // repetir a mesma frase duas vezes é o que faz a folha parar de ser lida
@@ -1555,7 +1733,49 @@ function verRessalvas(fid, avisos, fora){
     itens.push(`<div class="item fora"><b>ficou de fora: ${oque}</b>${porque}</div>`);
   }
   $('#resLista').innerHTML = itens.join('') || '<div class="item">Nada a relatar.</div>';
+
+  // a folha listava o problema e acabava. "Depois de todos os pontos, o que a
+  // pessoa faz? É isso ou nada?" — tem que oferecer a saída de cada caso, e a
+  // ressalva tem que sumir quando a saída resolve
+  const doFundo = ehDoFundo(fid), deServico = ehDeServico(fid);
+  const cartao = document.querySelector(`.f[data-id="${fid}"]`);
+  const da = !!(cartao && cartao.classList.contains('ajustavel'));
+  $('#resAcoes').innerHTML =
+      (da ? `<button class="acao" id="resAjustar">Ajustar esta peça</button>` : '')
+    + (doFundo && !deServico
+        ? `<button class="secund" id="resFundo">Refazer o fundo desta peça</button>` : '')
+    + (deServico
+        ? `<p class="semSaida">O fundo generativo recusou o pedido — é credencial ou
+           crédito do serviço, não a peça. Refazer devolve o mesmo bloco de cor. Dá
+           para seguir ajustando à mão, ou resolver o serviço e refazer depois.</p>` : '');
+  const aj = $('#resAjustar'), fu = $('#resFundo');
+  if (aj) aj.onclick = () => { $('#ressalvas').classList.add('hidden'); abrirEditor(fid); };
+  if (fu) fu.onclick = () => refazerFundoDe(fid);
   $('#ressalvas').classList.remove('hidden');
+}
+
+/* Refaz só o fundo desta peça, insistindo no generativo. Se sair limpo, o
+   servidor apaga a ressalva deste formato — e a tela para de mostrá-la. */
+async function refazerFundoDe(fid){
+  const b = $('#resFundo');
+  if (b){ b.disabled = true; b.textContent = 'Refazendo o fundo…'; }
+  try {
+    const r = await fetch(`/jobs/${job}/pecas/${fid}/fundo`, { method: 'POST' });
+    if (!r.ok){
+      aviso((await r.json()).detail || 'Não deu para refazer o fundo.');
+      if (b){ b.disabled = false; b.textContent = 'Refazer o fundo desta peça'; }
+      return;
+    }
+  } catch(e){
+    aviso('Não consegui falar com o servidor.');
+    if (b){ b.disabled = false; b.textContent = 'Refazer o fundo desta peça'; }
+    return;
+  }
+  $('#ressalvas').classList.add('hidden');
+  refazer.add(fid);
+  esperandoAjuste = fid;
+  aviso('Refazendo o fundo desta peça. A diagramação que você ajustou fica.', true);
+  acompanhar();
 }
 $('#resOk').onclick = () => $('#ressalvas').classList.add('hidden');
 $('#ressalvas').onclick = e => {
@@ -1579,12 +1799,36 @@ function ampliar(url, fid, filme){
   const bt = l.querySelector('.ajustar');
   bt.hidden = !da;
   bt.onclick = ev => { ev.stopPropagation(); l.classList.add('hidden'); abrirEditor(fid); };
+  // é olhando a peça grande que se decide o que fazer com ela: as mesmas
+  // saídas da folha de ressalvas ficam aqui
+  const fu = l.querySelector('.refundo');
+  fu.hidden = !(fid && ehDoFundo(fid) && !ehDeServico(fid));
+  fu.onclick = ev => { ev.stopPropagation(); l.classList.add('hidden'); refazerFundoDe(fid); };
+  const rs = l.querySelector('.verressalva');
+  rs.hidden = !(fid && temRessalva(fid));
+  rs.onclick = ev => { ev.stopPropagation(); l.classList.add('hidden'); verRessalvas(fid); };
   l.classList.remove('hidden');
 }
+/* o "mais": abre no clique, fecha ao escolher, ao clicar fora ou com Esc */
+$('#btnMais').onclick = e => {
+  e.stopPropagation();
+  const m = $('#menuMais');
+  m.hidden = !m.hidden;
+  $('#btnMais').setAttribute('aria-expanded', String(!m.hidden));
+};
+$('#menuMais').onclick = () => { $('#menuMais').hidden = true;
+  $('#btnMais').setAttribute('aria-expanded', 'false'); };
+addEventListener('click', e => {
+  if (!$('#menuMais').hidden && !e.target.closest('#mais')){
+    $('#menuMais').hidden = true; $('#btnMais').setAttribute('aria-expanded', 'false');
+  }
+});
+
 $('#lupa').onclick = () => $('#lupa').classList.add('hidden');
 addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
   $('#lupa').classList.add('hidden');
+  $('#menuMais').hidden = true;
   if (!$('#editor').classList.contains('hidden')) fecharEditor();
 });
 
@@ -1841,6 +2085,7 @@ function trocarTexto(g){
    o navegador cair numa fonte do sistema sem avisar, que é o erro mais
    difícil de ver no olho. */
 let minhasFontes = [];
+let fontesDaArte = [];           // as que o PSD deste trabalho pede
 const soLetras = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const casaFonte = (f, pedida) =>
   soLetras(f.familia + f.estilo) === soLetras(pedida)
@@ -1850,6 +2095,22 @@ async function carregarFontes(){
   try { minhasFontes = (await (await fetch('/eu/fontes')).json()).fontes || []; }
   catch(e){}
   pintarFontes();
+  pintarFontesPedidas(fontesDaArte);
+}
+
+/* O que ESTA arte pede, que não é o que a conta tem. A lista vem da leitura
+   do PSD: cada camada de texto diz a fonte que o arquivo pediu. */
+function pintarFontesPedidas(pedidas){
+  const el = $('#fontesPedidas');
+  if (!el) return;
+  const lista = pedidas || [];
+  el.hidden = !lista.length;
+  if (!lista.length) return;
+  el.innerHTML = 'Esta arte pede: ' + lista.map(f => {
+    const tem = minhasFontes.some(x => casaFonte(x, f));
+    return `<b>${f.replace(/</g,'&lt;')}</b> <span class="${tem ? 'tem' : 'falta'}">`
+      + `${tem ? '· enviada' : '· falta'}</span>`;
+  }).join(' · ');
 }
 
 function pintarFontes(){
@@ -1861,7 +2122,7 @@ function pintarFontes(){
   caixa.querySelectorAll('button').forEach(b => b.onclick = async () => {
     const id = b.closest('b').dataset.id;
     minhasFontes = minhasFontes.filter(f => f.id !== id);
-    pintarFontes();
+    pintarFontes(); pintarFontesPedidas(fontesDaArte);
     try { await fetch('/eu/fontes/' + encodeURIComponent(id), { method: 'DELETE' }); }
     catch(e){}
   });
@@ -1873,7 +2134,7 @@ async function enviarFonte(arquivo){
   const d = await r.json().catch(() => ({}));
   if (!r.ok){ aviso(d.detail || 'Não consegui ler esse arquivo como fonte.'); return null; }
   minhasFontes = d.fontes || [];
-  pintarFontes();
+  pintarFontes(); pintarFontesPedidas(fontesDaArte);
   aviso(`${d.fonte.familia} ${d.fonte.estilo} guardada: vale para todos os seus trabalhos.`, true);
   return d.fonte;
 }

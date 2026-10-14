@@ -275,9 +275,14 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
             r.falhas[fid] = f"o PSD não abriu: {e}"
         return
 
+    # as fontes que ESTA arte pede, que não são as da conta: cada peça é de um
+    # cliente e pede a fonte dele. Sai de graça da leitura — cada camada de
+    # texto já traz o nome que o PSD pediu — e é o que diz, na tela, qual
+    # arquivo falta para um texto trocado sair na letra certa
     r.psd = {"prancheta": leitura.escolhida,
              "pranchetas": [p.nome for p in leitura.pranchetas],
              "camadas": [c.nome for c in leitura.camadas],
+             "fontes": sorted({c.fonte for c in leitura.camadas if c.fonte}),
              "notas": leitura.ignoradas}
     base_els = leitor_psd.como_elementos(leitura, pasta)
     try:

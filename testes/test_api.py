@@ -525,3 +525,74 @@ class TestATrocaPreservaAFonte:
         arq = self._peca(cliente, tmp_path, fonte_mae=pedida)
         self._trocar(cliente, arq)
         assert not (cliente.get("/jobs/trab").json().get("avisos") or {}).get("ig-feed-1x1")
+
+
+class TestRefazerOFundoDeUmaPeca:
+    """A ressalva do fundo dizia "vale rodar de novo" e a única saída era
+    "Refazer fundos", que mexe no trabalho inteiro e só existe no rodapé.
+    Quem viu o problema está olhando UMA peça — e quando a saída resolve, a
+    ressalva tem que sumir."""
+
+    def _pronto(self, cliente, tmp_path, avisos=None):
+        from api import trabalhos
+        pasta = trabalhos.pasta_do(cliente.conta.id, "trab")
+        (pasta / "pecas").mkdir(parents=True, exist_ok=True)
+        (pasta / "arte.psd").write_bytes(b"8BPS")
+        trabalhos.gravar(cliente.conta.id, "trab", {
+            "status": "pronto", "arte": "arte.psd", "formatos": ["ig-feed-1x1"],
+            "prontas": ["ig-feed-1x1"],
+            "avisos": avisos if avisos is not None else {"ig-feed-1x1": ["a continuação do fundo inventou traço"]}})
+
+    def test_pede_o_fundo_so_daquele_formato(self, cliente, tmp_path):
+        self._pronto(cliente, tmp_path)
+        r = cliente.post("/jobs/trab/pecas/ig-feed-1x1/fundo")
+        assert r.status_code == 202
+        assert [n for n, _ in cliente.fila.pedidos] == ["refazer_fundo"]
+
+    def test_formato_que_nao_saiu_nao_tem_fundo_a_refazer(self, cliente, tmp_path):
+        self._pronto(cliente, tmp_path)
+        assert cliente.post("/jobs/trab/pecas/ig-stories/fundo").status_code == 409
+
+    def test_trabalho_arquivado_diz_por_que_nao_da(self, cliente, tmp_path):
+        from api import trabalhos
+        self._pronto(cliente, tmp_path)
+        trabalhos.gravar(cliente.conta.id, "trab", {"arquivado": {"quando": "x"}})
+        r = cliente.post("/jobs/trab/pecas/ig-feed-1x1/fundo")
+        assert r.status_code == 409 and "arte" in r.json()["detail"]
+
+    def test_sem_conta_ninguem_refaz_fundo_dos_outros(self, cliente, tmp_path, anonimo):
+        self._pronto(cliente, tmp_path)
+        assert anonimo.post("/jobs/trab/pecas/ig-feed-1x1/fundo").status_code == 401
+
+
+class TestTrabalhoQueParouDeDarSinal:
+    """Sem fila de verdade o trabalho roda DENTRO da api: se o processo cai —
+    um reinício —, o estado fica "rodando" para sempre e a tela diz
+    "Replicando" com nada acontecendo. Aconteceu hoje, e levou um tempo até
+    alguém entender que não era lentidão."""
+
+    def _rodando(self, cliente, quando):
+        from api import trabalhos
+        trabalhos.gravar(cliente.conta.id, "trab", {"status": "rodando",
+                                                    "progresso": {"etapa": "desenhando",
+                                                                  "formato": "ig-stories"}})
+        import json
+        f = trabalhos.pasta_do(cliente.conta.id, "trab") / "trabalho.json"
+        d = json.loads(f.read_text())
+        d["atualizado"] = quando
+        f.write_text(json.dumps(d))
+
+    def test_silencio_longo_vira_erro_com_motivo(self, cliente):
+        from datetime import datetime, timedelta, timezone
+        self._rodando(cliente, (datetime.now(timezone.utc)
+                                - timedelta(hours=2)).isoformat(timespec="seconds"))
+        d = cliente.get("/jobs/trab").json()
+        assert d["status"] == "erro"
+        assert "parou de dar sinal" in d["erro"]
+        assert "desenhando" in d["erro"] and "ig-stories" in d["erro"]
+
+    def test_trabalho_recente_continua_rodando(self, cliente):
+        """Render demorado não pode ser confundido com queda."""
+        from datetime import datetime, timezone
+        self._rodando(cliente, datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        assert cliente.get("/jobs/trab").json()["status"] == "rodando"

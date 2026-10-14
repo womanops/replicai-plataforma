@@ -216,14 +216,14 @@ class TestARessalvaSeLe:
     insistência para aparecer é aviso que não foi dado."""
 
     def test_a_ressalva_abre_uma_folha(self, tela):
-        assert "function verRessalvas(fid, avisos, fora)" in tela
+        assert "function verRessalvas(fid)" in tela
         assert 'id="ressalvas"' in tela
 
     def test_a_folha_mostra_o_que_ficou_de_fora(self, tela):
         """`descartados` é a explicação do modelo para cada coisa que não
         entrou — era gravada e nunca mostrada."""
         assert "Object.entries(fora || {})" in tela
-        assert "(d.descartados || {})[id]" in tela
+        assert "descartadosDoJob = d.descartados || {}" in tela
 
     def test_o_selo_convida_o_clique(self, tela):
         assert "cursor:pointer;text-decoration:underline" in tela
@@ -321,6 +321,31 @@ class TestOPainelDoAjuste:
         assert "<b>Fundo</b><small>fixo</small>" in tela
 
 
+class TestAFonteQueEstaArtePede:
+    """Cada PSD é de um cliente e pede a fonte dele. Mostrar "fontes da marca"
+    como uma lista genérica não responde a pergunta que importa: falta alguma
+    para ESTA arte?"""
+
+    def test_a_tela_diz_o_que_a_arte_pede(self, tela):
+        assert "function pintarFontesPedidas(pedidas)" in tela
+        assert "Esta arte pede: " in tela
+
+    def test_separa_a_que_ja_foi_enviada_da_que_falta(self, tela):
+        assert "'· enviada' : '· falta'" in tela or "· enviada" in tela
+        assert ".fontes .pedidas .falta{color:var(--err)}" in tela
+
+    def test_a_lista_vem_do_que_o_psd_pediu(self, tela):
+        """Não é digitada por ninguém: sai da leitura do arquivo."""
+        assert "(d.psd || {}).fontes || []" in tela
+
+    def test_o_servidor_guarda_a_fonte_de_cada_camada_de_texto(self):
+        import inspect
+
+        from api import pipeline
+        fonte = inspect.getsource(pipeline._psd_e_render)
+        assert '"fontes": sorted({c.fonte for c in leitura.camadas if c.fonte})' in fonte
+
+
 class TestASelecaoSolta:
     """"Ajustamos, clicamos fora da imagem e ela precisa sair do select, senão
     fica tudo selecionado." O elemento escolhido sobe de camada para o manípulo
@@ -337,17 +362,54 @@ class TestASelecaoSolta:
         assert "if (!ev.target.closest('#palco')) return;" in tela
 
 
-class TestFontesDaMarcaNaTela:
-    def test_da_para_enviar_a_fonte_junto_da_arte(self, tela):
-        """Sem isso o único caminho era topar com o aviso no meio de um
-        ajuste."""
-        assert 'id="fontes"' in tela
+class TestAFichaDaConta:
+    """"Minhas campanhas" era um botão perdido no cabeçalho, ao lado de um
+    número de saldo e de um "sair". E as fontes da marca — que são da CONTA —
+    moravam no meio do formulário de um trabalho. A ficha junta o que é da
+    conta na ordem em que se pergunta: quem sou eu aqui, quanto me resta, com
+    que letra eu escrevo, o que já é meu."""
+
+    def test_o_cabecalho_mostra_o_nome_da_empresa(self, tela):
+        """É como ela se reconhece — e é a porta da ficha."""
+        assert 'id="contaNome"' in tela
+        assert "$('#contaNome').textContent = nome;" in tela
+
+    def test_a_ficha_responde_na_ordem_em_que_se_pergunta(self, tela):
+        """Quem sou eu aqui, quanto me resta, o que já é meu."""
+        assert antes(tela, 'id="fichaNome"', 'id="fichaPlano"')
+        assert antes(tela, 'id="fichaPlano"', 'id="listaTrabalhos"')
+
+    def test_o_saldo_aparece_como_o_que_RESTA(self, tela):
+        assert "restam <b>${resta}</b> ${oque}" in tela
+        assert "de ${total} no ciclo" in tela
+
+    def test_a_ficha_diz_o_ciclo_em_portugues(self, tela):
+        """Franquia sem data de virada é número solto — e "2026-10-01 a
+        2026-10-31" é o jeito do servidor falar, não o nosso."""
+        assert "ciclo de ${diaMes(u.mes)}" in tela
+        assert "function diaMes(periodo)" in tela
+        assert "de ${meses[a.m]}" in tela
+
+    def test_o_atraso_aparece_onde_se_olha_o_plano(self, tela):
+        assert "pagamento em atraso" in tela
+
+    def test_as_fontes_ficam_no_fluxo_do_upload(self, tela):
+        """Eu as tinha levado para a ficha, por serem guardadas na conta. A
+        Ligia corrigiu: o que manda não é onde ficam guardadas, é de quem é a
+        arte. "Cada arte é de um cliente com uma fonte diferente" — então o
+        lugar de mandar a fonte é ao lado da arte que a pede."""
+        ficha = tela.split('id="minhaConta"')[1].split('id="ressalvas"')[0]
+        trabalho = tela.split("<main>")[1].split("</main>")[0]
+        assert 'id="listaFontes"' in trabalho
+        assert "listaFontes" not in ficha
+
+    def test_de_la_se_sai_e_se_veem_os_planos(self, tela):
+        assert "$('#fichaSair').onclick = sair;" in tela
+        assert "$('#fichaPlanos').onclick" in tela
+
+    def test_da_para_enviar_a_fonte(self, tela):
         assert "Fontes da marca" in tela
         assert "$('#btnFonte').onclick" in tela
-
-    def test_o_painel_fica_do_lado_da_arte(self, tela):
-        assert antes(tela, 'id="zona"', 'id="fontes"')
-        assert antes(tela, 'id="fontes"', 'id="formatos"')
 
     def test_a_lista_mostra_e_tira_o_que_ja_foi_enviado(self, tela):
         assert "function pintarFontes()" in tela
@@ -370,11 +432,12 @@ class TestAsCampanhasDeAntes:
         assert "fetch('/jobs')" in tela
         assert "async function abrirCampanhas()" in tela
 
-    def test_tem_porta_de_entrada_no_cabecalho(self, tela):
-        """Lista que não tem botão é lista que não existe."""
-        assert 'id="btnCampanhas"' in tela
-        assert "minhas campanhas" in tela
-        assert "$('#btnCampanhas').onclick = abrirCampanhas;" in tela
+    def test_a_porta_de_entrada_e_a_ficha_da_conta(self, tela):
+        """Era um botão em letra miúda no cabeçalho, entre um número de saldo
+        e um "sair". Campanha é o que a conta TEM: o lugar dela é na ficha."""
+        assert 'id="btnConta"' in tela
+        assert "$('#btnConta').onclick = abrirConta;" in tela
+        assert "abrirCampanhas();" in tela.split("async function abrirConta()")[1][:600]
 
     def test_abrir_uma_campanha_traz_as_pecas_de_volta(self, tela):
         """Não é só listar: clicar reabre o trabalho na tela, com os cartões
@@ -396,3 +459,150 @@ class TestAsCampanhasDeAntes:
         """"2026-10-13T18:02:41+00:00" não é resposta para "quando foi isso"."""
         assert "function quando(iso)" in tela
         assert "'hoje'" in tela or "`hoje ${hora}`" in tela
+
+
+class TestAOrdemDaTela:
+    """O nome da campanha ficava no fim do formulário, embora seja por ele que
+    o trabalho é procurado depois. Subiu para junto da arte.
+
+    Eu também tinha levado o modo para DEPOIS da grade, com o argumento de que
+    ele só faz sentido sabendo os formatos. A Ligia derrubou: o modo não
+    depende dos formatos, depende da ARTE — e mandar rolar cinquenta formatos
+    para dizer o que a máquina pode fazer com a peça é o contrário de ajudar.
+    O argumento era bonito e errado.
+    """
+
+    def test_o_nome_da_campanha_vem_junto_da_arte(self, tela):
+        assert antes(tela, 'id="zona"', 'id="titulo"')
+        assert antes(tela, 'id="titulo"', 'class="modos"')
+
+    def test_o_modo_fica_com_a_arte_e_nao_depois_da_grade(self, tela):
+        assert antes(tela, 'class="modos"', 'id="formatos"')
+
+    def test_os_textos_novos_ficam_colados_no_modo_que_os_pede(self, tela):
+        assert antes(tela, 'class="modos"', 'id="campoHead"')
+
+    def test_o_muro_de_tres_paragrafos_virou_um(self, tela):
+        """Três explicações abertas no alto da coluna é um muro; quem já sabe
+        o que quer relê o mesmo texto toda vez."""
+        assert "label.modo small{display:none" in tela
+        assert "label.modo.on small{display:block}" in tela
+
+
+class TestOCartaoMostraOCorte:
+    """O cartão vazio era um xadrez cinza: ele dizia a proporção e mais nada.
+    Com a arte-mãe apagada dentro dele, a escolha de formato vira prévia — dá
+    para ver o que cada enquadramento vai cortar antes de gastar a rodada."""
+
+    def test_o_cartao_leva_a_arte_apagada(self, tela):
+        assert 'class="fantasma"' in tela
+        assert ".f .cx .fantasma{opacity:" in tela
+
+    def test_so_enquanto_a_peca_nao_saiu(self, tela):
+        """Depois de pronta, quem manda no cartão é a peça de verdade."""
+        assert "const previa = $('#zona img');" in tela
+        assert "previa && !job" in tela
+
+    def test_o_escolhido_mostra_mais(self, tela):
+        assert ".f.on .cx .fantasma{opacity:" in tela
+
+
+class TestORodapeTemUmDestaque:
+    """Depois da entrega o rodapé virava um balcão de cinco botões do mesmo
+    tamanho. Baixar é o que se faz sempre; o resto é ocasional."""
+
+    def test_baixar_fica_em_destaque(self, tela):
+        assert '<button class="acao" id="btnZip"' in tela
+
+    def test_o_resto_vai_para_o_mais(self, tela):
+        menu = tela.split('id="menuMais"')[1].split("</div>")[0]
+        for b in ("btnPdf", "btnAnimar", "btnFinal"):
+            assert b in menu
+
+    def test_o_mais_some_quando_nao_ha_nada_dentro(self, tela):
+        assert "$('#mais').style.display = [pf, a, f].some(b => !b.hidden) ? '' : 'none';" in tela
+
+    def test_o_menu_fecha_clicando_fora_e_com_esc(self, tela):
+        assert "!e.target.closest('#mais')" in tela
+        assert "$('#menuMais').hidden = true;" in tela
+
+
+class TestOAvisoDoArquivoAchatado:
+    """"Foto e grafismo só se movem com PSD. PNG, JPEG e PDF chegam
+    achatados: aí só dá para mover o que for escrito agora." — mal escrito e
+    mal colocado, e a Ligia estava certa nas duas.
+
+    "Achatado" é jargão de Photoshop; "o que for escrito agora" não diz por
+    quem nem quando; e o aviso não dizia o que fazer. Solto embaixo da caixa,
+    parecia recado geral da tela — ele é o limite de UM modo."""
+
+    def test_fala_do_que_falta_e_do_que_fazer(self, tela):
+        # a frase quebra em duas linhas no arquivo: comparar sem os espaços
+        corrido = " ".join(tela.split())
+        assert "Esta arte é uma imagem só, sem camadas" in corrido
+        assert "não há foto, logo nem texto para mover separado" in corrido
+        assert "Mande o PSD para poder mexer dentro dela" in corrido
+        assert "chegam achatados" not in corrido
+
+    def test_mora_dentro_do_modo_de_que_fala(self, tela):
+        modo = tela.split('value="com" checked')[1].split("</label>")[0]
+        assert 'id="travaPsd"' in modo
+
+    def test_so_aparece_quando_e_verdade(self, tela):
+        """Arquivo achatado E o modo que promete ajustar: nos outros dois ele
+        não limita nada."""
+        assert "$('#travaPsd').hidden = !(v === 'com' && achatado);" in tela
+
+
+class TestOCampoOrienta:
+    """Exemplo dentro do campo se lê como conteúdo já preenchido e some no
+    primeiro caractere; orientação se lê como instrução e vale enquanto o
+    campo estiver vazio. "Chegamos a Porto Belo" no campo de chamada fazia a
+    peça do dia anterior parecer o padrão da casa."""
+
+    def test_nenhum_campo_traz_exemplo_pronto(self, tela):
+        for exemplo in ("Chegamos a Porto Belo", "Candidate-se\"",
+                        "Save the Date Energiza", "ex.: no Stories"):
+            assert exemplo not in tela, exemplo
+
+    def test_os_campos_dizem_o_que_fazer(self, tela):
+        for ordem in ("Insira a nova chamada", "Insira o novo call to action",
+                      "Dê um nome a esta campanha", "Diga o que esta peça precisa respeitar"):
+            assert ordem in tela, ordem
+
+
+class TestARessalvaTemSaida:
+    """"Não gosto dessa ressalva, porque não traz solução: depois de todos os
+    pontos, o que a pessoa faz? É isso ou nada?"
+
+    A folha listava o problema e acabava. Agora ela oferece a saída de cada
+    caso — e, quando a saída resolve, a ressalva some."""
+
+    def test_a_folha_oferece_ajustar_e_refazer_o_fundo(self, tela):
+        assert 'id="resAcoes"' in tela
+        assert "Ajustar esta peça</button>" in tela
+        assert "Refazer o fundo desta peça" in tela
+
+    def test_refazer_vale_para_aquela_peca_e_nao_para_o_trabalho(self, tela):
+        assert "/pecas/${fid}/fundo`, { method: 'POST' }" in tela
+
+    def test_quando_e_o_servico_que_recusou_nao_promete_conserto(self, tela):
+        """Credencial ou crédito do generativo não se conserta refazendo: o
+        mesmo bloco de cor volta. Oferecer o botão ali seria mentir."""
+        assert "const deServico = " in tela or "ehDeServico" in tela
+        assert "é credencial ou" in tela
+        assert "doFundo && !deServico" in tela
+
+    def test_a_lupa_leva_as_mesmas_saidas(self, tela):
+        """É olhando a peça grande que se decide o que fazer com ela."""
+        assert 'class="secund refundo"' in tela
+        assert 'class="secund verressalva"' in tela
+
+    def test_o_fundo_limpo_apaga_a_ressalva_daquele_formato(self):
+        """Era isso que ela cobrou: "isso significa que o erro deveria sumir"."""
+        import inspect
+
+        from api import tarefas
+        fonte = inspect.getsource(tarefas.refazer_fundo)
+        assert "guardados.pop(formato, None)" in fonte
+        assert "guardados[formato] = avisos" in fonte

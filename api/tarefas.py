@@ -194,6 +194,69 @@ def processar_video(conta: str, job: str, formatos: list[str], preset: str,
 
 
 
+def refazer_fundo(conta: str, job: str, formato: str) -> None:
+    """Refaz o fundo de UM formato, insistindo no generativo, e redesenha.
+
+    A ressalva do fundo dizia "vale rodar de novo" e a única saída era
+    "Refazer fundos", que mexe no trabalho inteiro e só existe no rodapé
+    depois da entrega. Quem viu o problema estava olhando UMA peça: a saída
+    tem que estar ali, e valer só para ela.
+
+    O que não dá para consertar aqui é o generativo recusando por credencial
+    ou crédito — refazer devolve o mesmo bloco de cor. Por isso a tela só
+    oferece este caminho quando a ressalva é de desenho, não de serviço.
+    """
+    import json
+
+    from api import psd as leitor_psd
+    from api.pipeline import _texto_novo, manter_a_mao
+    from api.compositor import Compositor
+    from motor.replica import formato_by_id, render_peca
+
+    pasta = trabalhos.pasta_do(conta, job)
+    estado = trabalhos.ler(conta, job) or {}
+    f = formato_by_id(formato)
+    if not f:
+        raise ValueError(f"formato desconhecido: {formato}")
+    arte = pasta / estado.get("arte", "")
+    if not arte.exists():
+        raise ValueError("a arte deste trabalho não está mais aqui")
+
+    trabalhos.gravar(conta, job, {"ajuste": {"status": "rodando", "formato": formato,
+                                             "oque": "fundo"}})
+    try:
+        leitura = leitor_psd.extrair(arte, pasta,
+                                     nome_prancheta=estado.get("prancheta", ""))
+        peca = leitor_psd.desdobrar(leitura, f, pasta, final=True)
+        info = peca.pop("_fundo", {})
+        avisos = list(info.get("avisos") or [])
+        if info.get("caiu_para"):
+            avisos.append(f"{info['caiu_para']} — o fundo saiu em bloco de cor")
+        # a diagramação que a pessoa ajustou à mão não se perde por refazer o
+        # fundo: é a mesma regra da exportação final
+        avisos += manter_a_mao(peca, pasta, formato)
+        arq = pasta / "pecas" / f"{formato}.json"
+        arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
+        render_peca(arq, pasta / (peca.get("saida") or f"{formato}.png"))
+    except Exception as e:
+        trabalhos.gravar(conta, job, {"ajuste": {"status": "erro", "formato": formato,
+                                                 "erro": str(e)}})
+        raise
+
+    # os avisos DESTE formato são substituídos, não somados: se o fundo novo
+    # saiu limpo, a ressalva tem que sumir — foi o que ela cobrou
+    guardados = dict(estado.get("avisos") or {})
+    if avisos:
+        guardados[formato] = avisos
+    else:
+        guardados.pop(formato, None)
+    trabalhos.gravar(conta, job, {"avisos": guardados})
+    _apresentar(conta, job, list((trabalhos.ler(conta, job) or {}).get("prontas") or []))
+    trabalhos.gravar(conta, job, {"ajuste": {"status": "pronto", "formato": formato,
+                                             "oque": "fundo",
+                                             "limpo": not avisos}})
+
+
 def redesenhar(conta: str, job: str, formato: str) -> None:
     """Desenha de novo um formato cuja peça foi remontada na mão.
 
