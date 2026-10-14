@@ -125,7 +125,7 @@ jobs:
         run: |
           # `corpo 64.0px` tem ponto: o padrão com [0-9]+px pegava a linha das
           # versões e deixava justamente a medição de fora
-          medido=$(grep -E "desenhando com|texto medido|corpo " /tmp/prova.log 2>/dev/null \
+          medido=$(grep -E "desenhando com|texto medido|corpo |régua " /tmp/prova.log 2>/dev/null \
                    | tr '\n' '↵' | sed 's/::/:/g')
           [ -n "$medido" ] && echo "::notice title=tipografia medida::${medido}" || true
 

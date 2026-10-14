@@ -70,6 +70,22 @@ def main() -> int:
         print("   FALHOU: o navegador não reportou nenhum texto.")
         return 5
 
+    # A MESMA peça, de novo. Travar a medida do texto numa amostra só é
+    # escolher um número no escuro: se ele oscila sozinho, a trava passa a
+    # reprovar trabalho bom; se a folga for grande "por garantia", ela deixa
+    # passar justamente a mudança de navegador que deveria pegar. Duas
+    # medidas na mesma máquina dizem se a régua é firme.
+    print("5. medindo de novo, para saber se a régua repete…")
+    de_novo = replica.render_peca(peca, saida.with_name("prova-2.png"))
+    txt2 = [e for e in de_novo.get("elementos", []) if e.get("classe") == "txt"]
+    iguais = True
+    for a, b in zip(txt, txt2):
+        bate = a.get("size") == b.get("size") and a.get("tinta") == b.get("tinta")
+        iguais = iguais and bate
+        print(f"   {a.get('papel')}: corpo {b.get('size')}px, tinta {b.get('tinta') or '—'}"
+              f" · {'igual' if bate else 'DIFERENTE da primeira'}")
+    print(f"   régua {'firme: as duas medidas batem' if iguais else 'OSCILOU entre duas medidas'}")
+
     print(f"\nPASSOU na {onde}. A peça está em {saida.relative_to(RAIZ)}")
     if como_root:
         print("O ReplicAI renderiza dentro do contêiner: roda em qualquer servidor.")
