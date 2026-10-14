@@ -306,3 +306,67 @@ class TestOEditorAlcancaTodoMundo:
         tela = self._tela()
         bloco = tela[tela.index(".pe-el .puxa{"):tela.index(".pe-el .letra{")]
         assert "box-shadow" in bloco and "z-index" in bloco
+
+
+class TestATravaDaRegua:
+    """O navegador é quem mede o texto. Trocar a versão dele muda o corpo da
+    fonte em toda peça, sem erro nenhum para avisar — foi por isso que a
+    versão vive presa no Dockerfile. A trava da régua é a outra metade: ela
+    confere, a cada rodada, se a medida continua a mesma.
+
+    A comparação é exata porque a medida foi testada antes de ser gravada:
+    três amostras, duas máquinas do GitHub, o mesmo valor até a casa decimal.
+    Folga inventada deixaria passar justamente o que a trava existe para pegar.
+    """
+
+    def _prova(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "prova", RAIZ / "testes" / "prova_container.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+
+    def _medido(self, corpo="69.8"):
+        return [{"classe": "txt", "papel": "headline", "size": corpo,
+                 "tinta": "75,178,450,154"},
+                {"classe": "txt", "papel": "apoio", "size": "25.6",
+                 "tinta": "74,352,460,65"}]
+
+    AMBIENTE = {"chromium": "155.0.8059.39-1~deb13u1", "fontes_dejavu": "2.37-8"}
+
+    def test_a_medida_de_hoje_passa(self):
+        assert self._prova().conferir_medida(self._medido(), self.AMBIENTE) == 0
+
+    def test_meio_pixel_a_mais_reprova(self):
+        """Sem folga: um décimo de pixel é o navegador medindo de outro jeito,
+        e o que vem depois é toda peça com outro tamanho de letra."""
+        assert self._prova().conferir_medida(self._medido("69.9"), self.AMBIENTE) != 0
+
+    def test_tinta_fora_do_lugar_reprova(self):
+        """O corpo pode bater e a letra ocupar outro espaço: é o mesmo
+        problema com outra cara."""
+        medido = self._medido()
+        medido[0]["tinta"] = "75,178,452,154"
+        assert self._prova().conferir_medida(medido, self.AMBIENTE) != 0
+
+    def test_bloco_que_sumiu_reprova(self):
+        assert self._prova().conferir_medida(self._medido()[:1], self.AMBIENTE) != 0
+
+    def test_fora_do_conteiner_nao_confere(self):
+        """No Mac não há DejaVu: o navegador cai numa fonte do sistema e mede
+        15% menor. Reprovar ali seria reprovar por outro motivo."""
+        assert self._prova().conferir_medida(self._medido("58.0"), None) == 0
+
+    def test_o_numero_gravado_e_o_que_a_esteira_mediu(self):
+        """Se alguém editar o arquivo da medida, é aqui que aparece."""
+        import json
+        d = json.loads((RAIZ / "testes" / "tipografia-aceita.json").read_text())
+        assert str(d["blocos"]["headline"]["size"]) == "69.8"
+        assert str(d["blocos"]["apoio"]["size"]) == "25.6"
+        assert d["desenhado_com"]["chromium"].startswith("155.")
+
+    def test_a_medida_aceita_diz_como_se_atualiza(self):
+        """Arquivo de trava sem instrução vira arquivo que alguém apaga."""
+        texto = (RAIZ / "testes" / "tipografia-aceita.json").read_text(encoding="utf-8")
+        assert "de propósito" in texto and "peça de prova" in texto

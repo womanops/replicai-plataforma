@@ -1,0 +1,13 @@
+{
+ "porque": "O navegador é quem mede o texto: o motor acha o corpo da fonte perguntando a ele se a frase cabe na caixa. Uma troca de versão muda o tamanho da letra em toda peça, sem erro nenhum para avisar. Estes números são a medida que foi olhada e aceita; a conferência é exata, sem folga, porque três amostras em duas máquinas deram o mesmo valor até a casa decimal.",
+ "como_atualizar": "Só de propósito, como a versão do Chromium: olhe a peça de prova do run, e se a nova estiver certa, grave aqui os números novos no mesmo commit que troca o navegador.",
+ "quando": "2026-10-14",
+ "desenhado_com": {
+  "chromium": "155.0.8059.39-1~deb13u1",
+  "fontes_dejavu": "2.37-8"
+ },
+ "blocos": {
+  "headline": {"size": 69.8, "tinta": "75,178,450,154"},
+  "apoio": {"size": 25.6, "tinta": "74,352,460,65"}
+ }
+}
