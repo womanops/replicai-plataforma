@@ -243,14 +243,20 @@ class TestAjustarTextoEElemento:
         """Uma por caixa, em dez caixas, é um campo minado sobre a peça."""
         assert "ed.sel === g.chave" in tela
 
-    def test_o_lapis_troca_o_texto(self, tela):
+    def test_o_lapis_leva_ao_campo_do_painel(self, tela):
+        """Antes abria a caixinha de digitar do navegador, que esconde a peça
+        e não deixa ver o resultado enquanto se escreve."""
         assert "function trocarTexto(g)" in tela
         assert 'class="lapis"' in tela
+        assert "campo.focus(); campo.select();" in tela
+        assert "prompt(" not in tela.split("function trocarTexto")[1][:400]
 
     def test_a_troca_diz_qual_e_a_fonte_da_arte(self, tela):
         """O PSD sabe que a linha é FuturaICG-Bold. Trocar o texto sem dizer
-        isso é trocar a letra junto, calado."""
-        assert "fonte da arte: ${fonte}" in tela
+        isso é trocar a letra junto, calado. O aviso mora no painel, ao lado
+        do campo onde se escreve."""
+        assert "Fonte da arte: <b>${fonte}</b>" in tela
+        assert "o texto novo sai na letra da casa" in tela
 
     def test_quando_falta_a_fonte_a_tela_pede_o_arquivo(self, tela):
         """Sem o arquivo o texto sai na letra da casa. O lugar de resolver é
@@ -273,6 +279,46 @@ class TestAjustarTextoEElemento:
     def test_o_modo_diz_o_que_ele_faz(self, tela):
         assert "Adaptação + Ajustes" in tela
         assert "ajustar a diagramação e os textos de cada" in tela
+
+
+class TestOPainelDoAjuste:
+    """A prancha mostrava caixas sem nome: o que cada uma é só aparecia
+    passando o mouse, e reescrever um texto era por uma caixinha do navegador.
+    O painel lateral — lista de camadas e campo de texto — veio do protótipo
+    que a Ligia aprovou (ReplicAI LP v7)."""
+
+    def test_tem_lista_de_camadas(self, tela):
+        assert 'id="edCamadas"' in tela
+        assert "function pintarPainel()" in tela
+
+    def test_a_camada_tem_nome_de_gente(self, tela):
+        """"headline" não é nome, e `Consigaz-Nino-Poses-Pose-5-A3-300dpi
+        copiar` é o nome do arquivo, não o da coisa."""
+        assert "const PAPEIS = { headline: 'Título'" in tela
+        assert "function nomeDaCamada(g)" in tela
+
+    def test_o_texto_se_escreve_no_painel(self, tela):
+        assert 'id="edTexto"' in tela
+        assert "ed.trocas[atual.chave] = campo.value" in tela
+
+    def test_a_camada_de_imagem_diz_que_nao_se_reescreve(self, tela):
+        assert "Esta camada é imagem" in tela
+
+    def test_clicar_na_lista_seleciona_na_peca(self, tela):
+        assert "ed.sel = b.dataset.chave; pintarLona();" in tela
+
+    def test_as_setas_movem_a_camada_escolhida(self, tela):
+        """Arrastar serve para a intenção; para encostar na margem sem passar
+        dela, o olho não basta."""
+        assert "const passo = e.shiftKey ? 10 : 1;" in tela
+        assert "ArrowLeft:[-passo,0]" in tela
+
+    def test_a_seta_nao_rouba_a_tecla_de_quem_digita(self, tela):
+        assert tela.count("e.target.tagName === 'INPUT'") >= 2
+
+    def test_o_fundo_aparece_na_lista_como_fixo(self, tela):
+        """Ele está na peça e não se move: omitir faz procurar o que não há."""
+        assert "<b>Fundo</b><small>fixo</small>" in tela
 
 
 class TestASelecaoSolta:

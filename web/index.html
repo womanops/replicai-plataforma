@@ -393,8 +393,43 @@ header .saldo.apertado .fio i{background:var(--err)}
 #editor.hidden{display:none}
 #editor .topo{display:flex;align-items:center;gap:14px;flex:none;padding-bottom:12px}
 #editor .topo h2{font:400 24px/1 var(--disp);letter-spacing:.04em;margin:0}
-#editor .topo p{margin:0;color:var(--mut);font-size:12.5px;flex:1}
-#editor .palco{flex:1;min-height:0;display:grid;place-items:center;padding-bottom:16px}
+#editor .topo h2 small{display:block;margin-top:3px;font:400 11px var(--mono);
+  color:var(--mut);letter-spacing:.06em}
+#editor .topo h2{flex:1}
+/* a prancha e o painel lado a lado: a lista de camadas é o que dá nome ao que
+   está na peça, e o campo de texto é onde se reescreve uma linha. Antes o
+   nome só aparecia passando o mouse e o texto só por uma caixinha do
+   navegador — dava para ajustar, mas às cegas */
+#editor .corpo{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 300px;
+  gap:20px;padding-bottom:16px}
+#editor .palco{min-height:0;display:grid;place-items:center}
+#editor .painel{display:grid;gap:20px;align-content:start;overflow:auto;
+  padding-left:20px;border-left:1px solid var(--linha)}
+#editor .painel h3{font:500 10.5px var(--mono);color:var(--mut);margin:0 0 8px;
+  text-transform:uppercase;letter-spacing:.1em}
+#editor .painel .dica{margin:0;color:var(--mut);font-size:12.5px;line-height:1.5}
+#editor .painel .dica .limite{color:#FF8A8A;font-weight:500}
+#editor .painel .nota{margin:0;color:var(--mut);font-size:11.5px}
+#editor .camadas{display:grid;gap:5px}
+#editor .camadas button{display:flex;justify-content:space-between;align-items:center;gap:10px;
+  padding:9px 11px;border-radius:9px;border:1px solid var(--linha);background:var(--painel);
+  color:var(--fg);font:500 13px var(--corpo);cursor:pointer;text-align:left}
+#editor .camadas button small{font:400 10px var(--mono);color:var(--mut);white-space:nowrap}
+#editor .camadas button[aria-pressed=true]{border-color:var(--rosa);background:var(--painel2);
+  box-shadow:inset 3px 0 0 var(--rosa)}
+#editor .camadas button[aria-pressed=true] b{color:var(--rosa)}
+#editor .camadas button b{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#editor .camadas button:disabled{cursor:default;opacity:.55}
+#editor .textos{display:grid;gap:9px}
+#editor .textos label{display:grid;gap:5px;font:500 11px var(--mono);color:var(--mut);
+  text-transform:uppercase;letter-spacing:.08em}
+#editor .textos input{width:100%;background:var(--painel);color:var(--fg);
+  border:1px solid var(--linha);border-radius:8px;padding:9px 11px;font:400 13.5px var(--corpo)}
+#editor .textos p{margin:0;color:var(--mut);font-size:12.5px;line-height:1.5}
+#editor .textos .link{background:none;border:0;padding:0;color:var(--rosa);cursor:pointer;
+  font:inherit;text-decoration:underline;text-underline-offset:2px}
+@media (max-width:900px){#editor .corpo{grid-template-columns:1fr}
+  #editor .painel{border-left:0;border-top:1px solid var(--linha);padding:16px 0 0}}
 #lona{position:relative;background:#000;box-shadow:0 20px 70px rgba(0,0,0,.6);
   user-select:none;touch-action:none}
 #lona .ch{position:absolute;inset:0;background-size:cover;background-position:center}
@@ -611,17 +646,23 @@ header .saldo.apertado .fio i{background:var(--err)}
 
 <div id="editor" class="hidden">
   <div class="topo">
-    <h2 id="edTitulo">Ajustar</h2>
-    <p id="edDica">Arraste para mover, puxe o canto para redimensionar. Clique num
-      elemento e use a <b style="color:#FF8A8A;font-weight:500">lixeira</b> para tirá-lo
-      da peça — é assim que sai um mascote, um selo ou uma linha que não cabe.
-      <b style="color:#FF8A8A;font-weight:500">A linha vermelha é o limite da rede</b>: o que
-      passa dela pode ser cortado na publicação. A peça atualizada é a que vai na exportação.</p>
+    <h2 id="edTitulo">Ajustar<small id="edMedida"></small></h2>
     <button class="secund" id="edVolta">Desfazer tudo</button>
     <button class="secund" id="edFecha">Fechar</button>
     <button class="acao" id="edSalva">Atualizar a peça</button>
   </div>
-  <div class="palco" id="palco"><div id="lona"></div></div>
+  <div class="corpo">
+    <div class="palco" id="palco"><div id="lona"></div></div>
+    <aside class="painel">
+      <p class="dica">Arraste para mover, puxe o canto para redimensionar. As setas
+        movem a camada escolhida com precisão — com Shift, de 10 em 10.
+        <b class="limite">A linha vermelha é o limite da rede</b>: o que passa dela pode
+        ser cortado na publicação.</p>
+      <div><h3>Camadas</h3><div class="camadas" id="edCamadas"></div></div>
+      <div><h3>Texto</h3><div class="textos" id="edTextos"></div></div>
+      <p class="nota">A peça atualizada é a que vai na exportação.</p>
+    </aside>
+  </div>
   <input type="file" id="fonteArquivo" hidden accept=".ttf,.otf,.woff,.woff2">
 </div>
 
@@ -1584,6 +1625,67 @@ $('#edVolta').onclick = () => {
   ed.fora.clear(); ed.trocas = {}; ed.sel = null; pintarLona();
 };
 
+// o nome do papel em português, para a lista de camadas não falar em
+// "headline" nem mostrar `Consigaz-Nino-Poses-Pose-5-A3-300dpi copiar` como
+// se fosse o nome da coisa
+const PAPEIS = { headline: 'Título', apoio: 'Apoio', cta: 'Botão', selo: 'Selo',
+                 marca: 'Marca', figura: 'Figura', legenda: 'Legenda', titulo: 'Título' };
+
+function nomeDaCamada(g){
+  const e = ed.peca.elementos[g.itens[0]] || {};
+  const papel = PAPEIS[e.papel] || e.papel || 'Elemento';
+  const dito = textoDoGrupo(g);
+  // texto: o que ele diz é o melhor nome que existe. Imagem: o papel, com o
+  // nome da camada do arquivo em letra pequena, para quem conhece o PSD
+  return dito ? { nome: dito.slice(0, 28), tipo: papel.toLowerCase() }
+              : { nome: papel, tipo: (g.rotulo || '').slice(0, 22) };
+}
+
+function pintarPainel(){
+  const lista = grupos();
+  const atual = lista.find(g => g.chave === ed.sel);
+  $('#edCamadas').innerHTML = lista.map(g => {
+    const { nome, tipo } = nomeDaCamada(g);
+    return `<button type="button" data-chave="${g.chave.replace(/"/g,'&quot;')}"`
+      + ` aria-pressed="${g.chave === ed.sel}"><b>${nome.replace(/</g,'&lt;')}</b>`
+      + `<small>${(tipo || '').replace(/</g,'&lt;')}</small></button>`;
+  }).join('') + `<button type="button" disabled><b>Fundo</b><small>fixo</small></button>`;
+  $('#edCamadas').querySelectorAll('button[data-chave]').forEach(b => b.onclick = () => {
+    ed.sel = b.dataset.chave; pintarLona();
+  });
+
+  const caixa = $('#edTextos');
+  if (!atual){ caixa.innerHTML = '<p>Escolha uma camada na lista ou clique nela na peça.</p>'; return; }
+  const e0 = ed.peca.elementos[atual.itens[0]] || {};
+  const dito = textoDoGrupo(atual);
+  if (!dito){
+    caixa.innerHTML = '<p>Esta camada é imagem: dá para mover, redimensionar e tirar — '
+      + 'não para reescrever.</p>';
+    return;
+  }
+  const fonte = e0.fonte_mae || '';
+  caixa.innerHTML = `<label><span>${(PAPEIS[e0.papel] || 'Texto')}</span>`
+    + `<input type="text" id="edTexto" value="${dito.replace(/"/g,'&quot;')}"></label>`
+    + (fonte ? `<p>Fonte da arte: <b>${fonte}</b>${
+         minhasFontes.some(f => casaFonte(f, fonte)) ? ''
+         : ' — não enviada, o texto novo sai na letra da casa. '
+           + `<button type="button" class="link" id="edPedeFonte">enviar a fonte</button>`
+       }</p>` : '');
+  const pede = $('#edPedeFonte');
+  if (pede) pede.onclick = () => pedirFonte(fonte);
+  const campo = $('#edTexto');
+  campo.oninput = () => { ed.trocas[atual.chave] = campo.value; desenharTroca(atual); };
+  campo.onchange = () => { if (campo.value === dito) delete ed.trocas[atual.chave]; pintarLona(); };
+}
+
+// enquanto se digita, só o texto da caixa muda — repintar a lona inteira a
+// cada tecla rouba o foco do campo
+function desenharTroca(g){
+  const el = document.querySelector(`.pe-el[data-chave="${CSS.escape(g.chave)}"] .trocado`);
+  if (el) el.textContent = ed.trocas[g.chave];
+  else pintarLona();
+}
+
 function grupos(){
   const mapa = new Map();
   ed.peca.elementos.forEach((e, i) => {
@@ -1611,6 +1713,7 @@ function pintarLona(){
   const k = ed.k = Math.min((palco.width - 30) / W, (palco.height - 30) / H);
   lona.style.width = W * k + 'px'; lona.style.height = H * k + 'px';
   const sv = peca.safe || {left:0,right:0,top:0,bottom:0};
+  $('#edMedida').textContent = `${W}×${H} · ${(peca.elementos || []).length} elementos`;
   const fundo = (peca.fundo || {}).src ? arquivoUrl(peca.fundo.src) : '';
   lona.innerHTML = `<div class="ch" style="background-image:url('${fundo}')"></div>`
     + `<div class="veu"><div class="margem" style="left:${sv.left*k}px;top:${sv.top*k}px;`
@@ -1631,6 +1734,7 @@ function pintarLona(){
     // manípulo de quem está embaixo fica inalcançável. Em qualquer editor de
     // caixas a regra é essa, senão só dá para pegar o elemento maior
     const ordem = Math.max(1, 200 - Math.round(Math.sqrt(c.w * c.h) / 12));
+    el.dataset.chave = g.chave;
     el.style.cssText = `left:${c.x*k}px;top:${c.y*k}px;width:${c.w*k}px;`
       + `height:${c.h*k}px;z-index:${ed.sel === g.chave ? 300 : ordem}`;
     const ehTexto = g.itens.some(i => {
@@ -1675,6 +1779,7 @@ function pintarLona(){
     pegar(el, g);
     lona.appendChild(el);
   }
+  pintarPainel();
 }
 
 function pegar(el, g){
@@ -1721,19 +1826,13 @@ function textoDoGrupo(g){
   return e.de || e.texto || '';
 }
 
+// o lápis na peça leva ao campo do painel. Antes abria a caixinha de digitar
+// do navegador, que não mostra a peça atrás nem deixa ver o resultado
 function trocarTexto(g){
-  const e0 = ed.peca.elementos[g.itens[0]] || {};
-  const fonte = e0.fonte_mae || '';
-  const temFonte = !fonte || minhasFontes.some(f => casaFonte(f, fonte));
-  const atual = textoDoGrupo(g);
-  const novo = prompt(
-    fonte ? `Texto desta linha (fonte da arte: ${fonte}${temFonte ? '' : ' — não enviada'}):`
-          : 'Texto desta linha:', atual);
-  if (novo === null || novo === atual) return;
-  ed.trocas[g.chave] = novo;
-  ed.sel = g.chave; pintarLona();
-  if (fonte && !temFonte) pedirFonte(fonte);
-  else aviso('Texto trocado. Atualize a peça para desenhar.', true);
+  ed.sel = g.chave;
+  pintarLona();
+  const campo = $('#edTexto');
+  if (campo){ campo.focus(); campo.select(); }
 }
 
 /* ---------- a fonte da marca ----------
@@ -1817,8 +1916,27 @@ function tirarDaPeca(g){
   aviso(`${g.rotulo} saiu da peça. "Desfazer tudo" traz de volta.`, true);
 }
 
+// as setas movem a camada escolhida. Arrastar com o mouse é bom para a
+// intenção; para encostar na margem sem passar dela, o olho não basta
+addEventListener('keydown', e => {
+  if (!ed || $('#editor').classList.contains('hidden') || !ed.sel) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  const passo = e.shiftKey ? 10 : 1;
+  const andar = {ArrowLeft:[-passo,0], ArrowRight:[passo,0],
+                 ArrowUp:[0,-passo], ArrowDown:[0,passo]}[e.key];
+  if (!andar) return;
+  const g = grupos().find(x => x.chave === ed.sel);
+  if (!g) return;
+  e.preventDefault();
+  g.itens.forEach(i => {
+    ed.boxes[i] = {...ed.boxes[i], x: ed.boxes[i].x + andar[0], y: ed.boxes[i].y + andar[1]};
+  });
+  pintarLona();
+});
+
 addEventListener('keydown', e => {
   if (!ed || $('#editor').classList.contains('hidden')) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key !== 'Delete' && e.key !== 'Backspace') return;
   if (!ed.sel) return;
   const g = grupos().find(x => x.chave === ed.sel);
