@@ -606,3 +606,41 @@ class TestARessalvaTemSaida:
         fonte = inspect.getsource(tarefas.refazer_fundo)
         assert "guardados.pop(formato, None)" in fonte
         assert "guardados[formato] = avisos" in fonte
+
+
+class TestATelaDizQuandoNaoCobra:
+    """Instalação de teste com a franquia desligada não pode mostrar um saldo
+    que não vale: quem olha "restam 11 peças" acredita nos 11."""
+
+    def test_o_saldo_vira_aviso_de_teste(self, tela):
+        assert "franquia desligada" in tela
+        assert "if (semLimite){" in tela
+
+    def test_a_tela_pergunta_ao_servidor(self, tela):
+        assert "semLimite = /desligada/.test(s.franquia || '');" in tela
+
+    def test_a_ficha_da_conta_tambem_diz(self, tela):
+        assert "franquia desligada (teste)" in tela
+
+
+class TestAPortaNaoInventaEndereco:
+    """A porta precisa dizer a quem não tem conta para onde ir. Enquanto o
+    domínio não existe, dizer sem link é honesto; escrever um endereço
+    plausível manda a pessoa para uma página que não abre."""
+
+    def test_a_porta_nao_tem_dominio_escrito_na_mao(self, tela):
+        import re
+        pe = tela[tela.find('class="porta-pe"'):]
+        pe = pe[:pe.find("</p>")]
+        assert not re.search(r"href=\"(https?:|mailto:)", pe), \
+            "endereço fixo na porta: ele tem que vir da configuração"
+
+    def test_a_frase_continua_la(self, tela):
+        assert "O acesso é criado quando a assinatura é aprovada." in tela
+
+    def test_os_links_vem_do_servidor(self, tela):
+        assert "fetch('/porta')" in tela
+        assert "p.site_planos" in tela and "p.contato_demo" in tela
+
+    def test_sem_configuracao_nada_aparece(self, tela):
+        assert "if (!partes.length) return;" in tela

@@ -68,26 +68,32 @@ class TestPlano:
     def test_cabe_enquanto_nao_estoura(self):
         for _ in range(10):
             uso.registrar(CONTA, uso.PECA)
-        assert uso.cabe(CONTA, "demo", pecas=5)[0] is True
+        assert uso.cabe(CONTA, "basic", pecas=5)[0] is True
 
     def test_nao_cabe_e_diz_o_numero(self):
-        for _ in range(18):
+        for _ in range(78):
             uso.registrar(CONTA, uso.PECA)
-        pode, porque = uso.cabe(CONTA, "demo", pecas=5)
+        pode, porque = uso.cabe(CONTA, "basic", pecas=5)
         assert pode is False
-        assert "20 peças" in porque and "23" in porque
+        assert "80 peças" in porque and "83" in porque
 
     def test_video_tem_limite_proprio(self):
-        for _ in range(5):
+        for _ in range(8):
             uso.registrar(CONTA, uso.VIDEO)
-        assert uso.cabe(CONTA, "demo", videos=1)[0] is False
-        assert uso.cabe(CONTA, "demo", pecas=1)[0] is True
+        assert uso.cabe(CONTA, "basic", videos=1)[0] is False
+        assert uso.cabe(CONTA, "basic", pecas=1)[0] is True
 
     def test_plano_maior_cabe_mais(self):
-        for _ in range(50):
+        for _ in range(100):
             uso.registrar(CONTA, uso.PECA)
-        assert uso.cabe(CONTA, "demo", pecas=1)[0] is False
+        assert uso.cabe(CONTA, "basic", pecas=1)[0] is False
         assert uso.cabe(CONTA, "freelancer", pecas=1)[0] is True
+
+    def test_sem_plano_nao_cabe_nada(self):
+        """Não é franquia pequena: é sem sistema."""
+        pode, porque = uso.cabe(CONTA, uso.PLANO_PADRAO, pecas=1)
+        assert pode is False
+        assert "não tem plano ativo" in porque
 
     def test_plano_desconhecido_cai_no_mais_apertado(self):
         """Plano torto não pode virar uso ilimitado."""
@@ -190,3 +196,93 @@ class TestOCicloDaFranquia:
     def test_sem_dia_do_ciclo_continua_por_mes(self):
         uso.registrar(CONTA, uso.PECA)
         assert uso.resumo(CONTA)["pecas"] == 1
+
+
+class TestInstalacaoDeTeste:
+    """Quem está construindo a plataforma precisa rodar a mesma peça vinte
+    vezes para olhar um detalhe. Bater no limite do plano no meio disso não
+    prova nada — só gasta a tarde. Mas ambiente que não cobra tem que DIZER
+    que não cobra: senão alguém testa aqui e promete lá fora."""
+
+    def test_desligado_por_padrao(self, monkeypatch):
+        from api import uso
+        monkeypatch.delenv("REPLICAI_SEM_LIMITE", raising=False)
+        assert uso.sem_limite() is False
+
+    def test_ligado_a_franquia_nao_barra(self, monkeypatch, tmp_path):
+        from api import uso
+        monkeypatch.setenv("REPLICAI_SEM_LIMITE", "1")
+        pode, porque = uso.cabe("conta-qualquer", uso.PLANO_PADRAO, pecas=10_000)
+        assert pode and porque == ""
+
+    def test_zero_e_nao_contam_como_desligado(self, monkeypatch):
+        """`REPLICAI_SEM_LIMITE=0` tem que significar o que diz."""
+        from api import uso
+        for valor in ("0", "", "nao", "não"):
+            monkeypatch.setenv("REPLICAI_SEM_LIMITE", valor)
+            assert uso.sem_limite() is False, valor
+
+    def test_a_saude_denuncia_o_ambiente_sem_franquia(self, monkeypatch):
+        import inspect
+
+        from api import main
+        fonte = inspect.getsource(main.saude)
+        assert "franquia" in fonte and "REPLICAI_SEM_LIMITE" in fonte
+
+
+class TestAEscadaDePlanos:
+    """Basic 80, Freelancer 250, e daí para cima. Vídeo é 10% das peças em
+    todos: ele anima uma peça que já existe e não chama serviço nenhum, então
+    o limite protege a fila, não o caixa — e proporção fixa se explica."""
+
+    def test_a_escada_que_a_ligia_pediu(self):
+        from api import uso
+        assert uso.PLANOS["basic"]["pecas"] == 80
+        assert uso.PLANOS["freelancer"]["pecas"] == 250
+        assert [uso.PLANOS[p]["pecas"] for p in uso.A_VENDA] == sorted(
+            uso.PLANOS[p]["pecas"] for p in uso.A_VENDA)
+
+    def test_video_e_dez_por_cento_em_todos(self):
+        from api import uso
+        for p in uso.A_VENDA:
+            lim = uso.PLANOS[p]
+            assert lim["videos"] == round(lim["pecas"] * 0.10), p
+
+    def test_nao_se_vende_o_sem_plano(self):
+        from api import uso
+        assert "sem" not in uso.A_VENDA
+        assert uso.PLANOS[uso.PLANO_PADRAO]["pecas"] == 0
+
+    def test_subir_de_plano_baixa_o_preco_da_peca(self):
+        """É o que faz a escada ser escada: quem produz mais paga menos por
+        peça. Se o preço por peça subisse com o volume, o plano de cima seria
+        punição — e ninguém sobe."""
+        from api import cobranca, uso
+        por_peca = [cobranca.PRECO(p) / uso.PLANOS[p]["pecas"] for p in uso.A_VENDA]
+        assert por_peca == sorted(por_peca, reverse=True), por_peca
+        assert len(set(por_peca)) == len(por_peca), "dois planos com o mesmo preço por peça"
+
+    def test_a_escada_sobe(self):
+        from api import cobranca, uso
+        precos_ = [cobranca.PRECO(p) for p in uso.A_VENDA]
+        assert precos_ == sorted(precos_) and len(set(precos_)) == len(precos_), precos_
+        franquias = [uso.PLANOS[p]["pecas"] for p in uso.A_VENDA]
+        assert franquias == sorted(franquias), franquias
+
+    def test_nenhum_preco_de_tabela_fura_o_piso(self):
+        """O piso é o preço derivado do custo medido. Tabela abaixo dele é
+        margem comida em silêncio — e é a esteira que tem que gritar, não o
+        extrato no fim do mês."""
+        from api import precos, uso
+        assert precos.abaixo_do_piso(uso.PLANOS) == []
+
+
+def test_a_conta_nasce_no_mesmo_estado_que_o_uso_conhece():
+    """A conta nascia com `plano="demo"`, que saiu da escada: um degrau
+    fantasma, que `limites()` só não transformava em acesso de graça porque cai
+    no padrão. Os dois lados têm que dizer a mesma palavra."""
+    from api import contas, uso
+    assert contas.Conta(id="x", nome="x", email="x@y.z").plano == uso.PLANO_PADRAO
+    import inspect
+    assinatura = inspect.signature(contas.criar).parameters["plano"]
+    assert assinatura.default == uso.PLANO_PADRAO

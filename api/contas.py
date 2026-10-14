@@ -51,7 +51,11 @@ class Conta:
     nome: str
     email: str
     criada: str = ""
-    plano: str = "demo"
+    # "sem" é o estado de quem não assinou: a conta nasce da assinatura, e
+    # um plano que não existe mais ("demo") deixava a conta num degrau
+    # fantasma. É o `uso.PLANO_PADRAO`, repetido aqui para não importar
+    # `uso` dentro do dataclass
+    plano: str = "sem"
     ativa: bool = True
     senha: str = ""
     chaves: list[dict] = field(default_factory=list)
@@ -297,7 +301,7 @@ def _ident_de(nome: str, email: str) -> str:
     return f"{base[:40]}-{secrets.token_hex(3)}"
 
 
-def criar(nome: str, email: str, senha: str, plano: str = "demo") -> Conta:
+def criar(nome: str, email: str, senha: str, plano: str = "sem") -> Conta:
     email = (email or "").strip().lower()
     if not EMAIL.fullmatch(email):
         raise ContaInvalida("e-mail inválido")

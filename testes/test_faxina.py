@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from api import faxina, trabalhos
+from testes.conftest import assinatura_valendo
 
 
 @pytest.fixture
@@ -36,7 +37,7 @@ def cliente_limitado(tmp_path, monkeypatch):
             return "espiado"
 
     main.FILA = FilaQuieta()
-    c = contas.criar("Teto", "teto@exemplo.com", "senha-bem-comprida")
+    c = assinatura_valendo(contas.criar("Teto", "teto@exemplo.com", "senha-bem-comprida"))
     chave = contas.nova_chave(c, "teto")
     return TestClient(main.app, headers={"Authorization": f"Bearer {chave}"}), main.LIMITE_ARTE
 

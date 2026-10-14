@@ -10,6 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from testes.conftest import assinatura_valendo
+
 
 class FilaEspia:
     """Anota o que foi enfileirado em vez de executar.
@@ -40,7 +42,8 @@ def cliente(tmp_path, monkeypatch):
     importlib.reload(trabalhos)
     importlib.reload(main)
     main.FILA = FilaEspia()
-    conta = contas.criar("Teste", "teste@exemplo.com", "senha-bem-comprida")
+    conta = assinatura_valendo(
+        contas.criar("Teste", "teste@exemplo.com", "senha-bem-comprida"))
     chave = contas.nova_chave(conta, "testes")
     c = TestClient(main.app, headers={"Authorization": f"Bearer {chave}"})
     c.fila = main.FILA
@@ -194,7 +197,8 @@ class TestDePontaAPonta:
         from api import contas, main, trabalhos
         importlib.reload(trabalhos)
         importlib.reload(main)
-        conta = contas.criar("Ponta a ponta", "ponta@exemplo.com", "senha-bem-comprida")
+        conta = assinatura_valendo(
+            contas.criar("Ponta a ponta", "ponta@exemplo.com", "senha-bem-comprida"))
         chave = contas.nova_chave(conta, "ponta a ponta")
         c = TestClient(main.app, headers={"Authorization": f"Bearer {chave}"})
         job = c.post("/jobs", files={"arte": ("arte.png", arte_png(), "image/png")},
@@ -285,6 +289,14 @@ class TestComOQueDesenha:
         f.write_text("isto não é json")
         monkeypatch.setattr(main, "VERSOES", f)
         assert cliente.get("/saude").status_code == 200
+
+    def test_a_saude_diz_quando_o_preco_ficou_abaixo_do_custo(self, cliente, monkeypatch):
+        """Câmbio sobe, preço fica, margem some calada. O preço não se corrige
+        sozinho — mas tem que dar para ver sem abrir planilha."""
+        from api import precos
+        assert cliente.get("/saude").json()["precos"] == "valendo"
+        monkeypatch.setattr(precos, "DOLAR", precos.DOLAR * 5)
+        assert "abaixo do piso" in cliente.get("/saude").json()["precos"]
 
 
 class TestPranchetasNaResposta:
@@ -596,3 +608,101 @@ class TestTrabalhoQueParouDeDarSinal:
         from datetime import datetime, timezone
         self._rodando(cliente, datetime.now(timezone.utc).isoformat(timespec="seconds"))
         assert cliente.get("/jobs/trab").json()["status"] == "rodando"
+
+
+class TestSemPlanoNaoEntra:
+    """A conta existe porque alguém assinou um plano. Sem plano ativo não é
+    "sem franquia": é sem sistema. Quem quer ver antes de assinar fala com a
+    gente, e isso acontece fora daqui."""
+
+    def _sem_plano(self, cliente, monkeypatch):
+        from api import contas, uso
+        monkeypatch.delenv("REPLICAI_SEM_LIMITE", raising=False)
+        c = cliente.conta
+        c.plano = uso.PLANO_PADRAO
+        contas._gravar(c)
+
+    def test_produzir_fecha(self, cliente, monkeypatch):
+        self._sem_plano(cliente, monkeypatch)
+        r = cliente.post("/jobs")
+        assert r.status_code == 402
+        assert "não tem plano ativo" in r.json()["detail"]
+
+    def test_o_que_ja_e_dele_continua_baixavel(self, cliente, monkeypatch, tmp_path):
+        """A peça foi paga quando foi feita; servir arquivo não custa por
+        unidade. O que o pagamento abre é PRODUZIR."""
+        from api import trabalhos
+        trabalhos.gravar(cliente.conta.id, "antigo", {"status": "pronto",
+                                                      "prontas": ["ig-feed-1x1"]})
+        self._sem_plano(cliente, monkeypatch)
+        assert cliente.get("/jobs/antigo").status_code == 200
+        assert cliente.get("/jobs/antigo/zip").status_code in (200, 404)
+
+    def test_a_recusa_convida_a_assinar_e_cita_a_demonstracao(self, cliente, monkeypatch):
+        self._sem_plano(cliente, monkeypatch)
+        texto = cliente.post("/jobs").json()["detail"]
+        assert "Assine um plano" in texto and "demonstração" in texto
+
+    def test_a_propria_conta_continua_respondendo(self, cliente, monkeypatch):
+        """Senão a pessoa não consegue nem ver por que está trancada, nem
+        escolher um plano, nem sair."""
+        self._sem_plano(cliente, monkeypatch)
+        for caminho in ("/eu", "/eu/uso", "/planos", "/saude"):
+            assert cliente.get(caminho).status_code == 200, caminho
+
+    def test_endereco_novo_nasce_protegido(self):
+        """O padrão é exigir plano, e abrir exceção é ato deliberado de quem
+        escreve o endereço: proteger um a um deixa passar o que se esquece.
+        As exceções são poucas e todas de LEITURA ou de conta."""
+        import inspect
+
+        from api import main
+        fonte = inspect.getsource(main)
+        assert "def conta_atual(c: contas.Conta = Depends(quem_e))" in fonte
+        livres = [l for l in fonte.splitlines() if "Depends(quem_e)" in l]
+        assert len(livres) <= 14, livres
+        # nenhum POST de produção entre as exceções
+        for proibido in ("def criar(", "def ajustar_peca(", "def animar(",
+                         "def refazer_o_fundo(", "def finalizar("):
+            dentro = fonte.split(proibido)[1].split(")")[0] if proibido in fonte else ""
+            assert "quem_e" not in dentro, proibido
+
+    def test_a_instalacao_de_teste_nao_tranca_ninguem(self, cliente, monkeypatch):
+        monkeypatch.setenv("REPLICAI_SEM_LIMITE", "1")
+        from api import contas, uso
+        c = cliente.conta
+        c.plano = uso.PLANO_PADRAO
+        contas._gravar(c)
+        assert cliente.get("/jobs").status_code == 200
+
+
+class TestAPortaFalaComQuemNaoTemConta:
+    """Antes de entrar não há conta, então o que a porta mostra tem que vir de
+    um endereço aberto. E não pode inventar domínio: até existir, vazio."""
+
+    def test_responde_sem_credencial(self, anonimo):
+        r = anonimo.get("/porta")
+        assert r.status_code == 200
+        assert set(r.json()) == {"site_planos", "contato_demo"}
+
+    def test_sem_dominio_nao_promete_pagina_de_planos(self, anonimo):
+        d = anonimo.get("/porta").json()
+        # sem domínio a página de planos fica vazia; o contato de demonstração
+        # já existe e é o mesmo da landing
+        assert d["site_planos"] == ""
+        assert d["contato_demo"] == "contato@operandi.com.br"
+
+    def test_configurado_e_o_que_a_porta_diz(self, anonimo, monkeypatch):
+        from api import main
+        monkeypatch.setattr(main, "SITE_PLANOS", "https://exemplo.teste/#precos")
+        monkeypatch.setattr(main, "CONTATO_DEMO", "oi@exemplo.teste")
+        assert anonimo.get("/porta").json() == {
+            "site_planos": "https://exemplo.teste/#precos",
+            "contato_demo": "oi@exemplo.teste"}
+
+    def test_os_dois_vem_do_ambiente(self):
+        """Trocar o endereço é configuração do servidor, não edição de código."""
+        from pathlib import Path
+        fonte = Path("api/main.py").read_text(encoding="utf-8")
+        assert 'os.environ.get("REPLICAI_SITE_PLANOS"' in fonte
+        assert 'os.environ.get("REPLICAI_CONTATO_DEMO"' in fonte

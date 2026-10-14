@@ -54,6 +54,44 @@ def preco_de(pecas: int, margem: float = MARGEM_ALVO) -> float:
     return float(math.ceil(bruto / 10) * 10)       # múltiplo de dez, para cima
 
 
+# --- o preço de tabela, decidido ---------------------------------------------
+# O número derivado acima é o PISO: abaixo dele a margem pretendida não se
+# paga. O que se COBRA é decisão de negócio, e está aqui.
+#
+# A entrada começa em R$ 890 porque conta pequena dá o mesmo atendimento que
+# conta grande — o custo das peças é a menor parte do que um cliente custa. E o
+# preço por peça cai conforme o volume (R$ 11,13 no Basic, R$ 5,83 no Agency):
+# é isso que faz subir de plano valer a pena para quem produz muito.
+TABELA = {
+    "basic":       890.0,
+    "freelancer": 1990.0,
+    "studio":     3990.0,
+    "agency":     6990.0,
+}
+
+
+def de_tabela(plano: str, pecas: int) -> float:
+    """O que se cobra pelo plano. Plano fora da tabela sai pelo piso derivado."""
+    return float(TABELA.get(plano) or preco_de(pecas))
+
+
+def abaixo_do_piso(planos: dict) -> list[str]:
+    """Os planos cujo preço de tabela já não entrega a margem pretendida.
+
+    O preço NÃO sobe sozinho: mexer no que o cliente paga é decisão, não efeito
+    colateral do câmbio — ninguém descobre no extrato que a assinatura mudou.
+    O que o sistema faz é avisar, antes que a margem suma em silêncio. A
+    esteira confere isso a cada empurrão.
+    """
+    furados = []
+    for plano, lim in planos.items():
+        if plano not in TABELA or not lim.get("pecas"):
+            continue
+        if TABELA[plano] < preco_de(lim["pecas"]):
+            furados.append(plano)
+    return furados
+
+
 def conta(pecas: int, preco: float) -> dict:
     """A conta aberta de um plano, para não precisar confiar no número."""
     custo = custo_peca() * pecas

@@ -34,9 +34,21 @@ def servidor(tmp_path, monkeypatch):
     return main, contas
 
 
-def cliente_de(servidor, nome, email):
+def cliente_de(servidor, nome, email, plano="basic"):
+    """Uma conta com plano pago valendo.
+
+    Produzir exige plano — a conta nasce da assinatura. Estes testes são sobre
+    isolamento e sobre o teto do plano, não sobre a porta do pagamento: sem
+    plano nenhum deles chegaria onde quer olhar. `plano=None` deixa a conta sem
+    plano, para quem quiser testar justamente isso.
+    """
+    from datetime import date, timedelta
     main, contas = servidor
     conta = contas.criar(nome, email, "senha-bem-comprida")
+    if plano:
+        conta.plano = plano
+        conta.pago_ate = (date.today() + timedelta(days=30)).isoformat()
+        contas._gravar(conta)
     chave = contas.nova_chave(conta)
     c = TestClient(main.app, headers={"Authorization": f"Bearer {chave}"})
     c.conta = conta
@@ -184,7 +196,7 @@ class TestPlanoNaPorta:
     def test_estourar_o_plano_recusa_o_trabalho(self, servidor):
         from api import uso
         c = cliente_de(servidor, "Dono", "dono@exemplo.com")
-        for _ in range(uso.limites("demo")["pecas"]):
+        for _ in range(uso.limites("basic")["pecas"]):
             uso.registrar(c.conta.id, uso.PECA)
         r = c.post("/jobs", files={"arte": ("a.png", arte(), "image/png")},
                    data={"formatos": "ig-feed-1x1", "headline": "Oi"})
@@ -195,7 +207,7 @@ class TestPlanoNaPorta:
         from api import uso
         main, _ = servidor
         c = cliente_de(servidor, "Dono", "dono@exemplo.com")
-        for _ in range(uso.limites("demo")["pecas"]):
+        for _ in range(uso.limites("basic")["pecas"]):
             uso.registrar(c.conta.id, uso.PECA)
         c.post("/jobs", files={"arte": ("a.png", arte(), "image/png")},
                data={"formatos": "ig-feed-1x1", "headline": "Oi"})
@@ -205,10 +217,10 @@ class TestPlanoNaPorta:
         from api import uso
         um = cliente_de(servidor, "Um", "um@exemplo.com")
         dois = cliente_de(servidor, "Dois", "dois@exemplo.com")
-        for _ in range(uso.limites("demo")["pecas"]):
+        for _ in range(uso.limites("basic")["pecas"]):
             uso.registrar(um.conta.id, uso.PECA)
         assert um.get("/eu/uso").json()["resta"]["pecas"] == 0
-        assert dois.get("/eu/uso").json()["resta"]["pecas"] == uso.limites("demo")["pecas"]
+        assert dois.get("/eu/uso").json()["resta"]["pecas"] == uso.limites("basic")["pecas"]
         r = dois.post("/jobs", files={"arte": ("a.png", arte(), "image/png")},
                       data={"formatos": "ig-feed-1x1", "headline": "Oi"})
         assert r.status_code == 202

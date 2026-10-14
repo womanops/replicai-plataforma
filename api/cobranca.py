@@ -37,7 +37,7 @@ def PRECO(plano: str) -> float:
     if plano == uso.PLANO_PADRAO:
         return 0.0
     lim = uso.PLANOS.get(plano)
-    return precos.preco_de(lim["pecas"]) if lim else 0.0
+    return precos.de_tabela(plano, lim["pecas"]) if lim else 0.0
 
 
 class _Precos(dict):

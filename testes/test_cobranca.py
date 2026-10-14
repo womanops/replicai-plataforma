@@ -10,7 +10,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from api import cobranca, contas
+from api import cobranca, contas, uso
 
 
 @pytest.fixture(autouse=True)
@@ -67,12 +67,13 @@ class TestAssinar:
         """Quem libera é o aviso de pagamento. Liberar aqui é dar de graça a
         quem clicou e não pagou."""
         cobranca.assinar(conta, "studio")
-        assert contas.por_id(conta.id).plano == "demo"
+        assert contas.por_id(conta.id).plano == uso.PLANO_PADRAO
         assert contas.por_id(conta.id).plano_pedido == "studio"
 
-    def test_o_plano_de_entrada_nao_tem_assinatura(self, conta, asaas):
+    def test_o_estado_sem_plano_nao_se_assina(self, conta, asaas):
+        """"sem" não é um degrau da escada: é a ausência dela."""
         with pytest.raises(cobranca.CobrancaIndisponivel):
-            cobranca.assinar(conta, "demo")
+            cobranca.assinar(conta, uso.PLANO_PADRAO)
 
     def test_forma_de_pagamento_torta_e_recusada(self, conta, asaas):
         with pytest.raises(cobranca.CobrancaIndisponivel, match="forma de pagamento"):
@@ -136,14 +137,18 @@ class TestOQueOAsaasAvisa:
 
 
 class TestOPlanoSoValePago:
-    def test_sem_pagamento_nenhum_vale_teste(self, conta):
-        conta.plano = "agency"
-        assert cobranca.plano_valendo(conta) == "demo"
+    """A conta existe porque alguém assinou. Sem pagamento em dia ela cai para
+    "sem plano", que não é uma franquia pequena — é sem sistema: o que já foi
+    produzido continua baixável, e gerar ou ajustar espera o pagamento."""
 
-    def test_vencido_cai_para_teste(self, conta):
+    def test_sem_pagamento_nenhum_fica_sem_plano(self, conta):
+        conta.plano = "agency"
+        assert cobranca.plano_valendo(conta) == "sem"
+
+    def test_vencido_fica_sem_plano(self, conta):
         conta.plano = "studio"
         conta.pago_ate = (date.today() - timedelta(days=1)).isoformat()
-        assert cobranca.plano_valendo(conta) == "demo"
+        assert cobranca.plano_valendo(conta) == "sem"
 
     def test_dentro_do_prazo_vale(self, conta):
         conta.plano = "studio"
@@ -155,18 +160,18 @@ class TestOPlanoSoValePago:
         hoje. Misturar faria o atraso apagar a memória do que ela tinha."""
         conta.plano = "agency"
         conta.pago_ate = "2020-01-01"
-        assert cobranca.plano_valendo(conta) == "demo"
+        assert cobranca.plano_valendo(conta) == "sem"
         assert conta.plano == "agency"
 
     def test_data_torta_nao_libera(self, conta):
         conta.plano = "studio"
         conta.pago_ate = "nunca"
-        assert cobranca.plano_valendo(conta) == "demo"
+        assert cobranca.plano_valendo(conta) == "sem"
 
     def test_plano_que_sumiu_da_tabela_nao_libera(self, conta):
         conta.plano = "plano-antigo"
         conta.pago_ate = (date.today() + timedelta(days=30)).isoformat()
-        assert cobranca.plano_valendo(conta) == "demo"
+        assert cobranca.plano_valendo(conta) == "sem"
 
 
 class TestSemChave:
@@ -177,29 +182,50 @@ class TestSemChave:
             cobranca.chamar("GET", "/customers")
 
 
-class TestOPlanoDeEntradaEDeGraca:
-    def test_demo_nao_tem_preco(self):
+class TestOPlanoDeEntradaEPago:
+    """Não há degrau de graça: a conta nasce de uma assinatura. Quem quer
+    conhecer antes pede uma demonstração, e isso acontece fora do sistema."""
+
+    def test_sem_plano_nao_tem_preco(self):
         from api import uso
         assert cobranca.PRECO(uso.PLANO_PADRAO) == 0.0
+
+    def test_a_entrada_e_paga(self):
+        from api import uso
+        assert cobranca.PRECO(uso.A_VENDA[0]) > 0
 
     def test_os_outros_tem(self):
         assert cobranca.PRECO("freelancer") > 0
         assert cobranca.PRECO("agency") > cobranca.PRECO("studio")
 
-    def test_plano_de_graca_nao_vira_margem_zero(self):
-        """Chamar de margem zero esconderia que o dinheiro sai: é custo de
-        aquisição, o que se paga para alguém experimentar."""
-        from api import precos, uso
-        c = precos.conta(uso.PLANOS["demo"]["pecas"], 0.0)
-        assert c["custo_de_aquisicao"] > 0
-        assert c["margem"] == -c["custo_de_aquisicao"]
+    def test_nao_se_assina_o_sem_plano(self, conta):
+        """"Sem plano" é estado, não produto: vendê-lo seria vender nada."""
+        from api import uso
+        with pytest.raises(cobranca.CobrancaIndisponivel):
+            cobranca.assinar(conta, uso.PLANO_PADRAO)
 
-    def test_o_preco_acompanha_o_dolar(self, monkeypatch):
-        """Preço escrito à mão envelhece calado."""
+    def test_o_dolar_nao_mexe_na_assinatura_de_ninguem(self, monkeypatch):
+        """O que se cobra é decisão, não efeito colateral do câmbio: ninguém
+        descobre pelo extrato que a assinatura mudou de preço."""
         from api import precos
         antes = cobranca.PRECO("studio")
         monkeypatch.setattr(precos, "DOLAR", precos.DOLAR * 1.2)
-        assert cobranca.PRECO("studio") > antes
+        assert cobranca.PRECO("studio") == antes
+
+    def test_mas_o_piso_acompanha_e_avisa(self, monkeypatch):
+        """Preço parado com custo subindo come a margem calado. O piso continua
+        derivado do custo medido, e quando a tabela passa por baixo dele o
+        sistema aponta qual plano — para alguém decidir, não para corrigir
+        sozinho."""
+        from api import precos, uso
+        assert precos.abaixo_do_piso(uso.PLANOS) == []
+        monkeypatch.setattr(precos, "DOLAR", precos.DOLAR * 5)
+        assert precos.abaixo_do_piso(uso.PLANOS)
+
+    def test_a_entrada_custa_o_que_foi_decidido(self):
+        """R$ 890 é decisão de negócio: conta pequena dá o mesmo atendimento
+        que conta grande."""
+        assert cobranca.PRECO("basic") == 890.0
 
     def test_a_margem_pretendida_e_entregue(self):
         from api import precos, uso

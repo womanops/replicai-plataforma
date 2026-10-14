@@ -132,17 +132,41 @@ def meses(conta: str) -> list[str]:
 
 # O que cada plano permite por mês. Número grande não é "ilimitado": é o teto
 # que protege de um cliente sozinho consumir o lucro de todos.
+# A escada de planos. Vídeo é 10% das peças em todos: ele anima uma peça que já
+# existe e não chama serviço nenhum, então o limite existe para proteger a
+# fila, não o caixa — e uma proporção fixa é mais fácil de explicar do que
+# quatro números escolhidos um a um.
+#
+# Não há plano de teste que se assine sozinho: para conhecer, a pessoa aciona
+# a gente e a demonstração é feita por nós. Por isso a entrada é o Basic, e
+# `sem` não é um degrau da escada — é o estado de quem ainda não contratou ou
+# deixou de pagar. Com ele a produção para, em vez de cair caladamente para
+# uma franquia de brinde.
 PLANOS = {
-    "demo":       {"pecas": 20,   "videos": 5,   "nome": "Demo"},
-    "freelancer": {"pecas": 200,  "videos": 20,  "nome": "Freelancer"},
-    "studio":     {"pecas": 500,  "videos": 50,  "nome": "Studio"},
-    "agency":     {"pecas": 1000, "videos": 100, "nome": "Agency"},
+    "sem":        {"pecas": 0,    "videos": 0,   "nome": "Sem plano"},
+    "basic":      {"pecas": 80,   "videos": 8,   "nome": "Basic"},
+    "freelancer": {"pecas": 250,  "videos": 25,  "nome": "Freelancer"},
+    "studio":     {"pecas": 600,  "videos": 60,  "nome": "Studio"},
+    "agency":     {"pecas": 1200, "videos": 120, "nome": "Agency"},
 }
-PLANO_PADRAO = "demo"
+PLANO_PADRAO = "sem"
+
+# os que se contrata, na ordem em que aparecem na tela
+A_VENDA = ("basic", "freelancer", "studio", "agency")
 
 
 def limites(plano: str) -> dict:
     return PLANOS.get(plano, PLANOS[PLANO_PADRAO])
+
+
+# Instalação de teste: a franquia não barra. Existe porque quem está
+# construindo a plataforma precisa rodar a mesma peça vinte vezes para olhar um
+# detalhe, e bater no limite do plano no meio disso não prova nada — só gasta a
+# tarde. Fica DESLIGADO por padrão e aparece em /saude: ambiente que não cobra
+# precisa dizer que não cobra, senão alguém testa aqui e promete lá fora.
+def sem_limite() -> bool:
+    import os
+    return os.environ.get("REPLICAI_SEM_LIMITE", "").strip() not in ("", "0", "nao", "não")
 
 
 def cabe(conta: str, plano: str, pecas: int = 0, videos: int = 0,
@@ -152,8 +176,13 @@ def cabe(conta: str, plano: str, pecas: int = 0, videos: int = 0,
     Conferido antes de enfileirar, não depois de renderizar: recusar um
     trabalho já feito é gastar o custo e não poder cobrar.
     """
+    if sem_limite():
+        return True, ""
     lim = limites(plano)
     r = resumo(conta, dia_do_ciclo=dia_do_ciclo)
+    if not lim["pecas"]:
+        return False, ("esta conta não tem plano ativo. Assine um plano para usar — "
+                       "ou fale com a gente se quiser ver uma demonstração antes")
     if pecas and r["pecas"] + pecas > lim["pecas"]:
         return False, (f"o plano {lim['nome']} vai até {lim['pecas']} peças por ciclo, "
                        f"e este trabalho chegaria a {r['pecas'] + pecas}")

@@ -44,6 +44,13 @@ ACEITOS = {".png", ".jpg", ".jpeg", ".webp", ".psd", ".psb", ".pdf"}
 # medido, e vale rever quando aparecer um KV pesado.
 LIMITE_ARTE = int(os.environ.get("REPLICAI_MAX_ARTE_MB", "250")) * 1_000_000
 
+# a página de planos e o endereço para pedir demonstração moram fora do
+# sistema e ainda não têm domínio. Enquanto não estiverem configurados a porta
+# diz a frase sem link — endereço inventado manda quem não assinou para o nada.
+SITE_PLANOS = os.environ.get("REPLICAI_SITE_PLANOS", "").strip()
+# o contato já existe: é o mesmo que a landing usa no "agendar demonstração"
+CONTATO_DEMO = os.environ.get("REPLICAI_CONTATO_DEMO", "contato@operandi.com.br").strip()
+
 # lido em pedaços: a conferência tem que acontecer enquanto o arquivo chega,
 # não depois. Esperar o fim para medir é deixar o disco encher primeiro.
 PEDACO = 1024 * 1024
@@ -75,13 +82,24 @@ def gravar_arte(entrada, destino: Path, limite: int = LIMITE_ARTE) -> int:
 BISCOITO = "replicai_sessao"
 
 
-def conta_atual(authorization: str | None = Header(default=None),
-                replicai_sessao: str | None = Cookie(default=None)) -> contas.Conta:
-    """De quem é a requisição.
+# a conta existe porque alguém assinou um plano: sem plano ativo não há
+# sistema. Quem quer ver antes de assinar fala com a gente — isso acontece
+# fora daqui, e é por isso que esta mensagem convida a assinar, não a esperar
+SEM_PLANO = ("esta conta não tem plano ativo. Assine um plano para usar — ou "
+             "fale com a gente se quiser ver uma demonstração antes")
+
+
+def quem_e(authorization: str | None = Header(default=None),
+           replicai_sessao: str | None = Cookie(default=None)) -> contas.Conta:
+    """De quem é a requisição, tendo plano ou não.
 
     Dois caminhos: chave de API, para quem integra pelo programa, e selo de
     sessão, para quem usa a tela. Sem um dos dois não há conta, e sem conta
     não há trabalho — antes disto, quem alcançasse a porta criava peça.
+
+    Só os endereços que precisam responder a quem ainda não contratou usam
+    este: ver a própria conta, ver os planos, sair. O resto usa `conta_atual`,
+    que exige plano.
     """
     if authorization and authorization.lower().startswith("bearer "):
         c = contas.da_chave(authorization.split(None, 1)[1].strip())
@@ -94,6 +112,27 @@ def conta_atual(authorization: str | None = Header(default=None),
             return c
     raise HTTPException(401, "entre com a sua chave ou faça login",
                         headers={"WWW-Authenticate": "Bearer"})
+
+
+def conta_atual(c: contas.Conta = Depends(quem_e)) -> contas.Conta:
+    """A conta de quem PODE produzir.
+
+    Baixar o que já foi feito não passa por aqui: a peça é dela, já foi paga, e
+    servir arquivo não custa por unidade. O que o pagamento abre é produzir —
+    gerar, ajustar, animar, refazer.
+
+    Sem plano não é "sem franquia": é sem acesso. A demonstração é feita por
+    nós, a conta nasce ligada ao plano contratado, e quem deixa de pagar para
+    de entrar — as peças que já saíram continuam baixáveis pelos endereços de
+    conta, que não exigem plano.
+
+    O padrão é exigir: endereço novo nasce protegido, e abrir exceção é um ato
+    deliberado de quem escreve o endereço. O contrário — proteger um a um —
+    deixa passar o que se esquece.
+    """
+    if not uso.limites(cobranca.plano_valendo(c))["pecas"] and not uso.sem_limite():
+        raise HTTPException(402, SEM_PLANO)
+    return c
 
 
 @app.post("/contas", status_code=201)
@@ -126,12 +165,12 @@ def sair():
 
 
 @app.get("/eu")
-def eu(c: contas.Conta = Depends(conta_atual)):
+def eu(c: contas.Conta = Depends(quem_e)):
     return c.em_json()
 
 
 @app.get("/eu/medidas")
-def minhas_medidas(c: contas.Conta = Depends(conta_atual)):
+def minhas_medidas(c: contas.Conta = Depends(quem_e)):
     """As medidas fora do catálogo que a pessoa já usou.
 
     Elas não mudam nada em como a peça é feita — o motor resolve qualquer
@@ -155,7 +194,7 @@ def esquecer_medida(ident: str, c: contas.Conta = Depends(conta_atual)):
 
 
 @app.get("/eu/fontes")
-def minhas_fontes(c: contas.Conta = Depends(conta_atual)):
+def minhas_fontes(c: contas.Conta = Depends(quem_e)):
     """As fontes da marca que a conta já enviou."""
     return {"fontes": c.em_json()["fontes"]}
 
@@ -198,7 +237,7 @@ def revogar_chave(ident: str, c: contas.Conta = Depends(conta_atual)):
 
 
 @app.get("/jobs")
-def meus_trabalhos(c: contas.Conta = Depends(conta_atual)):
+def meus_trabalhos(c: contas.Conta = Depends(quem_e)):
     return {"trabalhos": trabalhos.do_cliente(c.id)}
 
 
@@ -206,10 +245,12 @@ def meus_trabalhos(c: contas.Conta = Depends(conta_atual)):
 def planos():
     """O que cada plano permite e quanto custa."""
     from api import precos
+    # só os que se contrata: "sem plano" é estado de quem ainda não falou com a
+    # gente, não um degrau da escada
     return {"planos": [{"id": i, **uso.PLANOS[i],
                         "preco": cobranca.PRECO(i),
                         **precos.conta(uso.PLANOS[i]["pecas"], cobranca.PRECO(i))}
-                       for i in uso.PLANOS],
+                       for i in uso.A_VENDA],
             "margem_alvo": precos.MARGEM_ALVO,
             "custo_por_peca": round(precos.custo_peca(), 4),
             "cobranca": cobranca.configurada()}
@@ -226,7 +267,7 @@ def assinar(plano: str = Form(...), forma: str = Form("PIX"),
 
 
 @app.delete("/eu/assinar")
-def cancelar_assinatura(c: contas.Conta = Depends(conta_atual)):
+def cancelar_assinatura(c: contas.Conta = Depends(quem_e)):
     try:
         if not cobranca.cancelar(c):
             raise HTTPException(404, "não há assinatura para cancelar")
@@ -253,7 +294,7 @@ async def aviso_de_cobranca(request: Request,
 
 
 @app.get("/eu/uso")
-def meu_uso(mes: str = "", c: contas.Conta = Depends(conta_atual)):
+def meu_uso(mes: str = "", c: contas.Conta = Depends(quem_e)):
     """Quanto a conta consumiu, e quanto o plano permite."""
     valendo = cobranca.plano_valendo(c)
     lim = uso.limites(valendo)
@@ -266,7 +307,7 @@ def meu_uso(mes: str = "", c: contas.Conta = Depends(conta_atual)):
 
 
 @app.get("/eu/uso/eventos")
-def meus_eventos(mes: str = "", c: contas.Conta = Depends(conta_atual)):
+def meus_eventos(mes: str = "", c: contas.Conta = Depends(quem_e)):
     """A lista, não o número: quando a fatura subir, a resposta é esta."""
     return {"mes": mes or uso._mes(), "eventos": uso.eventos(c.id, mes)}
 
@@ -308,20 +349,39 @@ def desenhando_com() -> dict:
     return {"chromium": "fora de contêiner", "navegador": find_chrome() or "nenhum"}
 
 
+@app.get("/porta")
+def porta():
+    """O que a tela de entrada pode dizer antes de alguém entrar.
+
+    Só os dois endereços de fora: a página onde se assina e o contato de
+    demonstração. Vazio quando não há domínio configurado — a porta mostra a
+    frase sem link em vez de prometer um endereço que não existe.
+    """
+    return {"site_planos": SITE_PLANOS, "contato_demo": CONTATO_DEMO}
+
+
 @app.get("/saude")
 def saude():
     from api import modelo
+    from api import precos as precos_
     return {"ok": True, "fila": type(FILA).__name__,
             "fila_porque": getattr(FILA, "porque", ""),
             "fila_tamanho": {n: q.count for n, q in getattr(FILA, "filas", {}).items()},
             "compositor": "modelo+regra" if modelo.disponivel() else "regra",
             "limite_arte_mb": LIMITE_ARTE // 1_000_000,
+            # ambiente que não cobra precisa dizer que não cobra
+            "franquia": "desligada (REPLICAI_SEM_LIMITE)" if uso.sem_limite() else "valendo",
             # sem segredo configurado o selo é sorteado ao subir: reiniciar
             # desloga todo mundo, e duas réplicas atrás do mesmo endereço não
             # reconhecem a sessão uma da outra. Serve para desenvolver, e em
             # produção é defeito — que só aparece quando o cliente reclama
             "sessao": "segredo configurado" if contas.segredo_configurado()
                       else "segredo sorteado ao subir: reiniciar desloga todo mundo",
+            # preço de tabela que já não cobre a margem pretendida: o câmbio
+            # subiu e ninguém mexeu no preço. Não se corrige sozinho — aparece
+            # aqui e na esteira, para alguém decidir
+            "precos": "tabela abaixo do piso: " + ", ".join(furados)
+                      if (furados := precos_.abaixo_do_piso(uso.PLANOS)) else "valendo",
             "desenhando_com": desenhando_com()}
 
 
@@ -664,7 +724,7 @@ def _peca_do(conta: str, job: str, formato: str) -> Path:
 
 
 @app.get("/jobs/{job}/pecas/{formato}")
-def ver_peca(job: str, formato: str, c: contas.Conta = Depends(conta_atual)):
+def ver_peca(job: str, formato: str, c: contas.Conta = Depends(quem_e)):
     """A montagem da peça: é o que o editor abre para mover os elementos."""
     try:
         arq = _peca_do(c.id, job, formato)
@@ -761,7 +821,7 @@ async def ajustar_peca(job: str, formato: str, request: Request,
 
 
 @app.get("/jobs/{job}")
-def ver(job: str, c: contas.Conta = Depends(conta_atual)):
+def ver(job: str, c: contas.Conta = Depends(quem_e)):
     try:
         estado = trabalhos.ler(c.id, job)
     except ValueError:
@@ -878,7 +938,7 @@ def para_entregar(estado: dict, itens: list[dict]) -> list[dict]:
 
 
 @app.get("/jobs/{job}/zip")
-def zip_do_trabalho(job: str, c: contas.Conta = Depends(conta_atual)):
+def zip_do_trabalho(job: str, c: contas.Conta = Depends(quem_e)):
     """As peças num arquivo só. Baixar peça por peça é o que mais irrita quem
     entrega para cliente, e são oito, dez arquivos por campanha."""
     try:
@@ -900,7 +960,7 @@ def zip_do_trabalho(job: str, c: contas.Conta = Depends(conta_atual)):
 
 
 @app.get("/jobs/{job}/arquivos/{nome:path}")
-def baixar(job: str, nome: str, c: contas.Conta = Depends(conta_atual)):
+def baixar(job: str, nome: str, c: contas.Conta = Depends(quem_e)):
     try:
         pasta = trabalhos.pasta_do(c.id, job)
     except ValueError:
