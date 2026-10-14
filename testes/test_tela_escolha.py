@@ -47,9 +47,12 @@ class TestEscolherPorCanal:
 
     def test_o_canal_soma_em_vez_de_trocar(self, tela):
         """Complementar: clicar em LinkedIn não pode apagar o Instagram."""
-        # a única limpeza é a do botão de limpar, e ela é explícita
+        # a única limpeza do atalho de canal é a do botão de limpar, e ela é
+        # explícita. Fora dele há outra, em `reabrir`, que troca a escolha
+        # pela da campanha que está sendo aberta — essa é outra história
         assert "if (!canal){ filtro.length = 0; escolhidos.clear(); }" in tela
-        assert tela.count("escolhidos.clear()") == 1
+        atalho = tela.split("function pintarCanais(){")[1].split("function pintarFormatos(")[0]
+        assert atalho.count("escolhidos.clear()") == 1
 
     def test_o_canal_tambem_filtra_o_que_esta_a_vista(self, tela):
         """"Ao clicar num canal, apenas ele fica visível e no topo, como um
@@ -307,3 +310,43 @@ class TestFontesDaMarcaNaTela:
     def test_o_campo_de_fora_nao_e_o_do_editor(self, tela):
         """`click()` num input dentro de `display:none` não abre nada."""
         assert "const campo = $('#fonteArquivo2');" in tela
+
+
+class TestAsCampanhasDeAntes:
+    """"Gero as peças da campanha X, amanhã da Y, e depois de amanhã quero
+    baixar tudo da X de novo — onde eu acho?"
+
+    A API guardava a lista desde sempre e a tela nunca a pedia: fechar a aba
+    era perder o caminho de volta, com as peças inteiras no disco.
+    """
+
+    def test_a_tela_pede_a_lista_ao_servidor(self, tela):
+        assert "fetch('/jobs')" in tela
+        assert "async function abrirCampanhas()" in tela
+
+    def test_tem_porta_de_entrada_no_cabecalho(self, tela):
+        """Lista que não tem botão é lista que não existe."""
+        assert 'id="btnCampanhas"' in tela
+        assert "minhas campanhas" in tela
+        assert "$('#btnCampanhas').onclick = abrirCampanhas;" in tela
+
+    def test_abrir_uma_campanha_traz_as_pecas_de_volta(self, tela):
+        """Não é só listar: clicar reabre o trabalho na tela, com os cartões
+        dos formatos dele e os botões de baixar."""
+        assert "async function reabrir(ident)" in tela
+        assert "(d.formatos || []).forEach(f => escolhidos.add(f));" in tela
+        assert "acompanhar();" in tela
+
+    def test_a_medida_livre_da_campanha_volta_com_ela(self, tela):
+        """Formato fora do catálogo não tem cartão na grade: sem recriá-lo, a
+        peça daquela campanha não teria onde aparecer."""
+        trecho = tela.split("async function reabrir(ident)")[1][:900]
+        assert "livre-" in trecho and "canal: CANAL_MEU" in trecho
+
+    def test_lista_vazia_explica_em_vez_de_ficar_em_branco(self, tela):
+        assert "Nenhuma campanha ainda" in tela
+
+    def test_a_data_se_le_em_portugues(self, tela):
+        """"2026-10-13T18:02:41+00:00" não é resposta para "quando foi isso"."""
+        assert "function quando(iso)" in tela
+        assert "'hoje'" in tela or "`hoje ${hora}`" in tela

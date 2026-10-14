@@ -510,3 +510,18 @@ class TestATrocaPreservaAFonte:
         r, peca = self._trocar(cliente, arq)
         assert r.json()["avisos"] == []
         assert peca["elementos"][0]["fonte"] == "PecaSans"
+
+    def test_o_aviso_da_fonte_cola_na_peca(self, cliente, tmp_path):
+        """Ele aparecia uma vez, como recado que some sozinho, e a peça ia
+        para a exportação sem nada dizendo que aquela linha mudou de letra.
+        Agora ele fica com a peça, como qualquer outra ressalva."""
+        arq = self._peca(cliente, tmp_path)
+        self._trocar(cliente, arq)
+        avisos = cliente.get("/jobs/trab").json()["avisos"]["ig-feed-1x1"]
+        assert any("FuturaICG-Bold" in a for a in avisos)
+
+    def test_com_a_fonte_na_conta_a_peca_nao_ganha_ressalva(self, cliente, tmp_path):
+        pedida, _ = self._enviar_fonte(cliente)
+        arq = self._peca(cliente, tmp_path, fonte_mae=pedida)
+        self._trocar(cliente, arq)
+        assert not (cliente.get("/jobs/trab").json().get("avisos") or {}).get("ig-feed-1x1")

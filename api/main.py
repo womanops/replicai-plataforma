@@ -716,6 +716,15 @@ async def ajustar_peca(job: str, formato: str, request: Request,
     peca["via"] = via if MARCA_DA_MAO in via else via + MARCA_DA_MAO
     arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
 
+    # o aviso da fonte fica COLADO na peça, e não só no retorno desta chamada:
+    # ele aparecia uma vez, como recado que some sozinho, e depois a peça ia
+    # para a exportação sem nada dizendo que aquela linha mudou de letra
+    if avisos:
+        guardados = (trabalhos.ler(c.id, job) or {}).get("avisos") or {}
+        deste = list(guardados.get(formato) or [])
+        deste += [a for a in avisos if a not in deste]
+        trabalhos.gravar(c.id, job, {"avisos": {**guardados, formato: deste}})
+
     trabalhos.gravar(c.id, job, {"ajuste": {"status": "na fila", "formato": formato}})
     trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
         redesenhar, c.id, job, formato)})

@@ -175,6 +175,29 @@ button.secund{background:transparent;color:var(--fg);border:1px solid var(--linh
 .pr b{display:block;font:500 12px var(--mono);margin-top:9px;letter-spacing:.04em}
 .pr span{color:var(--mut);font-size:11.5px}
 
+/* ---------- as campanhas de antes ----------
+   A API guardava a lista desde sempre e a tela nunca a pedia: fechar a aba
+   era perder o caminho de volta para a campanha, com as peças inteiras no
+   disco. Para quem gera a campanha X hoje e quer baixá-la de novo depois de
+   amanhã, isso não era um detalhe — era o produto não existir. */
+#trabalhos{position:fixed;inset:0;z-index:160;background:rgba(0,0,0,.72);
+  display:grid;place-items:center;padding:24px}
+#trabalhos.hidden{display:none}
+#trabalhos .folha{max-width:min(680px,94vw)}
+#listaTrabalhos{display:flex;flex-direction:column;gap:2px;margin:0 0 18px}
+#listaTrabalhos button{display:grid;grid-template-columns:1fr auto;gap:2px 14px;
+  align-items:baseline;text-align:left;background:none;border:0;border-bottom:1px solid var(--linha);
+  padding:11px 2px;cursor:pointer;color:var(--fg);font:inherit;width:100%}
+#listaTrabalhos button:hover{background:var(--painel2)}
+#listaTrabalhos b{font:500 14px var(--corpo)}
+#listaTrabalhos .quando{font:500 10.5px var(--mono);color:var(--mut);letter-spacing:.06em;
+  text-align:right}
+#listaTrabalhos small{grid-column:1/3;color:var(--mut);font-size:12px}
+#listaTrabalhos .vazio{color:var(--mut);font-size:13px;padding:8px 0}
+header .campanhas{background:none;border:0;cursor:pointer;color:var(--mut);
+  font:500 11px var(--mono);letter-spacing:.06em;text-transform:none;padding:0}
+header .campanhas:hover{color:var(--fg)}
+
 /* ---------- o que ficou de fora ----------
    O aviso morava no `title` do selo "com ressalva": texto que só aparece se a
    pessoa parar o mouse em cima e esperar, numa linha só, sem quebra. O que o
@@ -474,6 +497,16 @@ header .saldo.apertado .fio i{background:var(--err)}
   </div>
 </div>
 
+<div id="trabalhos" class="hidden">
+  <div class="folha">
+    <h2>Suas campanhas</h2>
+    <p>Tudo que você já gerou fica aqui. Abrir uma traz as peças de volta para
+      a tela: dá para ver, baixar o pacote e a apresentação.</p>
+    <div id="listaTrabalhos"></div>
+    <button class="secund" id="trabFecha">Fechar</button>
+  </div>
+</div>
+
 <div id="ressalvas" class="hidden">
   <div class="folha">
     <h2 id="resTitulo">O que você precisa saber desta peça</h2>
@@ -498,6 +531,7 @@ header .saldo.apertado .fio i{background:var(--err)}
   <span>uma peça aprovada, todos os formatos</span>
   <span id="quemCompoe" class="quem"></span>
   <span class="saldo" id="saldo" hidden></span>
+  <button class="campanhas" id="btnCampanhas" hidden>minhas campanhas</button>
   <button class="sair" id="btnSair" hidden>sair</button></header>
 
 <div id="andamento" hidden>
@@ -1244,6 +1278,7 @@ $('#btnSair').onclick = async () => { await fetch('/sair', { method:'POST' }); l
 function abrir(conta){
   $('#porta').classList.add('hidden');
   $('#btnSair').hidden = false;
+  $('#btnCampanhas').hidden = false;
   carregarMedidas().then(carregarFormatos);
   carregarFontes();
   pintarRodape(); quemCompoe(); verPlano();
@@ -1338,6 +1373,74 @@ async function mandarPrancheta(nome){
   } catch(e){ aviso('Não consegui falar com o servidor.'); return; }
   acompanhar();
 }
+
+/* ---------- as campanhas de antes ---------- */
+function quando(iso){
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const hoje = new Date(), ontem = new Date(Date.now() - 864e5);
+  const dia = x => x.toDateString();
+  const hora = d.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
+  if (dia(d) === dia(hoje)) return `hoje ${hora}`;
+  if (dia(d) === dia(ontem)) return `ontem ${hora}`;
+  return d.toLocaleDateString('pt-BR', {day:'2-digit', month:'2-digit', year:'2-digit'});
+}
+
+async function abrirCampanhas(){
+  const caixa = $('#listaTrabalhos');
+  caixa.innerHTML = '<div class="vazio">procurando…</div>';
+  $('#trabalhos').classList.remove('hidden');
+  let lista = [];
+  try { lista = (await (await fetch('/jobs')).json()).trabalhos || []; }
+  catch(e){ caixa.innerHTML = '<div class="vazio">não consegui falar com o servidor.</div>'; return; }
+  if (!lista.length){
+    caixa.innerHTML = '<div class="vazio">Nenhuma campanha ainda. A primeira aparece aqui '
+      + 'assim que você replicar uma peça.</div>';
+    return;
+  }
+  caixa.innerHTML = lista.map(t => {
+    const n = (t.formatos || []).length;
+    const estado = t.status === 'pronto' ? '' : ` · ${t.status}`;
+    return `<button type="button" data-job="${t.job}">`
+      + `<b>${(t.titulo || t.job).replace(/</g,'&lt;')}</b>`
+      + `<span class="quando">${quando(t.atualizado)}</span>`
+      + `<small>${n} formato${n === 1 ? '' : 's'}${estado}</small></button>`;
+  }).join('');
+  caixa.querySelectorAll('button').forEach(b => b.onclick = () => reabrir(b.dataset.job));
+}
+
+/* Traz a campanha de volta para a tela: os cartões dos formatos dela, as
+   peças prontas e os botões de baixar. É o mesmo caminho de quando ela
+   acabou de ser gerada — só que começando pelo estado que está no disco. */
+async function reabrir(ident){
+  $('#trabalhos').classList.add('hidden');
+  let d;
+  try { d = await (await fetch(`/jobs/${ident}`)).json(); }
+  catch(e){ aviso('Não consegui abrir essa campanha.'); return; }
+  if (d.detail){ aviso(d.detail); return; }
+
+  job = ident;
+  escolhidos.clear();
+  (d.formatos || []).forEach(f => escolhidos.add(f));
+  // medida fora do catálogo que a campanha usou: sem isto o cartão dela não
+  // existe na grade e a peça não teria onde aparecer
+  livres = (d.formatos || []).filter(f => /^livre-\d+x\d+$/.test(f)).map(f => {
+    const [, w, h] = f.match(/^livre-(\d+)x(\d+)$/);
+    return { id: f, canal: CANAL_MEU, nome: `${w}×${h}`, w: +w, h: +h, livre: true };
+  }).concat(livres.filter(f => !(d.formatos || []).includes(f.id)));
+  filtro.length = 0;
+  pintarFormatos();
+  $('#titulo').value = d.titulo || '';
+  $('#btnIr').style.display = 'none';
+  acompanhar();
+}
+
+$('#btnCampanhas').onclick = abrirCampanhas;
+$('#trabFecha').onclick = () => $('#trabalhos').classList.add('hidden');
+$('#trabalhos').onclick = e => {
+  if (e.target.id === 'trabalhos') $('#trabalhos').classList.add('hidden');
+};
 
 /* ---------- animar ---------- */
 let presetEscolhido = 'editorial';
