@@ -47,10 +47,15 @@ MARGEM_ALVO = 0.80             # margem com o cliente usando a franquia inteira
 # precisa. Rateá-lo por conta exigiria adivinhar quantas contas existem, e no
 # começo esse palpite erra para o lado caro — preço alto espanta o primeiro
 # cliente, que é justamente quem paga o servidor.
-SERVIDOR_MES = 600.0           # a confirmar: a máquina que roda api, worker,
-                               # Chromium e Remotion, com disco para o bruto
-FERRAMENTAS_MES = 0.0          # assinaturas (domínio, e-mail, o que vier);
-                               # os créditos do generativo já são por peça
+# ServerSP, Cloud VPS 16GB SP, mensal sem fidelidade: 8 vCPU, 16 GB, 200 GB
+# NVMe em São Paulo. Preço conferido em 15/10/2026 — a comparação com Vultr e
+# Magalu está em `infra/SUBIR.md`
+SERVIDOR_MES = 249.0
+# domínio (~R$ 50/ano no Registro.br) e backup diário do servidor. O backup é
+# PREMISSA até o ServerSP cotar: é o único número aqui que não foi conferido.
+# O envio de e-mail (Resend) não entra: até 3 mil e-mails por mês é de graça, e
+# o acesso de um cliente são dois ou três e-mails no mês inteiro
+FERRAMENTAS_MES = 55.0
 ATENDIMENTO_MES = 0.0          # o tempo de quem atende, se você quiser vê-lo
                                # aqui como linha. Fica em zero porque a margem
                                # é o que paga esse tempo — somar aqui e pedir

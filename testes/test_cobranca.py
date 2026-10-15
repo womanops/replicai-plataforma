@@ -304,3 +304,48 @@ class TestADesligarAAreia:
         from api import main
         monkeypatch.setenv("ASAAS_AREIA", "1")
         assert "mentira" in TestClient(main.app).get("/saude").json()["cobranca"]
+
+
+class TestOCustosEscritoNaoMente:
+    """`CUSTOS.md` é o papel que a Ligia lê para decidir. Número escrito à mão
+    num documento envelhece calado — este teste casa o documento com o código,
+    e quebra na esteira quando um dos dois mudar sozinho."""
+
+    def _papel(self):
+        from pathlib import Path
+        return Path("CUSTOS.md").read_text(encoding="utf-8")
+
+    def test_o_custo_fixo_bate_com_o_codigo(self):
+        from api import precos
+        assert f"R$ {precos.custo_fixo_mes():.0f}/mês" in self._papel()
+
+    def test_o_servidor_escolhido_bate(self):
+        from api import precos
+        assert f"R$ {precos.SERVIDOR_MES:.0f}/mês" in self._papel()
+
+    def test_os_precos_dos_planos_batem(self):
+        from api import uso
+        papel = self._papel()
+        for plano in uso.A_VENDA:
+            preco = cobranca.PRECO(plano)
+            escrito = f"R$ {preco:,.0f}".replace(",", ".")
+            assert escrito in papel, (plano, escrito)
+
+    def test_as_franquias_e_os_acessos_batem(self):
+        from api import uso
+        papel = self._papel()
+        for plano in uso.A_VENDA:
+            lim = uso.PLANOS[plano]
+            assert lim["nome"] in papel
+            assert str(lim["videos"]) in papel
+            assert str(lim["acessos"]) in papel
+
+    def test_o_custo_por_peca_bate(self):
+        from api import precos
+        assert f"R$ {precos.custo_peca():.3f}".replace(".", ",") in self._papel()
+
+    def test_o_que_ainda_e_premissa_esta_marcado(self):
+        """Quem lê precisa saber qual número foi medido e qual foi suposto."""
+        papel = self._papel()
+        assert "premissa" in papel.lower()
+        assert "8%" in papel and "contabilidade" in papel
