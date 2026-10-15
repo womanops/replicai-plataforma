@@ -319,6 +319,11 @@ header .campanhas:hover{color:var(--fg)}
 .plano-card h3{font:400 26px/1 var(--disp);letter-spacing:.04em;margin:0}
 .plano-card .preco{font:500 20px var(--corpo);margin:6px 0 2px}
 .plano-card .preco small{font:500 11px var(--mono);color:var(--mut)}
+.plano-card .porpeca{font:500 11px var(--mono);color:var(--mut);letter-spacing:.02em}
+.plano-card.melhor{border-color:var(--rosa)}
+.plano-card .selo{font:500 10px var(--mono);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--rosa);border:1px solid var(--rosa);border-radius:999px;padding:2px 8px;
+  align-self:flex-start;margin-bottom:2px}
 .plano-card ul{list-style:none;margin:10px 0 16px;padding:0;font-size:13px;color:var(--mut)}
 .plano-card li{padding:3px 0}
 .plano-card button{margin-top:auto}
@@ -1464,12 +1469,22 @@ async function abrirPlanos(){
     + (u.pago_ate ? `<div class="linha"><span>pago até ${u.pago_ate}</span></div>` : '');
 
   const cards = $('#cards'); cards.innerHTML = '';
+  // o preço por peça é o argumento da escada: sem ele os cartões são quatro
+  // números soltos, e não dá para ver que o plano de cima sai mais barato
+  const porPeca = p => p.preco && p.pecas ? p.preco / p.pecas : null;
+  const melhor = cat.planos.reduce((a, p) =>
+    porPeca(p) !== null && (a === null || porPeca(p) < porPeca(a)) ? p : a, null);
   for (const p of cat.planos){
     const atual = p.id === u.plano.id;
+    const pp = porPeca(p);
     const el = document.createElement('div');
-    el.className = 'plano-card' + (atual ? ' atual' : '');
-    el.innerHTML = `<h3>${p.nome}</h3>`
+    el.className = 'plano-card' + (atual ? ' atual' : '')
+                 + (p === melhor ? ' melhor' : '');
+    el.innerHTML = (p === melhor ? `<span class="selo">melhor preço por peça</span>` : '')
+      + `<h3>${p.nome}</h3>`
       + `<div class="preco">${dinheiro(p.preco)}<small>${p.preco?' /mês':''}</small></div>`
+      + (pp ? `<div class="porpeca">${pp.toLocaleString('pt-BR',
+            {style:'currency', currency:'BRL'})} por peça</div>` : '')
       + `<ul><li>${p.pecas} peças por ciclo</li><li>${p.videos} vídeos por ciclo</li>`
       + `<li>todos os formatos e presets</li>`
       + `<li>rascunho ilimitado dentro da franquia</li></ul>`

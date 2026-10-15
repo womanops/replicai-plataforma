@@ -644,3 +644,22 @@ class TestAPortaNaoInventaEndereco:
 
     def test_sem_configuracao_nada_aparece(self, tela):
         assert "if (!partes.length) return;" in tela
+
+
+class TestOsCartoesDePlano:
+    """Quatro preços soltos não mostram a escada: o que faz subir de plano
+    valer a pena é o preço da peça, e ele tem que estar no cartão."""
+
+    def test_o_cartao_diz_quanto_custa_a_peca(self, tela):
+        assert "por peça" in tela
+        assert "const porPeca = p =>" in tela
+
+    def test_o_melhor_preco_por_peca_e_apontado(self, tela):
+        assert "melhor preço por peça" in tela
+
+    def test_o_preco_vem_do_servidor_e_nao_da_tela(self, tela):
+        """Preço escrito na tela envelhece calado: quando a tabela mudar, a
+        tela tem que mudar sozinha."""
+        import re
+        assert "fetch('/planos')" in tela
+        assert not re.search(r"R\$\s?\d[\d.,]{2,}", tela), "preço escrito na mão na tela"
