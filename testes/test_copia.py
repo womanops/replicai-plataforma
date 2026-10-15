@@ -14,14 +14,21 @@ import pytest
 
 
 class S3Falso:
-    """O armazenamento, sem rede e sem credencial."""
+    """O armazenamento, sem rede e sem credencial.
 
-    def __init__(self, quebrar=False):
+    `quebrar_no` existe para o caso que mais importa e menos acontece em
+    teste: cair NO MEIO de uma cópia grande.
+    """
+
+    def __init__(self, quebrar=False, quebrar_no=None):
         self.objetos: dict[str, int] = {}
         self.quebrar = quebrar
+        self.quebrar_no = quebrar_no
+        self.subidas = 0
 
     def upload_file(self, caminho, balde, chave):
-        if self.quebrar:
+        self.subidas += 1
+        if self.quebrar or (self.quebrar_no and self.subidas >= self.quebrar_no):
             raise OSError("o armazenamento recusou")
         self.objetos[chave] = Path(caminho).stat().st_size
 
@@ -67,23 +74,20 @@ def plataforma(tmp_path, monkeypatch):
 
 class TestOQueEntraNaCopia:
     def test_leva_a_peca_entregue_e_as_contas(self, plataforma):
-        copia, _, base = plataforma
-        d = copia.montar()
-        with tarfile.open(d["arquivo"]) as t:
-            nomes = t.getnames()
-        assert "agencia-1/campanha-1/ig-feed-1x1.png" in nomes
-        assert "_contas/agencia-1.json" in nomes
-        assert "agencia-1/campanha-1/pecas/ig-feed-1x1.json" in nomes
+        copia, falso, _ = plataforma
+        copia.fazer()
+        guardados = set(falso.objetos)
+        assert "replicai/arquivos/agencia-1/campanha-1/ig-feed-1x1.png" in guardados
+        assert "replicai/arquivos/_contas/agencia-1.json" in guardados
+        assert "replicai/arquivos/agencia-1/campanha-1/pecas/ig-feed-1x1.json" in guardados
 
     def test_nao_leva_o_bruto(self, plataforma):
         """O bruto tem prazo de validade de 30 dias e é 85% do disco. Copiar o
         que vai ser apagado é pagar armazenamento para guardar lixo."""
-        copia, _, _ = plataforma
-        d = copia.montar()
-        with tarfile.open(d["arquivo"]) as t:
-            nomes = t.getnames()
-        assert not any(n.endswith((".psd", ".psb")) for n in nomes), nomes
-        assert "agencia-1/campanha-1/00-camada.png" not in nomes
+        copia, falso, _ = plataforma
+        copia.fazer()
+        assert not any(k.endswith((".psd", ".psb")) for k in falso.objetos)
+        assert not any("00-camada" in k for k in falso.objetos)
 
     def test_leva_o_mesmo_que_a_faxina_guarda(self, plataforma):
         """Uma regra só, nos dois lugares: se a faxina passar a guardar mais
@@ -92,49 +96,86 @@ class TestOQueEntraNaCopia:
         copia, _, _ = plataforma
         assert "faxina._guardar(estado)" in inspect.getsource(copia.o_que_vai)
 
-    def test_os_caminhos_sao_relativos_a_pasta_de_dados(self, plataforma):
-        """Restaurar é `tar xzf` em cima dela — sem adivinhação na pior hora."""
-        copia, _, _ = plataforma
-        d = copia.montar()
-        with tarfile.open(d["arquivo"]) as t:
-            nomes = t.getnames()
-        assert not any(n.startswith("/") or n.startswith("..") for n in nomes)
-
-
-class TestACopiaSaiDoServidor:
-    def test_sobe_e_apaga_o_pacote_local(self, plataforma, monkeypatch):
-        """Cópia que fica no mesmo disco ocupa espaço e não protege contra a
-        máquina morrer, que é o caso que importa. O pacote é montado numa
-        pasta temporária, então olhar só a pasta de dados não prova nada:
-        este teste segue o arquivo que foi de fato criado."""
-        copia, falso, base = plataforma
-        feitos = []
-        de_verdade = copia.montar
-        monkeypatch.setattr(copia, "montar",
-                            lambda *a, **k: feitos.append(de_verdade(*a, **k))
-                            or feitos[-1])
-        d = copia.fazer()
-        assert d["ok"] is True
-        assert len(falso.objetos) == 1
-        assert feitos and not feitos[0]["arquivo"].exists(), feitos
-        assert not list(base.glob("**/replicai-*.tar.gz"))
-
-    def test_a_chave_leva_prefixo_e_data(self, plataforma):
+    def test_o_caminho_la_dentro_espelha_o_daqui(self, plataforma):
+        """Restaurar é descer os arquivos por cima da pasta de dados."""
         copia, falso, _ = plataforma
         copia.fazer()
-        chave = next(iter(falso.objetos))
-        assert chave.startswith("replicai/replicai-")
-        assert chave.endswith(".tar.gz")
+        for chave in falso.objetos:
+            if chave.startswith("replicai/arquivos/"):
+                assert ".." not in chave
 
-    def test_guarda_so_as_ultimas(self, plataforma):
-        """Sem girar, o armazenamento cresce para sempre."""
+
+class TestEspelhoEmVezDePacote:
+    """A primeira versão empacotava tudo todo dia e guardava catorze — catorze
+    vezes o tamanho dos dados, porque peça entregue nunca muda. A R$ 0,10 o GB
+    da Magalu, isso é R$ 102 contra R$ 7,29 por mês com dez clientes em um ano."""
+
+    def test_o_que_ja_subiu_nao_sobe_de_novo(self, plataforma):
         copia, falso, _ = plataforma
+        primeira = copia.fazer()
+        quantos = len(falso.objetos)
+        segunda = copia.fazer()
+        assert primeira["novos"] >= 3
+        assert segunda["novos"] == 0
+        assert segunda["ja_estavam"] == primeira["novos"]
+        # só a versão datada das contas é reescrita; o espelho fica igual
+        assert len(falso.objetos) == quantos
+
+    def test_peca_nova_sobe_no_dia_seguinte(self, plataforma):
+        copia, falso, base = plataforma
+        copia.fazer()
+        job = base / "agencia-1" / "campanha-1"
+        import json as _json
+        (job / "trabalho.json").write_text(_json.dumps(
+            {"status": "pronto", "prontas": ["ig-feed-1x1", "ig-stories"]}),
+            encoding="utf-8")
+        (job / "ig-stories.png").write_bytes(b"outra peca" * 1000)
+        d = copia.fazer()
+        assert d["novos"] == 2          # a peça nova e o trabalho.json que mudou
+        assert "replicai/arquivos/agencia-1/campanha-1/ig-stories.png" in falso.objetos
+
+    def test_conta_alterada_sobe_de_novo(self, plataforma):
+        """Peça não muda; conta muda — plano, senha, medidas."""
+        copia, falso, base = plataforma
+        copia.fazer()
+        (base / "_contas" / "agencia-1.json").write_text('{"plano": "studio"}',
+                                                         encoding="utf-8")
+        assert copia.fazer()["novos"] == 1
+
+    def test_o_que_sumiu_daqui_nao_some_de_la(self, plataforma):
+        """Backup que apaga o que foi apagado não protege do engano, que é
+        metade do motivo de existir."""
+        copia, falso, base = plataforma
+        copia.fazer()
+        antes = set(falso.objetos)
+        import shutil
+        shutil.rmtree(base / "agencia-1")
+        copia.fazer()
+        assert antes <= set(falso.objetos)
+
+
+class TestAsContasGanhamVersao:
+    def test_sobe_uma_versao_datada(self, plataforma):
+        copia, falso, _ = plataforma
+        d = copia.fazer()
+        assert d["contas"].startswith("contas-")
+        assert any(k.startswith("replicai/contas/contas-") for k in falso.objetos)
+
+    def test_so_as_contas_giram(self, plataforma):
+        copia, falso, _ = plataforma
+        copia.fazer()
         for dia in range(1, 21):
-            falso.objetos[f"replicai/replicai-2026-09-{dia:02d}.tar.gz"] = 10
-        apagadas = copia.girar(manter=14)
-        assert len(falso.objetos) == 14
-        assert "replicai/replicai-2026-09-01.tar.gz" in apagadas
-        assert "replicai/replicai-2026-09-20.tar.gz" in falso.objetos
+            falso.objetos[f"replicai/contas/contas-2026-09-{dia:02d}.tar.gz"] = 10
+        apagadas = copia.girar_contas(manter=14)
+        versoes = [k for k in falso.objetos if k.startswith("replicai/contas/")]
+        assert len(versoes) == 14
+        assert any(k.startswith("replicai/arquivos/") for k in falso.objetos)
+        assert "replicai/contas/contas-2026-09-01.tar.gz" in apagadas
+
+    def test_a_versao_das_contas_nao_fica_no_disco(self, plataforma):
+        copia, _, base = plataforma
+        copia.fazer()
+        assert not list(base.glob("**/contas-*.tar.gz"))
 
 
 class TestQuandoFalha:
@@ -172,6 +213,33 @@ class TestQuandoFalha:
         assert "falhou" in cartas[1]
         assert "voltou" in cartas[2]
 
+    def test_o_que_falhou_no_meio_sobe_amanha(self, plataforma, monkeypatch):
+        """Cair no meio é o caso que importa: o arquivo que NÃO subiu não pode
+        ficar marcado como guardado — o buraco só apareceria na restauração."""
+        copia, falso, _ = plataforma
+        meio = S3Falso(quebrar_no=3)
+        monkeypatch.setattr(copia, "_cliente", lambda: meio)
+        assert copia.fazer()["ok"] is False
+        subiram = set(meio.objetos)
+
+        monkeypatch.setattr(copia, "_cliente", lambda: falso)
+        d = copia.fazer()
+        assert d["ok"] is True
+        # tudo que faltava subiu, e o que já estava não subiu de novo
+        guardados = {k for k in falso.objetos if k.startswith("replicai/arquivos/")}
+        esperados = {k for k in copia._tudo()["enviados"]}
+        assert len(guardados) + len(subiram) >= len(esperados)
+        assert d["novos"] == len(esperados) - len(subiram)
+
+    def test_o_progresso_vai_para_o_disco_durante_a_copia(self):
+        """A primeira cópia de uma carteira grande leva horas: uma queda no
+        fim não pode mandar tudo de volta para o começo."""
+        import inspect
+        from api import copia
+        fonte = inspect.getsource(copia.espelhar)
+        assert "len(novos) % 50 == 0" in fonte
+        assert "finally:" in fonte
+
     def test_a_carta_de_falha_diz_o_que_esta_desprotegido(self, plataforma, monkeypatch):
         from api import correio
         escrito = {}
@@ -185,20 +253,20 @@ class TestQuandoFalha:
 
 
 class TestASaudeConta:
-    def test_copia_em_dia_aparece_com_tamanho(self, plataforma):
+    def test_copia_em_dia_aparece_com_o_que_guarda(self, plataforma):
         copia, _, _ = plataforma
         copia.fazer()
         d = copia.em_json()
         assert d["estado"] == "em dia"
-        assert d["tamanho_mb"] > 0
-        assert d["arquivos"] >= 3
+        assert d["guardados"] >= 3
+        assert d["contas"]
 
     def test_copia_velha_aparece_como_atrasada(self, plataforma):
-        copia, _, base = plataforma
+        copia, _, _ = plataforma
         copia.fazer()
-        registro = json.loads(copia._registro().read_text(encoding="utf-8"))
-        registro["quando"] = "2026-01-01T03:00:00+00:00"
-        copia._registro().write_text(json.dumps(registro), encoding="utf-8")
+        tudo = json.loads(copia._registro().read_text(encoding="utf-8"))
+        tudo["ultima"]["quando"] = "2026-01-01T03:00:00+00:00"
+        copia._registro().write_text(json.dumps(tudo), encoding="utf-8")
         assert copia.em_json()["estado"] == "ATRASADA"
 
     def test_falha_aparece_com_o_motivo(self, plataforma, monkeypatch):
@@ -211,7 +279,7 @@ class TestASaudeConta:
 
 
 class TestOConteinerRodaTodoDia:
-    def test_o_compose_tem_o_serviço_de_copia(self):
+    def test_o_compose_tem_o_servico_de_copia(self):
         compose = Path("infra/docker-compose.yml").read_text(encoding="utf-8")
         assert "python -m api.copia" in compose
         assert "sleep 86400" in compose.split("copia:")[1][:400]

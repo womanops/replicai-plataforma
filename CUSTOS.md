@@ -20,11 +20,21 @@ está marcado como **premissa** é o que ainda espera confirmação de alguém.
 | 8 | **Segredo da sessão** (`REPLICAI_SEGREDO`) | sem ele, reiniciar desloga todo mundo | grátis | **falta gerar** |
 | 9 | **Token de administração** (`REPLICAI_ADMIN_TOKEN`) | criar conta na mão | grátis | **falta gerar** |
 | 10 | **Aviso de disco** (`REPLICAI_AVISO_PARA`) | o disco avisa antes de encher | grátis | **falta o seu e-mail** |
-| 11 | **Cópia diária** (`REPLICAI_COPIA_*`) | o backup do provedor é semanal; isto salva o trabalho entregue | poucos reais/mês | **falta o armazenamento** |
+| 11 | **Cópia diária** (`REPLICAI_COPIA_*`) | o backup do provedor é semanal; isto salva o trabalho entregue | R$ 0,10 por GB guardado (Magalu) | **falta o armazenamento** |
 | 12 | Redis (fila) | peça e vídeo em filas próprias | grátis, no contêiner | pronto |
 | 13 | Fontes da marca | tipografia igual à da arte | grátis, pasta montada | pronto |
 
 **Custo fixo: R$ 279/mês.** É o que sai do caixa com zero cliente.
+
+São **dois fornecedores e duas contas**, e vale não confundir: o ServerSP vende
+a máquina onde o sistema roda (e o backup semanal dela); a Magalu vende só um
+depósito fora dessa máquina, para a cópia diária sobreviver ao dia em que a
+máquina morrer. Com o plano de 8 GB (R$ 125 em vez de R$ 249), a conta do mês
+fica em torno de **R$ 155**.
+
+O depósito é o único item que cresce com o uso: R$ 0,10 por GB guardado, o que
+hoje dá centavos e, com dez clientes depois de um ano, cerca de R$ 7 por mês.
+Por isso ele não entra no custo fixo.
 
 O passo a passo de cada ligação está em [`infra/SUBIR.md`](infra/SUBIR.md).
 

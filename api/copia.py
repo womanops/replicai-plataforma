@@ -7,28 +7,44 @@ tem como devolver — e o cliente pagou por ela.
 
 **Fora do servidor, e não nele.** Cópia no mesmo disco protege contra engano
 (alguém apagou uma pasta) e não protege contra o que realmente acontece: a
-máquina morrer. Por isso daqui ela sai para um armazenamento de objetos, e por
-isso o arquivo local é apagado assim que sobe.
+máquina morrer. Por isso daqui ela sai para um armazenamento de objetos.
+
+**É espelho, não pacote diário.** A primeira versão empacotava tudo todo dia e
+guardava as últimas catorze — e isso custaria **catorze vezes** o tamanho dos
+dados, porque peça entregue nunca muda. Medido na tabela da Magalu, a R$ 0,10
+por GB: com dez clientes por um ano, R$ 102 por mês de pacotes contra **R$ 7,29
+de espelho**. Então cada arquivo sobe uma vez e fica; o que já está lá não sobe
+de novo.
+
+**O que muda ganha versão.** As contas mudam (plano, senha, medidas, fontes), e
+para elas um espelho não basta: um arquivo corrompido hoje apagaria o bom. Elas
+sobem também como pacote datado, que é minúsculo e guarda as últimas catorze.
 
 **O que vai é o que a faxina guarda**: as contas e, de cada trabalho, as peças
 entregues, os vídeos, a apresentação e os JSONs da montagem. O material bruto
-fica de fora de propósito — ele já tem prazo de validade de 30 dias, e é 85% do
+fica de fora de propósito — ele já tem prazo de validade de 30 dias e é 85% do
 disco. Copiar o que vai ser apagado é pagar armazenamento para guardar lixo.
+
+**Nada é apagado de lá porque sumiu daqui.** Backup que apaga o que foi apagado
+não protege do engano, que é metade do motivo de existir.
 
 Sem armazenamento configurado nada acontece, e `/saude` diz isso em letras: uma
 cópia que ninguém sabe que não está acontecendo é pior do que nenhuma.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tarfile
 import tempfile
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
-GUARDA = int(os.environ.get("REPLICAI_COPIAS", "14"))   # quantas cópias ficam lá
-ATRASO_DEMAIS = 2                                       # dias sem cópia que já é defeito
+GUARDA_CONTAS = int(os.environ.get("REPLICAI_COPIAS", "14"))   # versões das contas
+ATRASO_DEMAIS = 2                                              # dias sem cópia = defeito
+ARQUIVOS = "arquivos/"                                         # o espelho
+CONTAS = "contas/"                                             # as versões datadas
 
 
 def configurado() -> bool:
@@ -64,18 +80,37 @@ def _registro() -> Path:
 
 
 def ultima() -> dict:
+    d = _tudo()
+    return d.get("ultima") or {}
+
+
+def _tudo() -> dict:
     f = _registro()
     if not f.exists():
         return {}
     try:
-        return json.loads(f.read_text(encoding="utf-8"))
+        d = json.loads(f.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
+    return d if isinstance(d, dict) else {}
 
 
-def _anotar(d: dict) -> None:
+def _anotar(ultima: dict, enviados: dict | None = None) -> None:
+    d = _tudo()
+    d["ultima"] = ultima
+    if enviados is not None:
+        d["enviados"] = enviados
     _registro().write_text(json.dumps(d, ensure_ascii=False, indent=1),
                            encoding="utf-8")
+
+
+def _marca(f: Path) -> str:
+    """Como saber que o arquivo mudou. Tamanho basta para peça entregue, que
+    nunca muda; as contas são pequenas e ganham resumo de verdade."""
+    st = f.stat()
+    if f.suffix == ".json" and st.st_size < 2_000_000:
+        return hashlib.sha256(f.read_bytes()).hexdigest()[:16]
+    return f"{st.st_size}"
 
 
 def o_que_vai(base: Path) -> list[Path]:
@@ -84,12 +119,12 @@ def o_que_vai(base: Path) -> list[Path]:
     Uma regra só, nos dois lugares. Se um dia a faxina passar a guardar mais
     coisa, a cópia leva junto sem ninguém precisar lembrar.
     """
-    from api import faxina, trabalhos
+    from api import faxina
 
     vai: list[Path] = []
     contas = base / "_contas"
     if contas.exists():
-        vai += [f for f in contas.rglob("*") if f.is_file()]
+        vai += [f for f in sorted(contas.rglob("*")) if f.is_file()]
     for conta in sorted(base.iterdir()):
         if not conta.is_dir() or conta.name.startswith("_"):
             continue
@@ -109,36 +144,71 @@ def o_que_vai(base: Path) -> list[Path]:
     return vai
 
 
-def montar(destino: Path | None = None) -> dict:
-    """Empacota a cópia num .tar.gz. Caminhos relativos à pasta de dados, para
-    restaurar ser `tar xzf` em cima dela — sem adivinhação na pior hora."""
+def espelhar(mandar: bool = True) -> dict:
+    """Sobe o que ainda não está lá. Devolve o que subiu e o que já estava."""
     from api.trabalhos import pasta_base
 
     base = pasta_base()
-    arquivos = o_que_vai(base)
-    pasta = Path(destino) if destino else Path(tempfile.mkdtemp(prefix="replicai-copia-"))
-    pasta.mkdir(parents=True, exist_ok=True)
-    nome = f"replicai-{date.today().isoformat()}.tar.gz"
+    enviados = _tudo().get("enviados") or {}
+    c = _cliente() if mandar else None
+    novos, bytes_novos = [], 0
+    try:
+        for f in o_que_vai(base):
+            rel = str(f.relative_to(base))
+            marca = _marca(f)
+            if enviados.get(rel) == marca:
+                continue                  # já está lá, igualzinho
+            if c:
+                c.upload_file(str(f), _balde(), f"{_prefixo()}{ARQUIVOS}{rel}")
+            # anotado DEPOIS de subir: marcar antes faria o arquivo que falhou
+            # nunca mais ser tentado, e o buraco só apareceria na restauração
+            enviados[rel] = marca
+            novos.append(rel)
+            bytes_novos += f.stat().st_size
+            # de cinquenta em cinquenta o progresso vai para o disco: a
+            # primeira cópia de uma carteira grande leva horas, e uma queda no
+            # fim não pode mandar tudo de volta para o começo
+            if len(novos) % 50 == 0:
+                _anotar(ultima(), enviados)
+    finally:
+        _anotar(ultima(), enviados)
+    return {"novos": len(novos), "ja_estavam": len(enviados) - len(novos),
+            "mb_novos": round(bytes_novos / 1e6, 2)}
+
+
+def versionar_contas(mandar: bool = True) -> dict:
+    """As contas, datadas. Elas MUDAM: espelho sozinho apagaria o bom com o
+    corrompido, e conta perdida é cliente perdido."""
+    from api.trabalhos import pasta_base
+
+    base = pasta_base() / "_contas"
+    if not base.exists():
+        return {"versao": None, "porque": "ainda não há contas"}
+    pasta = Path(tempfile.mkdtemp(prefix="replicai-contas-"))
+    nome = f"contas-{date.today().isoformat()}.tar.gz"
     alvo = pasta / nome
-    with tarfile.open(alvo, "w:gz") as tar:
-        for f in arquivos:
-            tar.add(f, arcname=str(f.relative_to(base)))
-    return {"arquivo": alvo, "nome": nome, "arquivos": len(arquivos),
-            "tamanho_mb": round(alvo.stat().st_size / 1e6, 2)}
+    try:
+        with tarfile.open(alvo, "w:gz") as tar:
+            tar.add(base, arcname="_contas")
+        tamanho = round(alvo.stat().st_size / 1e6, 3)
+        if mandar:
+            _cliente().upload_file(str(alvo), _balde(), f"{_prefixo()}{CONTAS}{nome}")
+    finally:
+        if alvo.exists():
+            alvo.unlink()
+        try:
+            pasta.rmdir()
+        except OSError:
+            pass
+    return {"versao": nome, "mb": tamanho,
+            "apagadas": len(girar_contas()) if mandar else 0}
 
 
-def enviar(arquivo: Path, nome: str) -> str:
-    """Manda para o armazenamento e devolve a chave lá dentro."""
-    chave = f"{_prefixo()}{nome}"
-    _cliente().upload_file(str(arquivo), _balde(), chave)
-    return chave
-
-
-def girar(manter: int = GUARDA) -> list[str]:
-    """Apaga as cópias mais velhas. Sem isto o armazenamento cresce para
-    sempre, e cópia velha de um sistema que muda todo dia vale pouco."""
+def girar_contas(manter: int = GUARDA_CONTAS) -> list[str]:
+    """Só as versões das contas giram. O espelho das peças não gira: nada é
+    apagado de lá porque sumiu daqui."""
     c = _cliente()
-    resposta = c.list_objects_v2(Bucket=_balde(), Prefix=_prefixo()) or {}
+    resposta = c.list_objects_v2(Bucket=_balde(), Prefix=f"{_prefixo()}{CONTAS}") or {}
     chaves = sorted(o["Key"] for o in (resposta.get("Contents") or []))
     sobrando = chaves[:-manter] if manter > 0 else []
     for chave in sobrando:
@@ -153,29 +223,15 @@ def fazer(mandar: bool = True) -> dict:
     if not configurado():
         d = {"quando": agora, "ok": False,
              "porque": "armazenamento não configurado: nenhuma cópia está sendo feita"}
-        _anotar({**d, "antes_ok": antes.get("ok")})
+        _anotar(d)
         return d
-
-    pacote = None
     try:
-        pacote = montar()
-        chave = enviar(pacote["arquivo"], pacote["nome"]) if mandar else "(não enviado)"
-        apagadas = girar() if mandar else []
-        d = {"quando": agora, "ok": True, "chave": chave,
-             "arquivos": pacote["arquivos"], "tamanho_mb": pacote["tamanho_mb"],
-             "apagadas": len(apagadas)}
-    except Exception as e:                      # rede, credencial, disco cheio
+        espelho = espelhar(mandar)
+        contas = versionar_contas(mandar)
+        d = {"quando": agora, "ok": True, **espelho,
+             "contas": contas.get("versao"), "contas_mb": contas.get("mb")}
+    except Exception as e:                  # rede, credencial, balde errado
         d = {"quando": agora, "ok": False, "porque": f"{type(e).__name__}: {e}"}
-    finally:
-        # o pacote local morre aqui: cópia que fica no mesmo disco ocupa espaço
-        # e não protege contra a máquina morrer, que é o caso que importa
-        if pacote and pacote["arquivo"].exists():
-            pacote["arquivo"].unlink()
-            try:
-                pacote["arquivo"].parent.rmdir()
-            except OSError:
-                pass
-
     _anotar(d)
     _avisar(antes, d)
     return d
@@ -189,8 +245,7 @@ def _avisar(antes: dict, agora: dict) -> dict:
     """
     from api import correio
 
-    era, e = antes.get("ok"), agora.get("ok")
-    if era == e:
+    if antes.get("ok") == agora.get("ok"):
         return {"enviado": False, "porque": "nada mudou"}
     carta = correio.copia_mudou(agora)
     agora["carta"] = carta
@@ -201,13 +256,14 @@ def _avisar(antes: dict, agora: dict) -> dict:
 def atrasada() -> int | None:
     """Há quantos dias não sai uma cópia boa. Nenhuma cópia jamais é `None`."""
     d = ultima()
+    if not d:
+        return None
     if not d.get("ok"):
-        return None if not d else ATRASO_DEMAIS + 1
+        return ATRASO_DEMAIS + 1
     try:
-        quando = datetime.fromisoformat(d["quando"])
+        return (datetime.now(timezone.utc) - datetime.fromisoformat(d["quando"])).days
     except (KeyError, ValueError):
         return None
-    return (datetime.now(timezone.utc) - quando).days
 
 
 def em_json() -> dict:
@@ -221,16 +277,18 @@ def em_json() -> dict:
         return {"estado": "FALHOU", "quando": d.get("quando"),
                 "porque": d.get("porque")}
     dias = atrasada()
-    estado = "em dia" if (dias is not None and dias <= ATRASO_DEMAIS) else "ATRASADA"
-    return {"estado": estado, "quando": d.get("quando"),
-            "tamanho_mb": d.get("tamanho_mb"), "arquivos": d.get("arquivos")}
+    return {"estado": "em dia" if (dias is not None and dias <= ATRASO_DEMAIS)
+                      else "ATRASADA",
+            "quando": d.get("quando"), "novos": d.get("novos"),
+            "guardados": d.get("ja_estavam", 0) + d.get("novos", 0),
+            "contas": d.get("contas")}
 
 
 def main(argv: list[str] | None = None) -> int:
     """`python -m api.copia [--sem-enviar]`
 
-    Sem enviar, ele monta o pacote e diz o tamanho: serve para conferir o que
-    entraria na cópia antes de ligar o armazenamento.
+    Sem enviar, ele percorre o que subiria e diz quanto é: serve para conferir
+    antes de ligar o armazenamento.
     """
     from api import ambiente
 
@@ -238,8 +296,8 @@ def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else []
     d = fazer(mandar="--sem-enviar" not in argv)
     if d.get("ok"):
-        print(f"cópia: {d['arquivos']} arquivos, {d['tamanho_mb']} MB → {d['chave']}"
-              + (f" (apagou {d['apagadas']} antigas)" if d.get("apagadas") else ""))
+        print(f"cópia: {d['novos']} arquivos novos ({d['mb_novos']} MB), "
+              f"{d['ja_estavam']} já estavam lá · contas em {d.get('contas')}")
         return 0
     print(f"cópia: NÃO foi feita — {d.get('porque')}")
     carta = d.get("carta") or {}

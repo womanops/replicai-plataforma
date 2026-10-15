@@ -296,12 +296,22 @@ trabalho que ninguém tem como devolver — o cliente pagou por ela.
 **A cópia diária leva o mesmo que a faxina guarda**: as contas e, de cada
 trabalho, as peças entregues, os vídeos, a apresentação e os JSONs da montagem.
 O material bruto fica de fora de propósito: ele já tem prazo de 30 dias e é 85%
-do disco. Numa carteira real medida aqui, o pacote deu 57 MB com 126 arquivos.
+do disco.
+
+**É espelho, não pacote diário.** Peça entregue nunca muda, então cada arquivo
+sobe uma vez e fica. Empacotar tudo todo dia e guardar catorze custaria catorze
+vezes o tamanho dos dados — a R$ 0,10 por GB da Magalu, com dez clientes por um
+ano, **R$ 102 por mês de pacotes contra R$ 7,29 de espelho**. As contas, que
+mudam, sobem também como pacote datado minúsculo, e dessas ficam as últimas
+catorze: um arquivo de conta corrompido hoje não pode apagar o bom.
+
+**Nada é apagado de lá porque sumiu daqui.** Backup que apaga o que foi apagado
+não protege do engano, que é metade do motivo de existir.
 
 Ela sai para armazenamento de objetos — **fora do servidor**, porque cópia no
 mesmo disco não protege do caso que importa, que é a máquina morrer. Serve
-qualquer um que fale S3: Magalu Object Storage (em real, com nota fiscal),
-Cloudflare R2, Backblaze B2, AWS. No volume esperado custa poucos reais por mês.
+qualquer um que fale S3: **Magalu Object Storage** (R$ 0,10/GB, em real e com
+nota fiscal, conferido em 16/10/2026), Cloudflare R2, Backblaze B2, AWS.
 Preencha `REPLICAI_COPIA_*` no `.env`; sem isso **nenhuma cópia acontece** e
 `/saude` diz `"copia": "desligada"`.
 
@@ -311,13 +321,16 @@ Para ver o que entraria, antes de ligar o armazenamento:
 docker compose -f infra/docker-compose.yml run --rm copia python -m api.copia --sem-enviar
 ```
 
-**Restaurar** é descompactar por cima da pasta de dados — os caminhos do pacote
-já são relativos a ela, para não haver adivinhação na pior hora:
+**Restaurar** é descer os arquivos por cima da pasta de dados — o caminho lá
+dentro é o mesmo daqui, para não haver adivinhação na pior hora:
 
 ```bash
 # com a api parada
 docker compose -f infra/docker-compose.yml stop api worker worker-video
-tar xzf replicai-2026-10-16.tar.gz -C /dados
+aws s3 sync s3://SEU-BALDE/replicai/arquivos/ /dados/ --endpoint-url SEU-ENDPOINT
+# e, se o problema for uma conta corrompida, a versão de um dia bom:
+aws s3 cp s3://SEU-BALDE/replicai/contas/contas-2026-10-16.tar.gz .
+tar xzf contas-2026-10-16.tar.gz -C /dados
 docker compose -f infra/docker-compose.yml start api worker worker-video
 ```
 
