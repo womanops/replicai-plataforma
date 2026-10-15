@@ -47,17 +47,88 @@ servidor some da conta.
 
 ---
 
-## 3. O custo, aberto
+## 3. Cada plano, aberto até o fim
+
+Tudo o que sai de cada mensalidade, item por item. Os três primeiros variam com
+o uso; o imposto e o gateway são percentuais do que o cliente paga.
+
+### Basic · R$ 890 · 80 peças
+
+| item | valor | do preço |
+|---|---|---|
+| modelo que compõe (Anthropic) | R$ 18,03 | 2,0% |
+| fundo generativo (Higgsfield) | R$ 38,83 | 4,4% |
+| imposto (Simples 8%) | R$ 71,20 | 8,0% |
+| meio de pagamento (Asaas 2%) | R$ 17,80 | 2,0% |
+| **sobra** | **R$ 744,14** | **83,6%** |
+| sobra depois do custo fixo do mês | R$ 440,14 | |
+
+### Freelancer · R$ 1.990 · 250 peças
+
+| item | valor | do preço |
+|---|---|---|
+| modelo que compõe (Anthropic) | R$ 56,34 | 2,8% |
+| fundo generativo (Higgsfield) | R$ 121,34 | 6,1% |
+| imposto (Simples 8%) | R$ 159,20 | 8,0% |
+| meio de pagamento (Asaas 2%) | R$ 39,80 | 2,0% |
+| **sobra** | **R$ 1.613,33** | **81,1%** |
+| sobra depois do custo fixo do mês | R$ 1.309,33 | |
+
+### Studio · R$ 4.490 · 600 peças
+
+| item | valor | do preço |
+|---|---|---|
+| modelo que compõe (Anthropic) | R$ 135,21 | 3,0% |
+| fundo generativo (Higgsfield) | R$ 291,21 | 6,5% |
+| imposto (Simples 8%) | R$ 359,20 | 8,0% |
+| meio de pagamento (Asaas 2%) | R$ 89,80 | 2,0% |
+| **sobra** | **R$ 3.614,58** | **80,5%** |
+| sobra depois do custo fixo do mês | R$ 3.310,58 | |
+
+### Agency · R$ 8.530 · 1.200 peças
+
+| item | valor | do preço |
+|---|---|---|
+| modelo que compõe (Anthropic) | R$ 270,41 | 3,2% |
+| fundo generativo (Higgsfield) | R$ 582,42 | 6,8% |
+| imposto (Simples 8%) | R$ 682,40 | 8,0% |
+| meio de pagamento (Asaas 2%) | R$ 170,60 | 2,0% |
+| **sobra** | **R$ 6.824,17** | **80,0%** |
+| sobra depois do custo fixo do mês | R$ 6.520,17 | |
+
+**O que esses números dizem.** O custo de produzir é a menor parte de tudo:
+entre 6% e 10% do que o cliente paga, mesmo quando ele usa a franquia inteira.
+O imposto custa mais que o modelo e o fundo somados em todos os planos — por
+isso a alíquota é o número mais importante a confirmar aqui, e não o preço da
+peça. E o custo fixo do mês some: ele pesa 34% no Basic e 4% no Agency, o que é
+outra forma de dizer que o primeiro cliente paga a casa.
+
+**Os vídeos não aparecem** porque não custam dinheiro por unidade: animam uma
+peça que já existe, sem chamar serviço nenhum. Gastam tempo de máquina — por
+isso são 10% do volume, para proteger a fila.
+
+**Essas contas valem para o pior caso**, o cliente que gasta a franquia inteira.
+Quem usa metade deixa quase o dobro de sobra, e é o que acontece na maioria.
+
+---
+
+## 4. O custo, por unidade
 
 ### O que varia com o uso: R$ 0,711 por peça
 
-| item | quanto | de onde veio |
-|---|---|---|
-| modelo que compõe | US$ 0,039/peça | medido: US$ 0,117 por três peças |
-| fundo generativo | 2,80 créditos × US$ 0,045 | extrato do serviço |
-| fundos por peça | 2/3 das peças | peça de mesma proporção não precisa de fundo novo |
-| dólar | R$ 5,40 | **premissa** |
-| IOF e spread do cartão | 7% | **premissa** |
+| item | em dólar | em real | de onde veio |
+|---|---|---|---|
+| modelo que compõe | US$ 0,0390 | R$ 0,2253 | medido: US$ 0,117 por três peças |
+| fundo generativo | US$ 0,0840 | R$ 0,4854 | 2,80 créditos × US$ 0,045, em 2/3 das peças |
+| **total** | **US$ 0,1230** | **R$ 0,7107** | |
+
+O fundo custa o dobro do modelo: é o item mais caro da peça, e só acontece
+quando a proporção muda (dois terços das peças de uma grade comum).
+
+| premissa | valor |
+|---|---|
+| dólar | R$ 5,40 |
+| IOF e spread do cartão | 7% |
 
 **Vídeo não entra no custo por unidade**: ele anima uma peça que já existe, sem
 chamar serviço nenhum. Gasta tempo de máquina, não dinheiro. O limite de 10%
@@ -85,7 +156,7 @@ cobraria a mesma hora duas vezes — e levaria o plano de entrada a R$ 1.900.
 
 ---
 
-## 4. O piso, que protege a margem sozinho
+## 5. O piso, que protege a margem sozinho
 
 O preço de cada plano é **decidido**, não calculado: está em `precos.TABELA`. O
 número calculado a partir do custo medido virou **piso** — e quando a tabela
@@ -97,7 +168,7 @@ coisa que o cliente descobre no extrato.
 
 ---
 
-## 5. O que ainda espera alguém
+## 6. O que ainda espera alguém
 
 | o quê | quem | o que muda |
 |---|---|---|

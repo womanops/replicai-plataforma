@@ -40,19 +40,35 @@ FROM mirror.gcr.io/library/python:3.14-slim@sha256:a2b82f3c48559aa0a8446d9af4982
 # e levou: o 150 foi preso aqui e o build voltou a parar, com a mensagem certa
 # dizendo que a versão não existia. Para conferir de fora:
 #   deb.debian.org/debian-security/dists/trixie-security/main/binary-amd64/Packages.xz
-ARG CHROMIUM_VERSAO=155.0.8059.39-1~deb13u1
+# Pino de SÉRIE, não de versão exata, e a razão é o próprio arquivo de
+# segurança: cada atualização APAGA a anterior de lá. Um pino exato vence
+# sozinho em algumas semanas — já parou a esteira duas vezes, com a imagem
+# intacta e nada de errado no nosso lado (155.0.8059.39 virou .79 e sumiu).
+#
+# A série trava o que de fato importa: o jeito de medir texto é o do 155, e é
+# isso que decide o tamanho da letra em toda peça. O patch de segurança entra
+# sem pedir licença, e quem confere se a medida mudou é a peça de prova, que
+# roda a cada empurrão e compara a tipografia com a régua gravada em
+# `testes/tipografia-aceita.json`. Trocar de série é decisão deliberada: muda
+# aqui, olha a peça de prova e grava a régua nova no mesmo commit.
+ARG CHROMIUM_SERIE=155.0.
 
 RUN set -eux; \
     apt-get update; \
-    if ! apt-get install -y --no-install-recommends "chromium=${CHROMIUM_VERSAO}"; then \
-      echo "=== o Chromium ${CHROMIUM_VERSAO} não está mais no repositório ==="; \
-      echo "Troque CHROMIUM_VERSAO para a versão que o apt listar abaixo,"; \
+    versao="$(apt-cache madison chromium | grep -m1 "| ${CHROMIUM_SERIE}" \
+              | cut -d'|' -f2 | tr -d ' ')"; \
+    if [ -z "$versao" ]; then \
+      echo "=== não há Chromium da série ${CHROMIUM_SERIE}* neste repositório ==="; \
+      echo "Troque CHROMIUM_SERIE para a série que o apt listar abaixo,"; \
       echo "reconstrua, e confira a peça de prova antes de aceitar: o texto"; \
       echo "pode ter mudado de tamanho."; \
       echo "=== o que o apt tem, agora, nesta imagem:"; \
+      apt-cache madison chromium; \
       apt-cache policy chromium; \
       exit 1; \
     fi; \
+    echo "=== instalando chromium=$versao (série ${CHROMIUM_SERIE})"; \
+    apt-get install -y --no-install-recommends "chromium=$versao"; \
     apt-get install -y --no-install-recommends ffmpeg curl ca-certificates gnupg \
       fonts-dejavu-core fontconfig; \
     rm -rf /var/lib/apt/lists/*

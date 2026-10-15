@@ -349,3 +349,38 @@ class TestOCustosEscritoNaoMente:
         papel = self._papel()
         assert "premissa" in papel.lower()
         assert "8%" in papel and "contabilidade" in papel
+
+
+class TestAAberturaPorPlanoBate:
+    """A tabela item a item de cada plano é o que ela olha para decidir preço.
+    Número errado ali é decisão errada — e o jeito de ele ficar errado é o
+    código mudar e o papel não."""
+
+    def _papel(self):
+        from pathlib import Path
+        return Path("CUSTOS.md").read_text(encoding="utf-8")
+
+    def _reais(self, v):
+        return f"R$ {v:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
+
+    def test_cada_item_de_cada_plano_bate(self):
+        from api import precos, uso
+        papel = self._papel()
+        k = precos.DOLAR * (1 + precos.IOF_E_SPREAD)
+        modelo = precos.MODELO_POR_PECA * k
+        fundo = precos.FUNDOS_POR_PECA * precos.CREDITOS_POR_FUNDO \
+            * precos.DOLAR_POR_CREDITO * k
+        for plano in uso.A_VENDA:
+            n = uso.PLANOS[plano]["pecas"]
+            preco = cobranca.PRECO(plano)
+            for valor in (modelo * n, fundo * n, preco * precos.IMPOSTO,
+                          precos.GATEWAY * preco, precos.sobra_de(n, preco)):
+                assert self._reais(valor) in papel, (plano, self._reais(valor))
+
+    def test_a_sobra_depois_do_fixo_bate(self):
+        from api import precos, uso
+        papel = self._papel()
+        for plano in uso.A_VENDA:
+            n = uso.PLANOS[plano]["pecas"]
+            resta = precos.sobra_de(n, cobranca.PRECO(plano)) - precos.custo_fixo_mes()
+            assert self._reais(resta) in papel, (plano, self._reais(resta))

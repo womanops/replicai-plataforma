@@ -66,10 +66,24 @@ class TestAImagemLevaOQuePrecisa:
 
 
 class TestOQueODesenhoPrecisa:
-    def test_o_chromium_vai_preso_na_versao(self, receita):
-        """Ele mede o texto: outra versão muda o corpo da fonte em toda peça,
-        caladamente."""
-        assert re.search(r'chromium=\$\{CHROMIUM_VERSAO\}', receita)
+    def test_o_chromium_vai_preso_na_serie(self, receita):
+        """Ele mede o texto: outra SÉRIE muda o corpo da fonte em toda peça,
+        caladamente. O patch de segurança pode entrar — ele é obrigado a
+        entrar, porque o arquivo de segurança apaga a versão anterior e um
+        pino exato vence sozinho — e quem confere se a medida mudou é a peça
+        de prova, a cada empurrão."""
+        assert "ARG CHROMIUM_SERIE=" in receita
+        assert 'chromium=$versao' in receita
+        assert "apt-cache madison chromium" in receita
+
+    def test_a_serie_presa_e_a_da_regua_aceita(self, receita):
+        """Série no Dockerfile e régua gravada têm que falar do mesmo
+        navegador: separadas, uma troca silenciosa passa."""
+        import json
+        serie = re.search(r"ARG CHROMIUM_SERIE=([\d.]+)", receita).group(1)
+        aceita = json.loads((RAIZ / "testes" / "tipografia-aceita.json")
+                            .read_text(encoding="utf-8"))
+        assert aceita["desenhado_com"]["chromium"].startswith(serie)
 
     def test_as_bandeiras_do_chrome_vem_por_ambiente(self, receita):
         """Dentro do contêiner o processo é root e o Chromium não abre sem
