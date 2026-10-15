@@ -286,3 +286,13 @@ def test_a_conta_nasce_no_mesmo_estado_que_o_uso_conhece():
     import inspect
     assinatura = inspect.signature(contas.criar).parameters["plano"]
     assert assinatura.default == uso.PLANO_PADRAO
+
+
+def test_o_desconto_por_volume_da_para_ver():
+    """Monotônico não basta: no piso exato de 80% o Studio saía a R$ 7,12 por
+    peça e o Agency a R$ 7,11 — tecnicamente mais barato, na prática igual, e
+    subir de plano deixava de ser vantagem. O degrau precisa aparecer."""
+    from api import cobranca, uso
+    por_peca = [cobranca.PRECO(p) / uso.PLANOS[p]["pecas"] for p in uso.A_VENDA]
+    for caro, barato in zip(por_peca, por_peca[1:]):
+        assert caro - barato >= 0.30, (caro, barato)

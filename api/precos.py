@@ -91,7 +91,11 @@ def preco_de(pecas: int, margem: float = MARGEM_ALVO) -> float:
 TABELA = {
     "basic":       890.0,   # acima do piso de 80% (R$ 570): entrada decidida
     "freelancer": 1990.0,   # acima do piso de 80% (R$ 1.780)
-    "studio":     4270.0,   # o piso de 80% exato
+    "studio":     4490.0,   # acima do piso de 80% (R$ 4.270) de propósito:
+                           # no piso exato o Studio sai a R$ 7,12 por peça e
+                           # o Agency a R$ 7,11 — subir de plano deixava de
+                           # ser vantagem. Com R$ 4.490 o desconto volta a
+                           # aparecer: R$ 7,48 contra R$ 7,11
     "agency":     8530.0,   # o piso de 80% exato
 }
 
