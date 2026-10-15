@@ -32,6 +32,37 @@ Localização: **Brasil ou leste dos Estados Unidos**. O cliente sobe arquivos d
 centenas de MB, e a distância aparece no tempo de upload — não na velocidade de
 render.
 
+### Onde contratar — comparação de 15/10/2026
+
+Na mesma configuração de 8 vCPU e 16 GB:
+
+| | ServerSP · São Paulo | Vultr · São Paulo | Magalu Cloud · Brasil |
+|---|---|---|---|
+| Disco | 200 GB NVMe | 350 GB NVMe | 40 GB + bloco à parte |
+| Preço/mês | **R$ 249** sem fidelidade (R$ 174 com 36 meses) | US$ 96 ≈ R$ 518 | ~R$ 300–350 + disco (estimado) |
+| Tráfego | 1 Gbps ilimitado, uso justo | 8 TB | conforme contratação |
+| Pagamento | real, nota fiscal | dólar, com IOF e câmbio | real, nota fiscal |
+| Suporte | ticket 24/7, WhatsApp e telefone, em português | ticket em inglês | em português |
+| Backup | adicional pago | adicional (~20%) | adicional |
+
+**Escolhido: ServerSP, Cloud VPS 16GB SP, mensal sem fidelidade.** Está em São
+Paulo (o argumento é upload de PSD pesado, não latência de tela), custa metade
+do Vultr na mesma configuração, cobra em real com nota fiscal e atende em
+português. Os 30 dias de garantia tornam o teste barato.
+
+**Não assinar 36 meses no começo**: são R$ 6.264 adiantados numa empresa ainda
+não testada. Depois de três meses rodando, o plano de 12 meses dá 10%.
+
+O preço da Magalu é estimativa: a calculadora deles roda por script e não abriu
+para leitura; a faixa saiu interpolando entre configurações publicadas (2 vCPU /
+4 GB a R$ 103 e 16 vCPU / 32 GB a R$ 610), e a VM deles vem com 40 GB, com o
+resto cobrado à parte. Para decidir por ela, peça cotação.
+
+Antes de fechar com qualquer um: quanto custa o backup automático diário, se dá
+para restaurar a máquina inteira por snapshot, e se o disco cresce sem recriar a
+máquina. Os 200 GB do plano ficam abaixo dos 250 recomendados, e isso só é
+aceitável porque a faxina mantém o acúmulo permanente em 8 GB por mês.
+
 O que **não** é preciso: GPU, banco de dados gerenciado, balanceador, Kubernetes.
 O estado vive em disco e a fila é um Redis que sobe junto.
 
