@@ -162,6 +162,7 @@ Tem que dizer, sem exceção:
 - `"franquia": "valendo"`
 - `"precos": "valendo"`
 - `"compositor": "modelo+regra"`
+- `"disco"` com `nivel: "folga"` e um e-mail em `avisa`
 - `"cobranca": "valendo"`
 
 Depois, o teste que realmente vale: **uma contratação de ponta a ponta**, com o
@@ -215,7 +216,41 @@ mesmo dia.
 
 ---
 
-## 9. Backup
+## 9. Quantos clientes a máquina atende
+
+Medido nos trabalhos reais em 15/10/2026: cada **peça entregue ocupa 2,41 MB
+para sempre**, e o material bruto de um trabalho ocupa de **15 MB** (arte
+chapada) a **420 MB** (PSD pesado) durante os 30 dias até a faxina passar.
+
+| plano | peças/mês | acúmulo permanente | bruto em trânsito |
+|---|---|---|---|
+| Basic | 80 | 0,19 GB/mês | 0,1–1,6 GB |
+| Freelancer | 250 | 0,60 GB/mês | 0,5–5 GB |
+| Studio | 600 | 1,45 GB/mês | 1,1–12 GB |
+| Agency | 1.200 | 2,89 GB/mês | 2,2–24 GB |
+
+Numa carteira de dez clientes de porte médio (2.520 peças/mês), os 200 GB do
+plano ficam em **39% no fim do primeiro ano** com arte chapada, e em **62%** com
+PSD de verdade. No segundo ano chegam a 98% — é quando o disco precisa crescer.
+
+**Processador e memória não limitam**: essa mesma carteira usa 2,5 horas de
+máquina no mês inteiro, contra 176 horas úteis, e o pico de memória é de uns
+8 GB dos 16. O que enche é o disco, e só ele.
+
+**O servidor avisa sozinho.** A faxina mede o disco todo dia depois de varrer,
+guarda o histórico e manda e-mail para `REPLICAI_AVISO_PARA` quando a situação
+**piora**: acima de 70% é atenção, acima de 85% é aperto. O aviso traz a
+previsão — "no ritmo dos últimos dias, enche em tantos dias" —, porque
+porcentagem não move ninguém e prazo move. Mesmo nível no dia seguinte não
+repete a carta.
+
+Quando o aviso chegar, em ordem: aumentar o disco do servidor (não troca a
+máquina), ou baixar `REPLICAI_FAXINA_DIAS` de 30 para 15, o que corta pela
+metade o que fica em trânsito.
+
+---
+
+## 10. Backup
 
 O que não pode sumir é um volume só, o `dados`: contas, trabalhos e entregas.
 

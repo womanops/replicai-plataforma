@@ -19,8 +19,9 @@ está marcado como **premissa** é o que ainda espera confirmação de alguém.
 | 7 | **Resend** | o e-mail de acesso e o aviso de atraso | grátis até 3 mil/mês | **falta a conta e o domínio verificado** |
 | 8 | **Segredo da sessão** (`REPLICAI_SEGREDO`) | sem ele, reiniciar desloga todo mundo | grátis | **falta gerar** |
 | 9 | **Token de administração** (`REPLICAI_ADMIN_TOKEN`) | criar conta na mão | grátis | **falta gerar** |
-| 10 | Redis (fila) | peça e vídeo em filas próprias | grátis, no contêiner | pronto |
-| 11 | Fontes da marca | tipografia igual à da arte | grátis, pasta montada | pronto |
+| 10 | **Aviso de disco** (`REPLICAI_AVISO_PARA`) | o disco avisa antes de encher | grátis | **falta o seu e-mail** |
+| 11 | Redis (fila) | peça e vídeo em filas próprias | grátis, no contêiner | pronto |
+| 12 | Fontes da marca | tipografia igual à da arte | grátis, pasta montada | pronto |
 
 **Custo fixo: R$ 304/mês.** É o que sai do caixa com zero cliente.
 

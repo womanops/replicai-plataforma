@@ -605,6 +605,20 @@ def porta():
     return {"site_planos": SITE_PLANOS, "contato_demo": CONTATO_DEMO}
 
 
+def _disco_em_json() -> dict:
+    from api import disco
+    try:
+        m = disco.medir()
+        prev = disco.previsao(disco._historico())
+    except OSError as e:
+        return {"nivel": "não sei", "porque": str(e)}
+    return {"nivel": disco.nivel(m["cheio"]),
+            "cheio": f"{m['cheio']:.0%}",
+            "livre_gb": m["livre_gb"], "total_gb": m["total_gb"],
+            "enche_em_dias": prev.get("enche_em_dias"),
+            "avisa": disco.para_quem() or "ninguém: REPLICAI_AVISO_PARA vazio"}
+
+
 @app.get("/saude")
 def saude():
     from api import modelo
@@ -632,6 +646,9 @@ def saude():
             "cobranca": ("de mentira (ASAAS_AREIA)" if cobranca.na_areia()
                          else "valendo" if cobranca.configurada()
                          else "sem chave: ninguém assina"),
+            # disco cheio não deixa lento: para a produção. A previsão vale
+            # mais que a porcentagem — "72%" não move ninguém
+            "disco": _disco_em_json(),
             # e-mail que não sai é acesso que não chega: o cliente paga e
             # fica esperando uma carta que foi gravada num arquivo
             "correio": "configurado" if correio.configurado()

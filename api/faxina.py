@@ -148,6 +148,23 @@ def main(argv: list[str]) -> int:
     print(f"faxina: {como} o bruto de {r['varridos']} trabalhos com mais de "
           f"{dias} dias, liberando {r['liberou_mb']} MB "
           f"({r['pulados']} fora da conta)")
+
+    # o disco é conferido DEPOIS de varrer, e não antes: antes a medida contaria
+    # o que está prestes a sair, e avisaria aperto que não existe mais
+    if de_verdade:
+        from api import disco
+        d = disco.conferir()
+        prev = d["previsao"]
+        quanto = (f"{d['usado_gb']:.0f} de {d['total_gb']:.0f} GB "
+                  f"({d['cheio']:.0%}) · {d['nivel']}")
+        if prev.get("enche_em_dias"):
+            quanto += f" · no ritmo de agora, enche em {prev['enche_em_dias']} dias"
+        print(f"disco: {quanto}")
+        carta = d.get("carta") or {}
+        if carta.get("enviado"):
+            print("disco: aviso enviado por e-mail")
+        elif d["nivel"] != "folga" and carta.get("porque"):
+            print(f"disco: aviso NÃO saiu — {carta['porque']}")
     return 0
 
 

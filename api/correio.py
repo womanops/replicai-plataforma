@@ -146,6 +146,41 @@ def convite_de_pessoa(conta, pessoa: dict, convite: str) -> dict:
     return enviar(pessoa["email"], f"Seu acesso à ReplicAI — {conta.nome}", texto)
 
 
+def disco_apertando(medida: dict, nivel: str, previsao: dict) -> dict:
+    """O aviso de disco. Vai para quem opera, não para cliente nenhum.
+
+    Disco cheio não degrada: para. A peça não grava, o trabalho morre no meio e
+    o cliente vê erro. Esta carta existe para isso chegar com semanas de
+    antecedência, e por isso ela traz a previsão, não só a porcentagem: "72%"
+    não move ninguém; "enche em cinco semanas" move.
+    """
+    from api import disco
+
+    para = disco.para_quem()
+    if not para:
+        return {"enviado": False, "porque": "REPLICAI_AVISO_PARA não está configurado"}
+
+    quanto = (f"{medida['usado_gb']:.0f} GB de {medida['total_gb']:.0f} "
+              f"({medida['cheio']:.0%} cheio, {medida['livre_gb']:.0f} GB livres)")
+    if previsao.get("enche_em_dias"):
+        dias = previsao["enche_em_dias"]
+        ritmo = (f"No ritmo dos últimos {previsao.get('medido_em_dias', '?')} dias "
+                 f"({previsao['por_dia_gb']:.2f} GB por dia), o disco enche em "
+                 f"cerca de {dias} dias.")
+    else:
+        ritmo = "Ainda não dá para dizer em quanto tempo enche: falta histórico."
+
+    texto = (
+        f"O disco do servidor da ReplicAI entrou em {nivel.upper()}.\n\n"
+        f"{quanto}\n{ritmo}\n\n"
+        "O que resolve, em ordem:\n"
+        "1. aumentar o disco do servidor — é o caminho normal, e não troca a máquina;\n"
+        "2. baixar a retenção do material bruto de 30 para 15 dias "
+        "(REPLICAI_FAXINA_DIAS), o que corta pela metade o que fica em trânsito.\n\n"
+        "Disco cheio não deixa a plataforma lenta: para a produção de peças.")
+    return enviar(para, f"ReplicAI: disco em {nivel} ({medida['cheio']:.0%})", texto)
+
+
 def cobranca_atrasada(conta, quando: str = "") -> dict:
     """O aviso de atraso. Vai para o financeiro, se houver, e para o dono."""
     texto = (
