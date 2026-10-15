@@ -31,7 +31,11 @@ CUSTO = 2 ** 14
 BLOCO, PARALELO = 8, 1
 
 PREFIXO_CHAVE = "rpl_"
-EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# e-mail sem o que vira marcação: `a<img src=x onerror=...>@b.co` passava no
+# teste de "tem arroba e ponto" e ia parar na lista de quem tem acesso, que a
+# colega de agência abre. A tela escapa o que mostra, e isto é o segundo muro:
+# o endereço errado não chega a ser guardado.
+EMAIL = re.compile(r"^[^@\s<>\"'&\\/]+@[^@\s<>\"'&\\/]+\.[^@\s<>\"'&\\/]+$")
 
 
 class ContaInvalida(ValueError):

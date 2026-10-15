@@ -21,7 +21,7 @@ from fastapi import (Cookie, Depends, FastAPI, File, Form, Header, HTTPException
                      Request, UploadFile)
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
-from api import ambiente, cobranca, contas, correio, trabalhos, uso
+from api import ambiente, cobranca, contas, correio, tranca, trabalhos, uso
 from api.pipeline import MARCA_DA_MAO
 from api.tarefas import (MODOS, MODO_PADRAO, TEXTO_NOVO, previas, processar,
                          processar_video, redesenhar, refazer_fundo)
@@ -34,6 +34,41 @@ app = FastAPI(title="ReplicAI", version="0.1.0")
 WEB = Path(__file__).resolve().parent.parent / "web"
 FILA = fila_do_ambiente()
 
+# O que o navegador aceita carregar nesta página. Sem isto, um texto com HTML
+# que atravessasse a tela — o nome de uma fonte, o nome de uma prancheta, o
+# e-mail de um convite — poderia buscar script de fora e mandar para fora o que
+# está na tela. A tela é um arquivo só, com script e estilo embutidos, então
+# `unsafe-inline` é necessário; o que importa aqui é `connect-src` e
+# `script-src` limitados ao próprio servidor: injeção que não alcança a
+# internet não leva nada embora.
+REGRA_DE_CONTEUDO = "; ".join([
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+    "font-src 'self' https://fonts.gstatic.com",
+    "img-src 'self' data: blob:",
+    "media-src 'self' blob:",
+    "connect-src 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",      # ninguém põe o painel dentro de um iframe
+    "base-uri 'none'",
+])
+
+
+@app.middleware("http")
+async def cabecalhos_de_seguranca(request: Request, call_next):
+    """O que o navegador deve recusar, dito em toda resposta."""
+    r = await call_next(request)
+    r.headers.setdefault("Content-Security-Policy", REGRA_DE_CONTEUDO)
+    r.headers.setdefault("X-Content-Type-Options", "nosniff")
+    r.headers.setdefault("X-Frame-Options", "DENY")
+    r.headers.setdefault("Referrer-Policy", "same-origin")
+    # o endereço do painel só se alcança por HTTPS daqui em diante
+    if SESSAO_SEGURA:
+        r.headers.setdefault("Strict-Transport-Security",
+                             "max-age=31536000; includeSubDomains")
+    return r
+
 ACEITOS = {".png", ".jpg", ".jpeg", ".webp", ".psd", ".psb", ".pdf"}
 
 # Teto da arte que entra. O PSD é 85% do disco de um trabalho: 60 dos 71 MB
@@ -44,6 +79,12 @@ ACEITOS = {".png", ".jpg", ".jpeg", ".webp", ".psd", ".psb", ".pdf"}
 # medido num arquivo grande de verdade — é julgamento a partir do que foi
 # medido, e vale rever quando aparecer um KV pesado.
 LIMITE_ARTE = int(os.environ.get("REPLICAI_MAX_ARTE_MB", "250")) * 1_000_000
+
+# o selo de sessão só pode viajar em HTTPS quando existe HTTPS: em produção o
+# Caddy atende em TLS, e um cookie sem `Secure` volta em HTTP puro para quem
+# estiver no caminho — numa rede de agência ou num café, é a sessão inteira.
+# Em `localhost` não há certificado, e marcar `Secure` lá impediria de entrar.
+SESSAO_SEGURA = os.environ.get("DOMINIO", "localhost").strip() not in ("", "localhost")
 
 # a página de planos e o endereço para pedir demonstração moram fora do
 # sistema e ainda não têm domínio. Enquanto não estiverem configurados a porta
@@ -88,6 +129,21 @@ BISCOITO = "replicai_sessao"
 # fora daqui, e é por isso que esta mensagem convida a assinar, não a esperar
 SEM_PLANO = ("esta conta não tem plano ativo. Assine um plano para usar — ou "
              "fale com a gente se quiser ver uma demonstração antes")
+
+
+def _de_onde(request: Request) -> str:
+    """O endereço de quem está do outro lado.
+
+    Atrás do Caddy, `request.client` é sempre o contêiner da porta: todas as
+    tentativas do mundo viriam do mesmo endereço e uma tranca por IP travaria
+    a plataforma inteira. O cabeçalho do proxy é quem diz a verdade aqui, e só
+    vale porque NINGUÉM alcança a api sem passar pela porta — ela não publica
+    porta própria (há teste disso em `test_conteiner.py`).
+    """
+    repassado = request.headers.get("x-forwarded-for", "")
+    if repassado:
+        return repassado.split(",")[0].strip()
+    return request.client.host if request.client else ""
 
 
 def quem_e(authorization: str | None = Header(default=None),
@@ -203,7 +259,7 @@ def contratar(plano: str = Form(...), empresa: str = Form(...),
 
 
 @app.post("/senha")
-def criar_senha(convite: str = Form(...), senha: str = Form(...)):
+def criar_senha(request: Request, convite: str = Form(...), senha: str = Form(...)):
     """Usa o convite para criar a senha e já entra.
 
     O convite é de uso único e vale 48 horas. Nenhum e-mail do sistema leva
@@ -211,31 +267,47 @@ def criar_senha(convite: str = Form(...), senha: str = Form(...)):
     recebeu, e senha em e-mail é senha vazada no dia em que aquele e-mail for
     invadido.
     """
+    ip = _de_onde(request)
+    if tranca.trancada(ip):
+        raise HTTPException(429, "muitas tentativas. Tente de novo mais tarde")
     try:
         feito = contas.definir_senha(convite, senha)
     except contas.ContaInvalida as e:
         raise HTTPException(422, str(e))
     if feito is None:
+        # convite é sorteado com entropia de sobra, mas tentar sai de graça:
+        # sem tranca, um robô varre o espaço à vontade
+        tranca.errou(ip)
         raise HTTPException(410, "este convite não vale mais. Peça outro para quem "
                                  "administra a conta")
+    tranca.acertou(ip)
     c, quem = feito
     r = JSONResponse(c.em_json(quem))
     r.set_cookie(BISCOITO, contas.selar(c.id, quem), httponly=True, samesite="lax",
-                 max_age=contas.SELO_VALE)
+                 secure=SESSAO_SEGURA, max_age=contas.SELO_VALE)
     return r
 
 
 @app.post("/entrar")
-def entrar(email: str = Form(...), senha: str = Form(...)):
+def entrar(request: Request, email: str = Form(...), senha: str = Form(...)):
+    ip = _de_onde(request)
+    espera = tranca.trancada(ip, email)
+    if espera:
+        # a MESMA mensagem de senha errada: "esta conta está trancada" contaria
+        # quais e-mails existem, que é metade do trabalho de quem tenta entrar
+        raise HTTPException(429, "e-mail ou senha não conferem",
+                            headers={"Retry-After": str(espera)})
     feito = contas.entrar(email, senha)
     if feito is None:
+        tranca.errou(ip, email)
         # a mesma resposta para e-mail que não existe e senha errada: dizer
         # qual dos dois errou conta quais e-mails têm conta
         raise HTTPException(401, "e-mail ou senha não conferem")
+    tranca.acertou(ip, email)
     c, quem = feito
     r = JSONResponse(c.em_json(quem))
     r.set_cookie(BISCOITO, contas.selar(c.id, quem), httponly=True, samesite="lax",
-                 max_age=contas.SELO_VALE)
+                 secure=SESSAO_SEGURA, max_age=contas.SELO_VALE)
     return r
 
 

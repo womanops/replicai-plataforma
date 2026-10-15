@@ -136,7 +136,42 @@ Se os seis passos acontecerem, o servidor está pronto. Aí sim: apagar o
 
 ---
 
-## 8. Backup
+## 8. Fechar a máquina
+
+A plataforma se defende do que chega pela porta — senha amassada com `scrypt`,
+tranca depois de oito tentativas erradas, sessão assinada, conta que não enxerga
+a conta do outro, cabeçalhos que o navegador obedece. O que ela não faz é
+defender o servidor: isso é configuração, e são cinco linhas.
+
+```bash
+# 1. entrar só com chave, nunca com senha
+sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sudo systemctl restart ssh
+
+# 2. só três portas abertas ao mundo
+sudo ufw default deny incoming && sudo ufw allow 22 && sudo ufw allow 80 \
+  && sudo ufw allow 443 && sudo ufw --force enable
+
+# 3. quem insistir no SSH leva banimento
+sudo apt install -y fail2ban && sudo systemctl enable --now fail2ban
+
+# 4. correção de segurança aplicada sozinha
+sudo apt install -y unattended-upgrades
+sudo dpkg-reconfigure -plow unattended-upgrades
+```
+
+E uma regra que não é comando: **o `.env` do servidor é o cofre**. Chave do
+modelo, segredo da sessão, chaves do Asaas e do Resend vivem só ali, com
+`chmod 600`, e nunca no repositório — há teste disso na esteira.
+
+Quem tem acesso ao servidor tem acesso a tudo: o código, os arquivos dos
+clientes e as chaves. Uma chave SSH por pessoa, e tirar a chave de quem sai no
+mesmo dia.
+
+---
+
+## 9. Backup
 
 O que não pode sumir é um volume só, o `dados`: contas, trabalhos e entregas.
 

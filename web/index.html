@@ -876,6 +876,14 @@ let esperandoAjuste = null;         // formato remontado esperando o redesenho
 
 /* ---------- avisos ---------- */
 let somem;
+// Tudo que o cliente escreve ou sobe passa por aqui antes de virar HTML: o
+// nome de uma medida, o nome da fonte que veio dentro do arquivo, o nome de
+// uma prancheta do PSD, o e-mail de quem foi convidado. Sem isto, um nome com
+// `<` vira marcação de verdade dentro da tela de quem abrir — e numa conta de
+// agência quem abre é a colega.
+const esc = v => String(v ?? '').replace(/[&<>"']/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
 function aviso(msg, ok){ const a=$('#aviso'); a.textContent=msg; a.className='aviso'+(ok?' ok':'');
   clearTimeout(somem); somem=setTimeout(()=>a.className='aviso hidden', 8000); }
 
@@ -1125,9 +1133,9 @@ function cartao(f){
   const previa = $('#zona img');
   const fantasma = previa && !job
     ? `<img class="fantasma" src="${previa.src}" alt="">` : '';
-  return `<div class="f${on}" data-id="${f.id}" role="button" tabindex="0" title="${f.nome}">
+  return `<div class="f${on}" data-id="${esc(f.id)}" role="button" tabindex="0" title="${esc(f.nome)}">
     <div class="cx" style="height:${alt}px">${fantasma}${tira}</div>
-    <b>${f.nome}</b><i>${f.livre && f.nome === medida ? 'guardada' : medida}</i></div>`;
+    <b>${esc(f.nome)}</b><i>${f.livre && f.nome === medida ? 'guardada' : medida}</i></div>`;
 }
 
 /* ---------- o andamento, no alto ----------
@@ -1639,7 +1647,7 @@ function escolherPrancheta(lista){
     cartao.innerHTML = `<div class="cx"><canvas width="760" `
       + `height="${Math.round(760*pr.h/pr.w)}"></canvas>`
       + `<span class="carregando">compondo a prévia…</span></div>`
-      + `<b>${pr.nome || 'a arte'}</b><span>${pr.w}×${pr.h}</span>`;
+      + `<b>${esc(pr.nome || 'a arte')}</b><span>${pr.w}×${pr.h}</span>`;
     const cv = cartao.querySelector('canvas');
     if (capa && capa.naturalWidth && peca.w){
       const k = capa.naturalWidth / peca.w;       // a miniatura é menor que o PSD
@@ -1757,8 +1765,8 @@ async function pintarPessoas(){
       : `<button data-tira="${p.id}">tirar o acesso</button>`;
     const reenvia = (!p.entrou && !p.dono)
       ? `<button data-reenvia="${p.id}">reenviar convite</button>` : '';
-    return `<div class="p"><b>${(p.nome || '').replace(/</g,'&lt;')}</b>${marca}`
-      + `<span class="mail">${p.email}</span>${reenvia}${tirar}</div>`;
+    return `<div class="p"><b>${esc(p.nome)}</b>${marca}`
+      + `<span class="mail">${esc(p.email)}</span>${reenvia}${tirar}</div>`;
   }).join('');
   // o limite é do plano: no Basic e no Freelancer a conta é de uma pessoa, e
   // oferecer um campo que vai recusar é convidar para o erro
@@ -1824,7 +1832,7 @@ async function abrirCampanhas(){
     const n = (t.formatos || []).length;
     const estado = t.status === 'pronto' ? '' : ` · ${t.status}`;
     return `<button type="button" data-job="${t.job}">`
-      + `<b>${(t.titulo || t.job).replace(/</g,'&lt;')}</b>`
+      + `<b>${esc(t.titulo || t.job)}</b>`
       + `<span class="quando">${quando(t.atualizado)}</span>`
       + `<small>${n} formato${n === 1 ? '' : 's'}${estado}</small></button>`;
   }).join('');
@@ -2327,7 +2335,7 @@ function pintarFontesPedidas(pedidas){
   if (!lista.length) return;
   el.innerHTML = 'Esta arte pede: ' + lista.map(f => {
     const tem = minhasFontes.some(x => casaFonte(x, f));
-    return `<b>${f.replace(/</g,'&lt;')}</b> <span class="${tem ? 'tem' : 'falta'}">`
+    return `<b>${esc(f)}</b> <span class="${tem ? 'tem' : 'falta'}">`
       + `${tem ? '· enviada' : '· falta'}</span>`;
   }).join(' · ');
 }
@@ -2336,7 +2344,7 @@ function pintarFontes(){
   const caixa = $('#listaFontes');
   if (!caixa) return;
   caixa.innerHTML = minhasFontes.map(f =>
-    `<b data-id="${f.id}">${f.familia} ${f.estilo || ''}`
+    `<b data-id="${esc(f.id)}">${esc(f.familia)} ${esc(f.estilo || '')}`
     + `<button type="button" title="Tirar da conta">✕</button></b>`).join('');
   caixa.querySelectorAll('button').forEach(b => b.onclick = async () => {
     const id = b.closest('b').dataset.id;
