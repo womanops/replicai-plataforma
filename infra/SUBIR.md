@@ -200,7 +200,7 @@ Tem que dizer, sem exceção:
 Depois, o teste que realmente vale: **uma contratação de ponta a ponta**, com o
 Asaas ainda em areia (`ASAAS_AREIA=1`) para não mexer dinheiro:
 
-1. abrir `https://app.seudominio.com.br/assinar?plano=basic`
+1. abrir `https://app.seudominio.com.br/assinar?plano=freelancer`
 2. preencher e ir até a página de pagamento
 3. pagar na areia do Asaas
 4. ver o e-mail de acesso chegar na caixa de entrada — não no arquivo

@@ -109,7 +109,7 @@ class TestAContratacao:
 
     def test_sem_documento_nao_da_porque_a_nota_exige(self, plataforma):
         r = plataforma.post("/assinatura", data={
-            "plano": "basic", "empresa": "X", "email": "x@y.com", "cpf_cnpj": "  "})
+            "plano": "freelancer", "empresa": "X", "email": "x@y.com", "cpf_cnpj": "  "})
         assert r.status_code == 422
         assert "nota fiscal" in r.json()["detail"]
 
@@ -259,8 +259,8 @@ class TestAsPessoasDaAgencia:
         assert r.status_code == 422
         assert "3 pessoas" in r.json()["detail"]
 
-    def test_o_basic_e_de_uma_pessoa(self, plataforma):
-        self._dentro(plataforma, plano="basic")
+    def test_o_freelancer_e_de_uma_pessoa(self, plataforma):
+        self._dentro(plataforma, plano="freelancer")
         r = plataforma.post("/eu/pessoas", data={"nome": "Ana", "email": "ana@agencia.com"})
         assert r.status_code == 422
         assert "1 pessoa" in r.json()["detail"]

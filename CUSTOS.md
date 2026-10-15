@@ -14,7 +14,7 @@ está marcado como **premissa** é o que ainda espera confirmação de alguém.
 | 2 | **Domínio** + **backup semanal** | o endereço, e o que salva a máquina | **R$ 30/mês** (R$ 5 + R$ 25, conferido) | **falta contratar** |
 | 3 | **Certificado HTTPS** | sem ele a senha trafega legível | grátis (Let's Encrypt) | pronto no contêiner |
 | 4 | **Anthropic** | compõe a peça | US$ 0,039/peça | **ligado** |
-| 5 | **Higgsfield** | continua o desenho do fundo | 2,80 créditos/fundo | **ligado** |
+| 5 | **Higgsfield** (plano Plus) | continua o desenho do fundo | **US$ 49/mês ≈ R$ 283** · 1.000 créditos | **ligado** |
 | 6 | **Asaas** | cobrança e nota fiscal | 2% do faturamento | **falta a chave de produção** |
 | 7 | **Resend** | o e-mail de acesso e o aviso de atraso | grátis até 3 mil/mês | **falta a conta e o domínio verificado** |
 | 8 | **Segredo da sessão** (`REPLICAI_SEGREDO`) | sem ele, reiniciar desloga todo mundo | grátis | **falta gerar** |
@@ -24,13 +24,14 @@ está marcado como **premissa** é o que ainda espera confirmação de alguém.
 | 12 | Redis (fila) | peça e vídeo em filas próprias | grátis, no contêiner | pronto |
 | 13 | Fontes da marca | tipografia igual à da arte | grátis, pasta montada | pronto |
 
-**Custo fixo: R$ 279/mês.** É o que sai do caixa com zero cliente.
+**Custo fixo: R$ 562/mês.** É o que sai do caixa com zero cliente — e a maior
+fatia dele é o plano do Higgsfield, não o servidor.
 
 São **dois fornecedores e duas contas**, e vale não confundir: o ServerSP vende
 a máquina onde o sistema roda (e o backup semanal dela); a Magalu vende só um
 depósito fora dessa máquina, para a cópia diária sobreviver ao dia em que a
-máquina morrer. Com o plano de 8 GB (R$ 125 em vez de R$ 249), a conta do mês
-fica em torno de **R$ 155**.
+máquina morrer. Com o plano de 8 GB (R$ 125 em vez de R$ 249), o fixo cai para
+**R$ 438**.
 
 O depósito é o único item que cresce com o uso: R$ 0,10 por GB guardado, o que
 hoje dá centavos e, com dez clientes depois de um ano, cerca de R$ 7 por mês.
@@ -38,20 +39,54 @@ Por isso ele não entra no custo fixo.
 
 O passo a passo de cada ligação está em [`infra/SUBIR.md`](infra/SUBIR.md).
 
+**Onde estão a Anthropic e o Higgsfield.** São dois casos diferentes:
+
+- **Anthropic** é pós-paga por uso: US$ 0,039 por peça, sem mensalidade. Com
+  zero cliente, custa zero.
+- **Higgsfield** é plano mensal: US$ 49 por 1.000 créditos que **não acumulam**.
+  É custo fixo, e está na lista acima. Ele cobre **535 peças por mês**; acima
+  disso, o fundo passa a custar crédito avulso.
+
+A conta do mês inteiro, com o servidor de 8 GB:
+
+| carteira | peças | créditos | fixo | leitura | fundo além do plano | **total** | receita |
+|---|---|---|---|---|---|---|---|
+| 1 Freelancer | 250 | 467 ✔ | R$ 438 | R$ 56 | — | **R$ 494** | R$ 1.990 |
+| 3 Freelancer | 750 | 1.400 | R$ 438 | R$ 169 | R$ 104 | **R$ 711** | R$ 5.970 |
+| 10 Freelancer | 2.500 | 4.667 | R$ 438 | R$ 563 | R$ 953 | **R$ 1.955** | R$ 19.900 |
+| 5 Freel. + 3 Studio + 2 Agency | 5.450 | 10.173 | R$ 438 | R$ 1.228 | R$ 2.385 | **R$ 4.051** | R$ 34.850 |
+
+(com o servidor de 16 GB, some R$ 124 em cada linha)
+
+**Quando subir o plano do generativo:** a partir de 535 peças por mês — 3
+Freelancers, ou 1 Studio — o plano estoura e o excedente sai por crédito
+avulso. Nessa hora vale comparar: o Ultra (US$ 99/mês no anual, 3.000 créditos)
+sai a US$ 0,033 por crédito contra US$ 0,045 do avulso. O ponto de virada é por
+volta de 2.200 créditos por mês, e lá a receita já passa de R$ 10 mil.
+
 ---
 
 ## 2. Os planos
 
 | plano | peças | vídeos | pessoas | preço | por peça | margem |
 |---|---|---|---|---|---|---|
-| **Basic** | 80 | 8 | 1 | **R$ 890** | R$ 11,12 | 83,6% |
 | **Freelancer** | 250 | 25 | 1 | **R$ 1.990** | R$ 7,96 | 81,1% |
-| **Studio** | 600 | 60 | 2 | **R$ 4.490** | R$ 7,48 | 80,5% |
-| **Agency** | 1.200 | 120 | 3 | **R$ 8.530** | R$ 7,11 | 80,0% |
+| **Studio** | 600 | 60 | 2 | **R$ 3.900** | R$ 6,50 | 79,1% |
+| **Agency** | 1.200 | 120 | 3 | **R$ 6.600** | R$ 5,50 | 77,1% |
 
-Vídeos são 10% do volume de peças. Cada degrau desconta de verdade no preço da
-peça — é isso que faz subir de plano valer a pena, e há teste que falha se
-alguém achatar a escada.
+**O Basic saiu em 16/10/2026.** Eram 80 peças por R$ 890, e ele deixava R$ 345
+depois do custo fixo contra R$ 1.296 do Freelancer — dando o mesmo atendimento,
+que é o que de fato custa numa conta pequena. Oitenta peças por mês também é
+menos do que uma agência produz: era um plano que não descrevia ninguém. De
+quebra, três planos é exatamente o que a landing comporta.
+
+Vídeos são 10% do volume de peças. O degrau desconta de verdade: R$ 7,96 a
+peça no Freelancer, R$ 6,50 no Studio, R$ 5,50 no Agency — é isso que faz subir
+de plano valer a pena, e há teste que falha se alguém achatar a escada.
+
+**A margem entregue é de 77% a 81%**, e o piso que dispara o alarme está em 75%:
+os preços são decisão sua, e o piso existe para avisar quando o câmbio estiver
+comendo a margem, não para empatar com ela.
 
 **Um cliente de qualquer plano já paga o mês inteiro de infraestrutura.** Um
 Basic deixa R$ 744 limpos contra R$ 304 de custo fixo. A partir do segundo, o
@@ -59,68 +94,53 @@ servidor some da conta.
 
 ---
 
-## 3. Cada plano, aberto até o fim
+## 3. Um cliente de cada plano, aberto até o fim
 
-Tudo o que sai de cada mensalidade, item por item. Os três primeiros variam com
-o uso; o imposto e o gateway são percentuais do que o cliente paga.
+Tudo o que sai do caixa por **um** cliente, no mês em que ele usa a franquia
+inteira. Para dez clientes, é só multiplicar as linhas de uso — **o custo fixo
+entra uma vez só**, não dez.
 
-### Basic · R$ 890 · 80 peças
+Dois nomes, sem jargão:
 
-| item | valor | do preço |
-|---|---|---|
-| modelo que compõe (Anthropic) | R$ 18,03 | 2,0% |
-| fundo generativo (Higgsfield) | R$ 38,83 | 4,4% |
-| imposto (Simples 8%) | R$ 71,20 | 8,0% |
-| meio de pagamento (Asaas 2%) | R$ 17,80 | 2,0% |
-| **sobra** | **R$ 744,14** | **83,6%** |
-| sobra depois do custo fixo do mês | R$ 465,14 | |
+- **Leitura e diagramação (Anthropic)**: é o Claude lendo a arte e decidindo
+  onde cada texto cabe em cada formato. Cobrado por uso, US$ 0,039 por peça,
+  sem mensalidade. Zero cliente, zero conta.
+- **Fundo além do plano (Higgsfield)**: o plano de US$ 49 dá 1.000 créditos por
+  mês e cada fundo come 2,80 — cobre **535 peças**. Só o que passar disso vira
+  custo variável, a R$ 0,26 o crédito. O que está dentro do plano já foi pago
+  na mensalidade.
 
-### Freelancer · R$ 1.990 · 250 peças
+Com o servidor de 8 GB (fixo de R$ 438). Com o de 16 GB, tire R$ 124 de cada
+sobra.
 
-| item | valor | do preço |
-|---|---|---|
-| modelo que compõe (Anthropic) | R$ 56,34 | 2,8% |
-| fundo generativo (Higgsfield) | R$ 121,34 | 6,1% |
-| imposto (Simples 8%) | R$ 159,20 | 8,0% |
-| meio de pagamento (Asaas 2%) | R$ 39,80 | 2,0% |
-| **sobra** | **R$ 1.613,33** | **81,1%** |
-| sobra depois do custo fixo do mês | R$ 1.334,33 | |
+| | **Freelancer** | **Studio** | **Agency** |
+|---|---|---|---|
+| preço | R$ 1.990 | R$ 3.900 | R$ 6.600 |
+| peças no mês | 250 | 600 | 1.200 |
+| créditos de fundo | 467 ✔ | 1.120 (passa 120) | 2.240 (passa 1.240) |
+| leitura e diagramação | R$ 56,34 | R$ 135,21 | R$ 270,41 |
+| fundo além do plano | — | R$ 31,20 | R$ 322,41 |
+| imposto (Simples 8%) | R$ 159,20 | R$ 312,00 | R$ 528,00 |
+| meio de pagamento (2%) | R$ 39,80 | R$ 78,00 | R$ 132,00 |
+| custo fixo do mês | R$ 438,12 | R$ 438,12 | R$ 438,12 |
+| **sobra** | **R$ 1.296,54** | **R$ 2.905,47** | **R$ 4.909,06** |
+| | 65% | 74% | 74% |
 
-### Studio · R$ 4.490 · 600 peças
+**O que esta tabela diz:**
 
-| item | valor | do preço |
-|---|---|---|
-| modelo que compõe (Anthropic) | R$ 135,21 | 3,0% |
-| fundo generativo (Higgsfield) | R$ 291,21 | 6,5% |
-| imposto (Simples 8%) | R$ 359,20 | 8,0% |
-| meio de pagamento (Asaas 2%) | R$ 89,80 | 2,0% |
-| **sobra** | **R$ 3.614,58** | **80,5%** |
-| sobra depois do custo fixo do mês | R$ 3.335,58 | |
-
-### Agency · R$ 8.530 · 1.200 peças
-
-| item | valor | do preço |
-|---|---|---|
-| modelo que compõe (Anthropic) | R$ 270,41 | 3,2% |
-| fundo generativo (Higgsfield) | R$ 582,42 | 6,8% |
-| imposto (Simples 8%) | R$ 682,40 | 8,0% |
-| meio de pagamento (Asaas 2%) | R$ 170,60 | 2,0% |
-| **sobra** | **R$ 6.824,17** | **80,0%** |
-| sobra depois do custo fixo do mês | R$ 6.545,17 | |
-
-**O que esses números dizem.** O custo de produzir é a menor parte de tudo:
-entre 6% e 10% do que o cliente paga, mesmo quando ele usa a franquia inteira.
-O imposto custa mais que o modelo e o fundo somados em todos os planos — por
-isso a alíquota é o número mais importante a confirmar aqui, e não o preço da
-peça. E o custo fixo do mês some: ele pesa 37% no Basic e 4% no Agency, o que é
-outra forma de dizer que o primeiro cliente paga a casa.
+1. **Um cliente Freelancer sozinho já paga a casa e deixa R$ 1.296.** O custo
+   fixo come 25% do que ele traz — era 63% no Basic, que por isso saiu.
+2. **O Studio é o primeiro plano que estoura o plano de créditos**, e por pouco:
+   120 créditos, R$ 31. O Agency estoura feio, R$ 322 — é aí que trocar para o
+   Ultra começa a valer.
+3. **Do segundo cliente em diante a sobra quase dobra**, porque o fixo já está
+   pago pelo primeiro.
+4. **O imposto custa mais que a produção inteira** em todos os planos. É o
+   número mais importante a confirmar aqui, e não o preço da peça.
 
 **Os vídeos não aparecem** porque não custam dinheiro por unidade: animam uma
 peça que já existe, sem chamar serviço nenhum. Gastam tempo de máquina — por
 isso são 10% do volume, para proteger a fila.
-
-**Essas contas valem para o pior caso**, o cliente que gasta a franquia inteira.
-Quem usa metade deixa quase o dobro de sobra, e é o que acontece na maioria.
 
 ---
 
@@ -130,8 +150,8 @@ Quem usa metade deixa quase o dobro de sobra, e é o que acontece na maioria.
 
 | item | em dólar | em real | de onde veio |
 |---|---|---|---|
-| modelo que compõe | US$ 0,0390 | R$ 0,2253 | medido: US$ 0,117 por três peças |
-| fundo generativo | US$ 0,0840 | R$ 0,4854 | 2,80 créditos × US$ 0,045, em 2/3 das peças |
+| leitura e diagramação (Anthropic) | US$ 0,0390 | R$ 0,2253 | medido: US$ 0,117 por três peças |
+| fundo gerado (Higgsfield), fora do plano | US$ 0,0840 | R$ 0,4854 | 2,80 créditos × US$ 0,045, em 2/3 das peças |
 | **total** | **US$ 0,1230** | **R$ 0,7107** | |
 
 O fundo custa o dobro do modelo: é o item mais caro da peça, e só acontece

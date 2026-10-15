@@ -9,6 +9,11 @@ US$ 0,117 por três peças, e o extrato do serviço generativo mostrou 2,80
 créditos por fundo. Fundo só é preciso quando a proporção muda, o que deu
 dois terços das peças na grade que a gente roda.
 
+**O fundo generativo é comprado por plano mensal**, não por peça: o Higgsfield
+cobra US$ 49 por 1.000 créditos que não acumulam. Isso o torna custo FIXO — e o
+preço por crédito que aparece no custo da peça é o do crédito AVULSO, que é o
+que se paga quando o plano acaba. Dentro do plano o fundo já está pago.
+
 **Vídeo não entra na conta de custo.** Ele anima uma peça que já existe, sem
 chamar serviço nenhum: gasta tempo de máquina, não dinheiro por unidade. O
 limite de vídeo existe para proteger a fila, não o caixa.
@@ -40,7 +45,11 @@ DOLAR = 5.40                   # câmbio de referência
 IOF_E_SPREAD = 0.07            # o que o cartão cobra além da cotação
 IMPOSTO = 0.08                 # Simples sobre o faturamento — confirme o anexo
 GATEWAY = 0.02                 # média entre Pix por valor fixo e cartão
-MARGEM_ALVO = 0.80             # margem com o cliente usando a franquia inteira
+# A margem que o PISO protege. A tabela entrega de 77% a 81%; o alvo fica em
+# 75% para o alarme tocar quando a margem começar a ficar desconfortável, e não
+# ao primeiro centavo de variação do dólar — Studio e Agency ficariam a poucos
+# reais do piso se ele fosse fixado na margem que eles entregam hoje.
+MARGEM_ALVO = 0.75             # margem com o cliente usando a franquia inteira
 
 # --- o que custa mesmo sem cliente nenhum ------------------------------------
 # Não entra no preço de cada plano: entra na conta de quantos clientes o mês
@@ -51,6 +60,10 @@ MARGEM_ALVO = 0.80             # margem com o cliente usando a franquia inteira
 # NVMe em São Paulo. Preço conferido em 15/10/2026 — a comparação com Vultr e
 # Magalu está em `infra/SUBIR.md`
 SERVIDOR_MES = 249.0
+# a alternativa menor do mesmo fornecedor (4 vCPU, 8 GB, 100 GB): é por onde
+# faz sentido começar enquanto a carteira não cresce, e `CUSTOS.md` abre as
+# contas com ela. Fica aqui para documento e código não divergirem
+SERVIDOR_8GB_MES = 125.0
 # domínio (~R$ 50/ano no Registro.br, R$ 5/mês) e backup do servidor (R$ 25,
 # conferido com o ServerSP em 16/10/2026 — e é SEMANAL, não diário, o que não
 # protege o trabalho entregue de um cliente: a cópia diária do que é dos
@@ -58,6 +71,17 @@ SERVIDOR_MES = 249.0
 # O envio de e-mail (Resend) não entra: até 3 mil e-mails por mês é de graça, e
 # o acesso de um cliente são dois ou três e-mails no mês inteiro
 FERRAMENTAS_MES = 30.0
+# O plano do Higgsfield, que é onde o fundo generativo é comprado. Plano Plus:
+# 1.000 créditos por mês por US$ 49. É custo FIXO — sai do caixa com zero
+# cliente, e o crédito não acumula de um mês para o outro.
+#
+# Ele cobre `creditos_do_plano / (CREDITOS_POR_FUNDO * FUNDOS_POR_PECA)` peças,
+# hoje 536 por mês. Acima disso o fundo passa a custar crédito avulso, que é o
+# preço usado em `custo_peca()` — o teto, não o piso: dentro do plano o fundo
+# já está pago, e contar os dois seria cobrar duas vezes pela mesma coisa.
+HIGGSFIELD_MES_USD = 49.0
+HIGGSFIELD_CREDITOS = 1000
+
 ATENDIMENTO_MES = 0.0          # o tempo de quem atende, se você quiser vê-lo
                                # aqui como linha. Fica em zero porque a margem
                                # é o que paga esse tempo — somar aqui e pedir
@@ -96,14 +120,9 @@ def preco_de(pecas: int, margem: float = MARGEM_ALVO) -> float:
 # preço por peça cai conforme o volume (R$ 11,13 no Basic, R$ 5,83 no Agency):
 # é isso que faz subir de plano valer a pena para quem produz muito.
 TABELA = {
-    "basic":       890.0,   # acima do piso de 80% (R$ 570): entrada decidida
-    "freelancer": 1990.0,   # acima do piso de 80% (R$ 1.780)
-    "studio":     4490.0,   # acima do piso de 80% (R$ 4.270) de propósito:
-                           # no piso exato o Studio sai a R$ 7,12 por peça e
-                           # o Agency a R$ 7,11 — subir de plano deixava de
-                           # ser vantagem. Com R$ 4.490 o desconto volta a
-                           # aparecer: R$ 7,48 contra R$ 7,11
-    "agency":     8530.0,   # o piso de 80% exato
+    "freelancer": 1990.0,   # a entrada, acima do piso de 80% (R$ 1.780)
+    "studio":     3900.0,   # R$ 6,50 por peça, decidido
+    "agency":     6600.0,   # R$ 5,50 por peça, decidido
 }
 
 
@@ -129,9 +148,20 @@ def abaixo_do_piso(planos: dict) -> list[str]:
     return furados
 
 
+def higgsfield_mes() -> float:
+    """O plano do generativo em reais, com o que o cartão cobra por fora."""
+    return HIGGSFIELD_MES_USD * DOLAR * (1 + IOF_E_SPREAD)
+
+
+def pecas_do_plano_generativo() -> int:
+    """Quantas peças por mês o plano do Higgsfield cobre."""
+    por_peca = CREDITOS_POR_FUNDO * FUNDOS_POR_PECA
+    return int(HIGGSFIELD_CREDITOS / por_peca) if por_peca else 0
+
+
 def custo_fixo_mes() -> float:
     """O que sai do caixa todo mês com zero cliente."""
-    return SERVIDOR_MES + FERRAMENTAS_MES + ATENDIMENTO_MES
+    return SERVIDOR_MES + FERRAMENTAS_MES + ATENDIMENTO_MES + higgsfield_mes()
 
 
 def sobra_de(pecas: int, preco: float) -> float:

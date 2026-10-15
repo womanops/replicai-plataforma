@@ -825,7 +825,10 @@ header .saldo.apertado .fio i{background:var(--err)}
 
 <div id="editor" class="hidden">
   <div class="topo">
-    <h2 id="edTitulo">Ajustar<small id="edMedida"></small></h2>
+    <!-- o nome tem caixa própria: escrever direto no <h2> apagava o <small>
+         da medida junto, e `pintarLona` morria tentando preenchê-lo — o
+         editor abria vazio, sem lona e sem camadas -->
+    <h2 id="edTitulo"><span id="edNome">Ajustar</span><small id="edMedida"></small></h2>
     <button class="secund" id="edVolta">Desfazer tudo</button>
     <button class="secund" id="edFecha">Fechar</button>
     <button class="acao" id="edSalva">Atualizar a peça</button>
@@ -1244,6 +1247,9 @@ $('#btnIr').onclick = async () => {
     $('#btnIr').disabled=false; pintarRodape(); return;
   }
   job = r.job;
+  // a grade se redesenha: os cartões param de ser escolha e passam a ser
+  // resultado, e é aqui que o fantasma da arte-mãe sai de cena
+  pintarFormatos();
   $('#btnIr').style.display='none';
   // PSD com várias pranchetas não entrou na fila: está parado esperando escolha
   if (r.status === 'escolha a prancheta'){ escolherPrancheta(r.pranchetas); return; }
@@ -1308,7 +1314,13 @@ async function acompanhar(){
           ev.stopPropagation(); verRessalvas(id);
         };
       }
-      if (prontas.has(id) && (!cx.querySelector('img') || refazer.has(id))){
+      // o fantasma é a arte-mãe apagada que o cartão vazio mostra, e ele
+      // TAMBÉM é um <img> dentro de `.cx`. A guarda olhava "já tem imagem?",
+      // via o fantasma e desistia de pintar a peça pronta — o cartão ficava
+      // com o PSD inteiro desbotado, sem ampliar e sem ajustar, e a peça certa
+      // ficava no disco sem ninguém ver
+      const jaPintada = cx.querySelector('img:not(.fantasma), video');
+      if (prontas.has(id) && (!jaPintada || refazer.has(id))){
         // pelo nome exato: `fundo-ig-stories.png` também contém "ig-stories" e
         // também termina em .png, e vinha antes na lista. O cartão mostrava o
         // fundo preparado — que por definição não tem texto nenhum — e a peça
@@ -2106,7 +2118,7 @@ async function abrirEditor(fid){
          // ajuste de outra pessoa da agência sem ninguém perceber
          versao: pc.versao || 0,
          fora: new Set() };
-  $('#edTitulo').textContent = `Ajustar · ${fid}`;
+  $('#edNome').textContent = `Ajustar · ${fid}`;
   reabrirPeca = false;
   $('#edSalva').textContent = 'Atualizar a peça';
   if (pc.mao && pc.mao.nome) aviso(`Ajustada por ${pc.mao.nome}.`, true);

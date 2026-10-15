@@ -34,7 +34,7 @@ def servidor(tmp_path, monkeypatch):
     return main, contas
 
 
-def cliente_de(servidor, nome, email, plano="basic"):
+def cliente_de(servidor, nome, email, plano="freelancer"):
     """Uma conta com plano pago valendo.
 
     Produzir exige plano — a conta nasce da assinatura. Estes testes são sobre
@@ -196,7 +196,7 @@ class TestPlanoNaPorta:
     def test_estourar_o_plano_recusa_o_trabalho(self, servidor):
         from api import uso
         c = cliente_de(servidor, "Dono", "dono@exemplo.com")
-        for _ in range(uso.limites("basic")["pecas"]):
+        for _ in range(uso.limites("freelancer")["pecas"]):
             uso.registrar(c.conta.id, uso.PECA)
         r = c.post("/jobs", files={"arte": ("a.png", arte(), "image/png")},
                    data={"formatos": "ig-feed-1x1", "headline": "Oi"})
@@ -207,7 +207,7 @@ class TestPlanoNaPorta:
         from api import uso
         main, _ = servidor
         c = cliente_de(servidor, "Dono", "dono@exemplo.com")
-        for _ in range(uso.limites("basic")["pecas"]):
+        for _ in range(uso.limites("freelancer")["pecas"]):
             uso.registrar(c.conta.id, uso.PECA)
         c.post("/jobs", files={"arte": ("a.png", arte(), "image/png")},
                data={"formatos": "ig-feed-1x1", "headline": "Oi"})
@@ -217,10 +217,10 @@ class TestPlanoNaPorta:
         from api import uso
         um = cliente_de(servidor, "Um", "um@exemplo.com")
         dois = cliente_de(servidor, "Dois", "dois@exemplo.com")
-        for _ in range(uso.limites("basic")["pecas"]):
+        for _ in range(uso.limites("freelancer")["pecas"]):
             uso.registrar(um.conta.id, uso.PECA)
         assert um.get("/eu/uso").json()["resta"]["pecas"] == 0
-        assert dois.get("/eu/uso").json()["resta"]["pecas"] == uso.limites("basic")["pecas"]
+        assert dois.get("/eu/uso").json()["resta"]["pecas"] == uso.limites("freelancer")["pecas"]
         r = dois.post("/jobs", files={"arte": ("a.png", arte(), "image/png")},
                       data={"formatos": "ig-feed-1x1", "headline": "Oi"})
         assert r.status_code == 202

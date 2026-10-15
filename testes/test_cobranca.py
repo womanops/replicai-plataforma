@@ -223,9 +223,13 @@ class TestOPlanoDeEntradaEPago:
         assert precos.abaixo_do_piso(uso.PLANOS)
 
     def test_a_entrada_custa_o_que_foi_decidido(self):
-        """R$ 890 é decisão de negócio: conta pequena dá o mesmo atendimento
-        que conta grande."""
-        assert cobranca.PRECO("basic") == 890.0
+        """O Basic (80 peças, R$ 890) saiu: deixava R$ 345 depois do custo fixo
+        e dava o mesmo atendimento de uma conta grande. A entrada agora é o
+        Freelancer."""
+        from api import uso
+        assert uso.A_VENDA[0] == "freelancer"
+        assert cobranca.PRECO("freelancer") == 1990.0
+        assert "basic" not in uso.PLANOS
 
     def test_a_margem_pretendida_e_entregue(self):
         from api import precos, uso
@@ -238,12 +242,22 @@ class TestOCustoQueNaoEPorPeca:
     """Servidor e ferramentas existem com zero cliente. Eles não entram no
     preço de cada plano — entram na conta de quantos clientes o mês precisa."""
 
-    def test_a_margem_de_80_vale_em_todos_os_planos(self):
+    def test_todo_plano_entrega_mais_que_o_piso(self):
+        """Os preços são decisão dela; o piso é o alarme. Ele tem que ficar
+        ABAIXO do que a tabela entrega, senão toca no primeiro centavo de
+        variação do dólar e vira ruído."""
         from api import precos, uso
-        assert precos.MARGEM_ALVO == 0.80
         for plano in uso.A_VENDA:
             c = precos.conta(uso.PLANOS[plano]["pecas"], cobranca.PRECO(plano))
-            assert c["margem_pct"] >= 80.0, (plano, c["margem_pct"])
+            assert c["margem_pct"] > precos.MARGEM_ALVO * 100, (plano, c["margem_pct"])
+
+    def test_a_margem_entregue_nao_cai_abaixo_de_tres_quartos(self):
+        """Abaixo disso não é mais o mesmo negócio, e a conversa tem que
+        acontecer de propósito — não por um preço mexido sem olhar a conta."""
+        from api import precos, uso
+        for plano in uso.A_VENDA:
+            c = precos.conta(uso.PLANOS[plano]["pecas"], cobranca.PRECO(plano))
+            assert c["margem_pct"] >= 75.0, (plano, c["margem_pct"])
 
     def test_a_hora_de_quem_atende_nao_e_cobrada_duas_vezes(self):
         """Somar a hora ao custo e pedir margem em cima dela cobra a mesma hora
@@ -255,29 +269,46 @@ class TestOCustoQueNaoEPorPeca:
         from api import precos
         assert precos.custo_fixo_mes() == (precos.SERVIDOR_MES
                                            + precos.FERRAMENTAS_MES
-                                           + precos.ATENDIMENTO_MES)
+                                           + precos.ATENDIMENTO_MES
+                                           + precos.higgsfield_mes())
+
+    def test_o_plano_do_generativo_e_custo_fixo(self):
+        """Ele cobra por mês, com ou sem cliente, e o crédito não acumula."""
+        from api import precos
+        assert precos.higgsfield_mes() > 0
+        assert precos.custo_fixo_mes() > precos.SERVIDOR_MES + precos.FERRAMENTAS_MES
+
+    def test_o_plano_diz_quantas_peças_cobre(self):
+        """Acima disso o fundo passa a custar crédito avulso — é o momento de
+        comparar planos, e quem avisa é este número."""
+        from api import precos
+        cobre = precos.pecas_do_plano_generativo()
+        gastos = cobre * precos.FUNDOS_POR_PECA * precos.CREDITOS_POR_FUNDO
+        assert gastos <= precos.HIGGSFIELD_CREDITOS
+        assert (cobre + 1) * precos.FUNDOS_POR_PECA * precos.CREDITOS_POR_FUNDO \
+            > precos.HIGGSFIELD_CREDITOS
 
     def test_o_equilibrio_diz_quantos_clientes_o_mes_precisa(self):
         """Margem em porcentagem não paga servidor: cliente paga."""
         from api import precos, uso
         eq = precos.ponto_de_equilibrio(uso.PLANOS)
-        assert eq["custo_fixo_mes"] == precos.custo_fixo_mes()
+        assert eq["custo_fixo_mes"] == round(precos.custo_fixo_mes(), 2)
         for plano in uso.A_VENDA:
             assert eq["contas_para_empatar"][plano] >= 1
 
     def test_servidor_mais_caro_pede_mais_cliente_e_nao_mais_preco(self, monkeypatch):
         from api import precos, uso
-        antes = precos.ponto_de_equilibrio(uso.PLANOS)["contas_para_empatar"]["basic"]
-        preco_antes = cobranca.PRECO("basic")
+        antes = precos.ponto_de_equilibrio(uso.PLANOS)["contas_para_empatar"]["freelancer"]
+        preco_antes = cobranca.PRECO("freelancer")
         monkeypatch.setattr(precos, "SERVIDOR_MES", precos.SERVIDOR_MES * 10)
-        assert precos.ponto_de_equilibrio(uso.PLANOS)["contas_para_empatar"]["basic"] > antes
-        assert cobranca.PRECO("basic") == preco_antes
+        assert precos.ponto_de_equilibrio(uso.PLANOS)["contas_para_empatar"]["freelancer"] > antes
+        assert cobranca.PRECO("freelancer") == preco_antes
 
     def test_a_sobra_de_um_cliente_e_o_que_paga_o_fixo(self):
         from api import precos, uso
-        n = uso.PLANOS["basic"]["pecas"]
-        sobra = precos.sobra_de(n, cobranca.PRECO("basic"))
-        c = precos.conta(n, cobranca.PRECO("basic"))
+        n = uso.PLANOS["freelancer"]["pecas"]
+        sobra = precos.sobra_de(n, cobranca.PRECO("freelancer"))
+        c = precos.conta(n, cobranca.PRECO("freelancer"))
         assert round(sobra, 2) == c["margem"]
 
 
@@ -352,9 +383,8 @@ class TestOCustosEscritoNaoMente:
 
 
 class TestAAberturaPorPlanoBate:
-    """A tabela item a item de cada plano é o que ela olha para decidir preço.
-    Número errado ali é decisão errada — e o jeito de ele ficar errado é o
-    código mudar e o papel não."""
+    """A tabela de um cliente de cada plano é o que ela olha para decidir. O
+    jeito de ela ficar errada é o código mudar e o papel não."""
 
     def _papel(self):
         from pathlib import Path
@@ -363,24 +393,46 @@ class TestAAberturaPorPlanoBate:
     def _reais(self, v):
         return f"R$ {v:,.2f}".replace(",", "@").replace(".", ",").replace("@", ".")
 
-    def test_cada_item_de_cada_plano_bate(self):
+    def _conta(self, plano):
+        """A mesma conta do documento: um cliente, franquia inteira, 8 GB."""
         from api import precos, uso
-        papel = self._papel()
+        n = uso.PLANOS[plano]["pecas"]
+        preco = cobranca.PRECO(plano)
         k = precos.DOLAR * (1 + precos.IOF_E_SPREAD)
-        modelo = precos.MODELO_POR_PECA * k
-        fundo = precos.FUNDOS_POR_PECA * precos.CREDITOS_POR_FUNDO \
-            * precos.DOLAR_POR_CREDITO * k
-        for plano in uso.A_VENDA:
-            n = uso.PLANOS[plano]["pecas"]
-            preco = cobranca.PRECO(plano)
-            for valor in (modelo * n, fundo * n, preco * precos.IMPOSTO,
-                          precos.GATEWAY * preco, precos.sobra_de(n, preco)):
-                assert self._reais(valor) in papel, (plano, self._reais(valor))
+        creditos = n * precos.FUNDOS_POR_PECA * precos.CREDITOS_POR_FUNDO
+        extra = max(0, creditos - precos.HIGGSFIELD_CREDITOS)
+        fixo = (precos.custo_fixo_mes() - precos.SERVIDOR_MES
+                + precos.SERVIDOR_8GB_MES)
+        itens = {"anthropic": n * precos.MODELO_POR_PECA * k,
+                 "fundo": extra * precos.DOLAR_POR_CREDITO * k,
+                 "imposto": preco * precos.IMPOSTO,
+                 "gateway": preco * precos.GATEWAY,
+                 "fixo": fixo}
+        itens["sobra"] = preco - sum(v for c, v in itens.items())
+        return itens
 
-    def test_a_sobra_depois_do_fixo_bate(self):
-        from api import precos, uso
+    def test_cada_item_de_cada_plano_bate(self):
+        from api import uso
         papel = self._papel()
         for plano in uso.A_VENDA:
-            n = uso.PLANOS[plano]["pecas"]
-            resta = precos.sobra_de(n, cobranca.PRECO(plano)) - precos.custo_fixo_mes()
-            assert self._reais(resta) in papel, (plano, self._reais(resta))
+            for conta, valor in self._conta(plano).items():
+                if conta == "fundo" and valor == 0:
+                    continue          # aparece como "—", e não como R$ 0,00
+                assert self._reais(valor) in papel, (plano, conta, self._reais(valor))
+
+    def test_a_sobra_de_um_cliente_bate(self):
+        from api import uso
+        papel = self._papel()
+        for plano in uso.A_VENDA:
+            assert self._reais(self._conta(plano)["sobra"]) in papel, plano
+
+    def test_o_documento_nao_fala_em_modelo(self):
+        """"Modelo" e "fundo além do plano" eram jargão meu: ela leu e não
+        entendeu, que é o teste que vale."""
+        papel = self._papel()
+        assert "leitura e diagramação" in papel
+        assert "modelo que compõe" not in papel
+
+    def test_o_que_o_plano_de_creditos_cobre_bate(self):
+        from api import precos
+        assert f"cobre **{precos.pecas_do_plano_generativo()} peças**" in self._papel()

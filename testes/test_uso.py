@@ -68,26 +68,27 @@ class TestPlano:
     def test_cabe_enquanto_nao_estoura(self):
         for _ in range(10):
             uso.registrar(CONTA, uso.PECA)
-        assert uso.cabe(CONTA, "basic", pecas=5)[0] is True
+        assert uso.cabe(CONTA, "freelancer", pecas=5)[0] is True
 
     def test_nao_cabe_e_diz_o_numero(self):
-        for _ in range(78):
+        for _ in range(248):
             uso.registrar(CONTA, uso.PECA)
-        pode, porque = uso.cabe(CONTA, "basic", pecas=5)
+        pode, porque = uso.cabe(CONTA, "freelancer", pecas=5)
         assert pode is False
-        assert "80 peças" in porque and "83" in porque
+        assert "250 peças" in porque and "253" in porque
 
     def test_video_tem_limite_proprio(self):
-        for _ in range(8):
+        for _ in range(25):
             uso.registrar(CONTA, uso.VIDEO)
-        assert uso.cabe(CONTA, "basic", videos=1)[0] is False
-        assert uso.cabe(CONTA, "basic", pecas=1)[0] is True
+        assert uso.cabe(CONTA, "freelancer", videos=1)[0] is False
+        assert uso.cabe(CONTA, "freelancer", pecas=1)[0] is True
 
     def test_plano_maior_cabe_mais(self):
-        for _ in range(100):
+        """O degrau de cima existe para quem estourou o de baixo."""
+        for _ in range(300):
             uso.registrar(CONTA, uso.PECA)
-        assert uso.cabe(CONTA, "basic", pecas=1)[0] is False
-        assert uso.cabe(CONTA, "freelancer", pecas=1)[0] is True
+        assert uso.cabe(CONTA, "freelancer", pecas=1)[0] is False
+        assert uso.cabe(CONTA, "studio", pecas=1)[0] is True
 
     def test_sem_plano_nao_cabe_nada(self):
         """Não é franquia pequena: é sem sistema."""
@@ -237,7 +238,7 @@ class TestAEscadaDePlanos:
 
     def test_a_escada_que_a_ligia_pediu(self):
         from api import uso
-        assert uso.PLANOS["basic"]["pecas"] == 80
+        assert uso.PLANOS["freelancer"]["pecas"] == 250
         assert uso.PLANOS["freelancer"]["pecas"] == 250
         assert [uso.PLANOS[p]["pecas"] for p in uso.A_VENDA] == sorted(
             uso.PLANOS[p]["pecas"] for p in uso.A_VENDA)

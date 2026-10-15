@@ -203,7 +203,7 @@ class TestOSegredoNaoSaiDaquiEmClaro:
     def test_o_convite_guardado_nao_serve_para_entrar(self, servidor):
         """Guarda-se o resumo: arquivo roubado não abre conta de ninguém."""
         _, contas = servidor
-        c, convite = contas.nascer_da_assinatura("Agência", "dona@exemplo.com", "basic")
+        c, convite = contas.nascer_da_assinatura("Agência", "dona@exemplo.com", "freelancer")
         guardado = contas.por_id(c.id).convite
         assert convite not in guardado
         assert contas.dono_do_convite(guardado) is None

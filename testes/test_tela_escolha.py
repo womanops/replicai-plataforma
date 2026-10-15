@@ -716,3 +716,41 @@ class TestQuemTemAcesso:
 
     def test_o_editor_diz_quem_ajustou_antes(self, tela):
         assert "Ajustada por ${pc.mao.nome}" in tela
+
+
+class TestOFantasmaNaoRoubaOLugarDaPeca:
+    """A arte-mãe apagada dentro do cartão vazio é um `<img>`. A tela só
+    pintava a peça pronta "se o cartão ainda não tivesse imagem" — e o
+    fantasma era uma. O cartão ficava com o PSD inteiro desbotado, sem
+    ampliar e sem ajustar, com a peça certa parada no disco."""
+
+    def test_a_guarda_ignora_o_fantasma(self, tela):
+        assert "cx.querySelector('img:not(.fantasma), video')" in tela
+        assert "if (prontas.has(id) && (!cx.querySelector('img') ||" not in tela
+
+    def test_a_grade_se_redesenha_quando_o_trabalho_comeca(self, tela):
+        """Sem isso o fantasma continua lá até alguém clicar num canal."""
+        depois = tela.split("job = r.job;")[1][:300]
+        assert "pintarFormatos();" in depois
+
+    def test_o_fantasma_so_existe_antes_do_trabalho(self, tela):
+        assert "const fantasma = previa && !job" in tela
+
+
+class TestOEditorAbreCheio:
+    """"Clico em ajustar e não aparece nada": o `<h2>` do editor tem dois
+    filhos — o nome e a medida. Escrever o nome com `textContent` no `<h2>`
+    apagava o `<small>` da medida, e a função que desenha a lona morria na
+    linha seguinte tentando preenchê-lo. O editor abria vazio: sem peça, sem
+    camadas, sem texto."""
+
+    def test_o_nome_tem_caixa_propria(self, tela):
+        assert '<span id="edNome">' in tela
+        assert "$('#edNome').textContent = `Ajustar" in tela
+
+    def test_ninguem_escreve_por_cima_do_titulo_inteiro(self, tela):
+        assert "$('#edTitulo').textContent" not in tela
+
+    def test_a_medida_continua_existindo_para_a_lona(self, tela):
+        assert '<small id="edMedida">' in tela
+        assert "$('#edMedida').textContent" in tela

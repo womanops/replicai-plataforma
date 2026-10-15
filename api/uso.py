@@ -150,7 +150,6 @@ def meses(conta: str) -> list[str]:
 # cabem numa cabeça só.
 PLANOS = {
     "sem":        {"pecas": 0,    "videos": 0,   "acessos": 0, "nome": "Sem plano"},
-    "basic":      {"pecas": 80,   "videos": 8,   "acessos": 1, "nome": "Basic"},
     "freelancer": {"pecas": 250,  "videos": 25,  "acessos": 1, "nome": "Freelancer"},
     "studio":     {"pecas": 600,  "videos": 60,  "acessos": 2, "nome": "Studio"},
     "agency":     {"pecas": 1200, "videos": 120, "acessos": 3, "nome": "Agency"},
@@ -158,7 +157,11 @@ PLANOS = {
 PLANO_PADRAO = "sem"
 
 # os que se contrata, na ordem em que aparecem na tela
-A_VENDA = ("basic", "freelancer", "studio", "agency")
+# O Basic (80 peças por R$ 890) saiu em 16/10/2026. Ele deixava R$ 345 depois
+# do custo fixo, contra R$ 1.296 do Freelancer — e dava o mesmo atendimento, que
+# é o que de fato custa numa conta pequena. Oitenta peças por mês também é menos
+# do que uma agência produz: era um plano que não descrevia ninguém.
+A_VENDA = ("freelancer", "studio", "agency")
 
 
 def limites(plano: str) -> dict:
