@@ -516,9 +516,11 @@ class TestOCartaoMostraOCorte:
         assert ".f .cx .fantasma{opacity:" in tela
 
     def test_so_enquanto_a_peca_nao_saiu(self, tela):
-        """Depois de pronta, quem manda no cartão é a peça de verdade."""
-        assert "const previa = $('#zona img');" in tela
-        assert "previa && !job" in tela
+        """Depois de pronta, quem manda no cartão é a peça de verdade: ela
+        entra por cima do fantasma, e a guarda do desenho sabe diferenciar os
+        dois."""
+        assert "cx.querySelector('img:not(.fantasma), video')" in tela
+        assert "const fantasma = fonteDoFantasma()" in tela
 
     def test_o_escolhido_mostra_mais(self, tela):
         assert ".f.on .cx .fantasma{opacity:" in tela
@@ -733,8 +735,10 @@ class TestOFantasmaNaoRoubaOLugarDaPeca:
         depois = tela.split("job = r.job;")[1][:300]
         assert "pintarFormatos();" in depois
 
-    def test_o_fantasma_so_existe_antes_do_trabalho(self, tela):
-        assert "const fantasma = previa && !job" in tela
+    def test_o_fantasma_sai_quando_a_peca_entra(self, tela):
+        """Ele não some por existir trabalho — some por chegar a peça, que é
+        escrita por cima dele."""
+        assert "cx.innerHTML = `<img src=" in tela
 
 
 class TestOEditorAbreCheio:
@@ -754,3 +758,27 @@ class TestOEditorAbreCheio:
     def test_a_medida_continua_existindo_para_a_lona(self, tela):
         assert '<small id="edMedida">' in tela
         assert "$('#edMedida').textContent" in tela
+
+
+class TestOFantasmaMostraAPranchetaEscolhida:
+    """Num PSD de várias pranchetas, a miniatura do arquivo é o PSD INTEIRO.
+    Depois de escolher uma prancheta, o cartão vazio tem que mostrar ELA — e
+    não o desenho das seis, que foi o que ela viu."""
+
+    def test_o_fantasma_tem_fonte_propria(self, tela):
+        assert "function fonteDoFantasma()" in tela
+        assert "if (pranchetaEscolhida) return pranchetaEscolhida;" in tela
+
+    def test_escolher_a_prancheta_troca_a_fonte(self, tela):
+        depois = tela.split("async function mandarPrancheta(")[1][:900]
+        assert "pranchetaEscolhida = `/jobs/${job}/arquivos/" in depois
+        assert "pintarFormatos();" in depois
+
+    def test_arte_nova_esquece_a_prancheta_anterior(self, tela):
+        depois = tela.split("async function receber(f)")[1][:1200]
+        assert "pranchetaEscolhida = null" in depois
+
+    def test_o_fantasma_nao_depende_mais_de_nao_haver_trabalho(self, tela):
+        """Era isso que deixava o cartão vazio com um xadrez cinza enquanto a
+        peça não ficava pronta: o trabalho já existia, e o fantasma sumia."""
+        assert "const fantasma = previa && !job" not in tela

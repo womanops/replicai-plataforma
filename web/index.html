@@ -944,6 +944,9 @@ async function receber(f){
   }
   const tam = f.size>=1048576 ? (f.size/1048576).toFixed(1)+' MB' : Math.round(f.size/1024)+' KB';
   peca = { arquivo:f, ext, w:null, h:null };
+  // arte nova apaga a prancheta escolhida na anterior: senão os cartões
+  // mostrariam o recorte de um PSD que não está mais na tela
+  pranchetaEscolhida = null; ultimasPranchetas = [];
   if (!$('#titulo').value) $('#titulo').value = f.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ');
 
   const pinta = (url, medida) => {
@@ -986,6 +989,18 @@ async function carregarFormatos(){
   pintarFormatos();
 }
 const LARG = 132;
+
+// De onde sai a arte apagada dos cartões vazios. Começa na miniatura do
+// arquivo que subiu — que num PSD de várias pranchetas é o PSD INTEIRO — e
+// passa a ser a prancheta escolhida assim que ela é escolhida: era isso que
+// ela via de errado, o desenho das seis pranchetas dentro de cada cartão.
+let pranchetaEscolhida = null, ultimasPranchetas = [];
+
+function fonteDoFantasma(){
+  if (pranchetaEscolhida) return pranchetaEscolhida;
+  const previa = $('#zona img');
+  return previa ? previa.src : '';
+}
 function porCanal(){
   const m = {};
   for (const f of catalogo.concat(livres)) (m[f.canal] ||= []).push(f);
@@ -1153,12 +1168,12 @@ function cartao(f){
   const tira = f.livre && !job
     ? `<button class="tira" type="button" title="Tirar das minhas medidas">✕</button>` : '';
   const medida = `${f.w}×${f.h}`;
-  // a arte-mãe apagada dentro do cartão vazio: antes de rodar, dá para VER o
-  // que cada formato vai cortar. Um xadrez cinza não diz nada; a própria peça,
-  // recortada naquela proporção, responde a pergunta que se está fazendo ali
-  const previa = $('#zona img');
-  const fantasma = previa && !job
-    ? `<img class="fantasma" src="${previa.src}" alt="">` : '';
+  // a arte-mãe apagada dentro do cartão vazio: enquanto a peça não fica
+  // pronta, dá para VER o que aquele formato vai cortar. Um xadrez cinza não
+  // diz nada; a própria arte, recortada naquela proporção, responde a pergunta
+  // que se está fazendo ali. Quando a peça chega, ela entra por cima.
+  const fantasma = fonteDoFantasma()
+    ? `<img class="fantasma" src="${fonteDoFantasma()}" alt="">` : '';
   return `<div class="f${on}" data-id="${esc(f.id)}" role="button" tabindex="0" title="${esc(f.nome)}">
     <div class="cx" style="height:${alt}px">${fantasma}${tira}</div>
     <b>${esc(f.nome)}</b><i>${f.livre && f.nome === medida ? 'guardada' : medida}</i></div>`;
@@ -1247,8 +1262,6 @@ $('#btnIr').onclick = async () => {
     $('#btnIr').disabled=false; pintarRodape(); return;
   }
   job = r.job;
-  // a grade se redesenha: os cartões param de ser escolha e passam a ser
-  // resultado, e é aqui que o fantasma da arte-mãe sai de cena
   pintarFormatos();
   $('#btnIr').style.display='none';
   // PSD com várias pranchetas não entrou na fila: está parado esperando escolha
@@ -1676,6 +1689,7 @@ async function verPlano(){
 let olhoNaPrancheta = null;
 
 function escolherPrancheta(lista){
+  ultimasPranchetas = lista || [];
   const grade = $('#prGrade'); grade.innerHTML = '';
   const capa = $('#zona img');
   for (const pr of lista){
@@ -1730,6 +1744,12 @@ async function mandarPrancheta(nome){
     const r = await fetch(`/jobs/${job}/prancheta`, { method:'POST', body:fd });
     if (!r.ok){ aviso((await r.json()).detail || 'Não deu para escolher.'); return; }
   } catch(e){ aviso('Não consegui falar com o servidor.'); return; }
+  // a partir daqui os cartões vazios mostram A PRANCHETA ESCOLHIDA, não o PSD
+  // inteiro: é o que a pessoa acabou de escolher, e é o que vai ser recortado
+  const escolhida = (ultimasPranchetas || []).find(pr => pr.nome === nome);
+  if (escolhida && escolhida.previa)
+    pranchetaEscolhida = `/jobs/${job}/arquivos/${encodeURIComponent(escolhida.previa)}`;
+  pintarFormatos();
   acompanhar();
 }
 
