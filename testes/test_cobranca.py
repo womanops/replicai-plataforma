@@ -279,3 +279,28 @@ class TestOCustoQueNaoEPorPeca:
         sobra = precos.sobra_de(n, cobranca.PRECO("basic"))
         c = precos.conta(n, cobranca.PRECO("basic"))
         assert round(sobra, 2) == c["margem"]
+
+
+class TestADesligarAAreia:
+    """`ASAAS_AREIA=0` tem que significar o que diz: qualquer valor contava
+    como ligado, e desligar escrevendo zero deixava a cobrança de mentira com
+    cara de produção — tudo responde 200 e ninguém paga."""
+
+    def test_vazio_e_producao(self, monkeypatch):
+        monkeypatch.delenv("ASAAS_AREIA", raising=False)
+        assert cobranca.base() == cobranca.PRODUCAO
+
+    def test_zero_e_nao_contam_como_desligado(self, monkeypatch):
+        for valor in ("0", "nao", "não", "false", ""):
+            monkeypatch.setenv("ASAAS_AREIA", valor)
+            assert cobranca.base() == cobranca.PRODUCAO, valor
+
+    def test_ligado_fala_com_a_areia(self, monkeypatch):
+        monkeypatch.setenv("ASAAS_AREIA", "1")
+        assert cobranca.base() == cobranca.AREIA
+
+    def test_a_saude_denuncia_cobranca_de_mentira(self, monkeypatch):
+        from fastapi.testclient import TestClient
+        from api import main
+        monkeypatch.setenv("ASAAS_AREIA", "1")
+        assert "mentira" in TestClient(main.app).get("/saude").json()["cobranca"]

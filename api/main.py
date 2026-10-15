@@ -555,6 +555,11 @@ def saude():
             # aqui e na esteira, para alguém decidir
             "precos": "tabela abaixo do piso: " + ", ".join(furados)
                       if (furados := precos_.abaixo_do_piso(uso.PLANOS)) else "valendo",
+            # cobrança na areia tem cara de produção: tudo responde 200 e
+            # ninguém paga. Em produção isto precisa dizer "valendo"
+            "cobranca": ("de mentira (ASAAS_AREIA)" if cobranca.na_areia()
+                         else "valendo" if cobranca.configurada()
+                         else "sem chave: ninguém assina"),
             # e-mail que não sai é acesso que não chega: o cliente paga e
             # fica esperando uma carta que foi gravada num arquivo
             "correio": "configurado" if correio.configurado()

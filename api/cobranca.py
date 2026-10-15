@@ -69,8 +69,20 @@ def configurada() -> bool:
     return bool(os.environ.get("ASAAS_API_KEY"))
 
 
+def na_areia() -> bool:
+    """Se a cobrança é de mentira.
+
+    `ASAAS_AREIA=0` precisa significar o que diz. Qualquer valor contava como
+    ligado, e desligar escrevendo zero deixava a plataforma cobrando na areia
+    com cara de produção: ninguém paga e ninguém percebe, porque tudo responde
+    200. Mesma convenção de `uso.sem_limite()`.
+    """
+    return os.environ.get("ASAAS_AREIA", "").strip() not in ("", "0", "nao", "não",
+                                                             "false", "False")
+
+
 def base() -> str:
-    return AREIA if os.environ.get("ASAAS_AREIA") else PRODUCAO
+    return AREIA if na_areia() else PRODUCAO
 
 
 def chamar(metodo: str, caminho: str, corpo: dict | None = None) -> dict:
