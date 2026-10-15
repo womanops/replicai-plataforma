@@ -12,6 +12,18 @@ dois terços das peças na grade que a gente roda.
 **Vídeo não entra na conta de custo.** Ele anima uma peça que já existe, sem
 chamar serviço nenhum: gasta tempo de máquina, não dinheiro por unidade. O
 limite de vídeo existe para proteger a fila, não o caixa.
+
+**O que entra no preço e o que é pago pela margem.** No preço entra o que só
+existe porque o cliente existe: as peças que ele produz, o imposto sobre o que
+ele paga e a taxa do meio de pagamento. A margem pretendida vem em cima disso.
+O que existe mesmo sem cliente nenhum — servidor, ferramentas, o tempo de quem
+atende — é pago POR essa margem, e está aqui embaixo em `custo_fixo_mes()`.
+
+A separação não é detalhe de contador: somar a hora de quem atende ao custo e
+ainda pedir margem em cima dela cobra duas vezes pela mesma hora, e o preço
+sai do mercado (o plano de entrada iria a R$ 1.900 com 80% de margem). O que o
+custo fixo decide não é o preço — é **quantos clientes o mês precisa**, e isso
+é o `ponto_de_equilibrio()`.
 """
 from __future__ import annotations
 
@@ -28,7 +40,21 @@ DOLAR = 5.40                   # câmbio de referência
 IOF_E_SPREAD = 0.07            # o que o cartão cobra além da cotação
 IMPOSTO = 0.08                 # Simples sobre o faturamento — confirme o anexo
 GATEWAY = 0.02                 # média entre Pix por valor fixo e cartão
-MARGEM_ALVO = 0.70             # margem com o cliente usando a franquia inteira
+MARGEM_ALVO = 0.80             # margem com o cliente usando a franquia inteira
+
+# --- o que custa mesmo sem cliente nenhum ------------------------------------
+# Não entra no preço de cada plano: entra na conta de quantos clientes o mês
+# precisa. Rateá-lo por conta exigiria adivinhar quantas contas existem, e no
+# começo esse palpite erra para o lado caro — preço alto espanta o primeiro
+# cliente, que é justamente quem paga o servidor.
+SERVIDOR_MES = 600.0           # a confirmar: a máquina que roda api, worker,
+                               # Chromium e Remotion, com disco para o bruto
+FERRAMENTAS_MES = 0.0          # assinaturas (domínio, e-mail, o que vier);
+                               # os créditos do generativo já são por peça
+ATENDIMENTO_MES = 0.0          # o tempo de quem atende, se você quiser vê-lo
+                               # aqui como linha. Fica em zero porque a margem
+                               # é o que paga esse tempo — somar aqui e pedir
+                               # margem em cima cobraria duas vezes
 
 
 def custo_peca_dolar() -> float:
@@ -63,10 +89,10 @@ def preco_de(pecas: int, margem: float = MARGEM_ALVO) -> float:
 # preço por peça cai conforme o volume (R$ 11,13 no Basic, R$ 5,83 no Agency):
 # é isso que faz subir de plano valer a pena para quem produz muito.
 TABELA = {
-    "basic":       890.0,
-    "freelancer": 1990.0,
-    "studio":     3990.0,
-    "agency":     6990.0,
+    "basic":       890.0,   # acima do piso de 80% (R$ 570): entrada decidida
+    "freelancer": 1990.0,   # acima do piso de 80% (R$ 1.780)
+    "studio":     4270.0,   # o piso de 80% exato
+    "agency":     8530.0,   # o piso de 80% exato
 }
 
 
@@ -90,6 +116,35 @@ def abaixo_do_piso(planos: dict) -> list[str]:
         if TABELA[plano] < preco_de(lim["pecas"]):
             furados.append(plano)
     return furados
+
+
+def custo_fixo_mes() -> float:
+    """O que sai do caixa todo mês com zero cliente."""
+    return SERVIDOR_MES + FERRAMENTAS_MES + ATENDIMENTO_MES
+
+
+def sobra_de(pecas: int, preco: float) -> float:
+    """O que sobra de um cliente depois do que ele mesmo custa.
+
+    É daqui que sai o dinheiro do servidor, das ferramentas e do seu tempo.
+    """
+    return preco - custo_peca() * pecas - preco * (IMPOSTO + GATEWAY)
+
+
+def ponto_de_equilibrio(planos: dict) -> dict:
+    """Quantos clientes de cada plano pagam a conta fixa do mês.
+
+    O número que importa não é a margem em porcentagem — é este. Margem de 80%
+    com um cliente só não paga servidor nenhum.
+    """
+    fixo = custo_fixo_mes()
+    quantos = {}
+    for plano, lim in planos.items():
+        if plano not in TABELA or not lim.get("pecas"):
+            continue
+        sobra = sobra_de(lim["pecas"], TABELA[plano])
+        quantos[plano] = math.ceil(fixo / sobra) if sobra > 0 else None
+    return {"custo_fixo_mes": round(fixo, 2), "contas_para_empatar": quantos}
 
 
 def conta(pecas: int, preco: float) -> dict:

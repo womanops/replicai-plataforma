@@ -253,6 +253,10 @@ def planos():
                        for i in uso.A_VENDA],
             "margem_alvo": precos.MARGEM_ALVO,
             "custo_por_peca": round(precos.custo_peca(), 4),
+            # o que o preço de um plano NÃO cobre sozinho: servidor e
+            # ferramentas existem com zero cliente, e são pagos pela margem.
+            # Margem de 80% com um cliente só não paga servidor nenhum
+            **precos.ponto_de_equilibrio(uso.PLANOS),
             "cobranca": cobranca.configurada()}
 
 

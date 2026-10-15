@@ -232,3 +232,50 @@ class TestOPlanoDeEntradaEPago:
         for plano in ("freelancer", "studio", "agency"):
             c = precos.conta(uso.PLANOS[plano]["pecas"], cobranca.PRECO(plano))
             assert c["margem_pct"] >= precos.MARGEM_ALVO * 100
+
+
+class TestOCustoQueNaoEPorPeca:
+    """Servidor e ferramentas existem com zero cliente. Eles não entram no
+    preço de cada plano — entram na conta de quantos clientes o mês precisa."""
+
+    def test_a_margem_de_80_vale_em_todos_os_planos(self):
+        from api import precos, uso
+        assert precos.MARGEM_ALVO == 0.80
+        for plano in uso.A_VENDA:
+            c = precos.conta(uso.PLANOS[plano]["pecas"], cobranca.PRECO(plano))
+            assert c["margem_pct"] >= 80.0, (plano, c["margem_pct"])
+
+    def test_a_hora_de_quem_atende_nao_e_cobrada_duas_vezes(self):
+        """Somar a hora ao custo e pedir margem em cima dela cobra a mesma hora
+        duas vezes — e o plano de entrada iria a R$ 1.900."""
+        from api import precos
+        assert precos.ATENDIMENTO_MES == 0.0
+
+    def test_o_custo_fixo_e_a_soma_do_que_sai_sem_cliente(self):
+        from api import precos
+        assert precos.custo_fixo_mes() == (precos.SERVIDOR_MES
+                                           + precos.FERRAMENTAS_MES
+                                           + precos.ATENDIMENTO_MES)
+
+    def test_o_equilibrio_diz_quantos_clientes_o_mes_precisa(self):
+        """Margem em porcentagem não paga servidor: cliente paga."""
+        from api import precos, uso
+        eq = precos.ponto_de_equilibrio(uso.PLANOS)
+        assert eq["custo_fixo_mes"] == precos.custo_fixo_mes()
+        for plano in uso.A_VENDA:
+            assert eq["contas_para_empatar"][plano] >= 1
+
+    def test_servidor_mais_caro_pede_mais_cliente_e_nao_mais_preco(self, monkeypatch):
+        from api import precos, uso
+        antes = precos.ponto_de_equilibrio(uso.PLANOS)["contas_para_empatar"]["basic"]
+        preco_antes = cobranca.PRECO("basic")
+        monkeypatch.setattr(precos, "SERVIDOR_MES", precos.SERVIDOR_MES * 10)
+        assert precos.ponto_de_equilibrio(uso.PLANOS)["contas_para_empatar"]["basic"] > antes
+        assert cobranca.PRECO("basic") == preco_antes
+
+    def test_a_sobra_de_um_cliente_e_o_que_paga_o_fixo(self):
+        from api import precos, uso
+        n = uso.PLANOS["basic"]["pecas"]
+        sobra = precos.sobra_de(n, cobranca.PRECO("basic"))
+        c = precos.conta(n, cobranca.PRECO("basic"))
+        assert round(sobra, 2) == c["margem"]
