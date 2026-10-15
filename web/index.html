@@ -327,6 +327,23 @@ header .campanhas:hover{color:var(--fg)}
 .plano-card ul{list-style:none;margin:10px 0 16px;padding:0;font-size:13px;color:var(--mut)}
 .plano-card li{padding:3px 0}
 .plano-card button{margin-top:auto}
+#listaPessoas{display:flex;flex-direction:column;gap:1px;margin:10px 0 0}
+#listaPessoas .p{display:flex;align-items:center;gap:10px;padding:9px 11px;
+  background:var(--painel2);border:1px solid var(--linha);border-radius:10px}
+#listaPessoas .p b{font-weight:500;font-size:13.5px}
+#listaPessoas .p .mail{color:var(--mut);font-size:12px;margin-left:auto}
+#listaPessoas .p .selo{font:500 9.5px var(--mono);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--rosa);border:1px solid var(--linha);
+  border-radius:999px;padding:2px 7px}
+#listaPessoas .p .selo.espera{color:var(--mut)}
+#listaPessoas .p button{background:none;border:0;color:var(--mut);cursor:pointer;
+  font:400 12px var(--corpo);text-decoration:underline;padding:0 2px}
+#listaPessoas .p button:hover{color:var(--err)}
+.convidar{display:flex;gap:8px;margin:10px 0 0;flex-wrap:wrap}
+.convidar input{flex:1 1 160px;background:var(--painel2);color:var(--fg);
+  border:1px solid var(--linha);border-radius:10px;padding:9px 11px;
+  font:400 13.5px var(--corpo)}
+.convidar.cheio{display:none}
 .regra{margin:18px 0 0;font-size:12.5px;color:var(--mut);line-height:1.5;
   border-top:1px solid var(--linha);padding-top:14px}
 .regra b{color:var(--fg);font-weight:500}
@@ -650,6 +667,18 @@ header .saldo.apertado .fio i{background:var(--err)}
       </div>
       <p class="ciclo" id="fichaCiclo"></p>
       <div class="medidor" id="fichaMedidor"></div>
+    </section>
+
+    <section class="bloco">
+      <h3>Quem tem acesso</h3>
+      <p class="nota" id="acessoNota">Cada pessoa entra com o login dela, na mesma
+        conta: as campanhas e o saldo de peças são os da agência.</p>
+      <div id="listaPessoas"></div>
+      <div class="convidar" id="convidar">
+        <input id="pessoaNome" placeholder="Nome de quem vai usar">
+        <input id="pessoaEmail" type="email" placeholder="E-mail dela">
+        <button class="secund" id="pessoaConvida">Convidar</button>
+      </div>
     </section>
 
     <section class="bloco">
@@ -1691,12 +1720,16 @@ function diaMes(periodo){
 async function abrirConta(){
   $('#minhaConta').classList.remove('hidden');
   pintarFontes();
+  pintarPessoas();
   abrirCampanhas();
   let eu = {}, u = null;
   try { eu = await (await fetch('/eu')).json(); } catch(e){}
   try { u = await (await fetch('/eu/uso')).json(); } catch(e){}
   $('#fichaNome').textContent = eu.nome || 'Minha conta';
-  $('#fichaEmail').textContent = eu.email || '';
+  // com três pessoas na mesma conta, a ficha precisa dizer qual delas é você
+  $('#fichaEmail').textContent = (eu.eu && !eu.eu.dono)
+    ? `${eu.eu.nome} · ${eu.eu.email}`
+    : (eu.email || '');
   if (!u) return;
   const atraso = u.em_atraso ? ' · pagamento em atraso' : '';
   $('#fichaPlano').textContent = (u.plano.nome || u.plano.id || '—')
@@ -1711,6 +1744,70 @@ async function abrirConta(){
       + `<em>de ${total} no ciclo</em><i><span style="width:${cheio}%"></span></i></div>`;
   }).join('');
 }
+
+async function pintarPessoas(){
+  const caixa = $('#listaPessoas');
+  let d;
+  try { d = await (await fetch('/eu/pessoas')).json(); }
+  catch(e){ caixa.innerHTML = '<div class="vazio">não consegui falar com o servidor.</div>'; return; }
+  caixa.innerHTML = (d.pessoas || []).map(p => {
+    const marca = p.dono ? '<span class="selo">dona da conta</span>'
+      : !p.entrou ? '<span class="selo espera">convite enviado</span>' : '';
+    const tirar = (p.dono || p.id === d.eu) ? ''
+      : `<button data-tira="${p.id}">tirar o acesso</button>`;
+    const reenvia = (!p.entrou && !p.dono)
+      ? `<button data-reenvia="${p.id}">reenviar convite</button>` : '';
+    return `<div class="p"><b>${(p.nome || '').replace(/</g,'&lt;')}</b>${marca}`
+      + `<span class="mail">${p.email}</span>${reenvia}${tirar}</div>`;
+  }).join('');
+  // o limite é do plano: no Basic e no Freelancer a conta é de uma pessoa, e
+  // oferecer um campo que vai recusar é convidar para o erro
+  const cabe = (d.acessos || 1) < (d.limite || 1);
+  $('#convidar').classList.toggle('cheio', !cabe);
+  $('#acessoNota').textContent = (d.limite || 1) <= 1
+    ? 'Este plano é de uma pessoa. O Studio permite duas e o Agency três, '
+      + 'cada uma com o login dela.'
+    : `${d.acessos} de ${d.limite} acessos usados. Cada pessoa entra com o login `
+      + 'dela, na mesma conta: as campanhas e o saldo são os da agência.';
+  caixa.querySelectorAll('[data-tira]').forEach(b => b.onclick = async () => {
+    if (!confirm('Tirar o acesso desta pessoa? Ela perde a entrada agora; '
+               + 'a senha de quem fica não muda.')) return;
+    const r = await fetch(`/eu/pessoas/${b.dataset.tira}`, { method:'DELETE' });
+    if (!r.ok) aviso((await r.json().catch(() => ({}))).detail || 'Não deu para tirar.');
+    pintarPessoas();
+  });
+  caixa.querySelectorAll('[data-reenvia]').forEach(b => b.onclick = async () => {
+    const r = await fetch(`/eu/pessoas/${b.dataset.reenvia}/convite`, { method:'POST' });
+    const d2 = await r.json().catch(() => ({}));
+    aviso(r.ok ? recadoDoConvite(d2.correio) : (d2.detail || 'Não deu para reenviar.'), r.ok);
+  });
+}
+
+// o e-mail pode não ter saído: dizer "convite enviado" quando ele foi gravado
+// num arquivo é mentir para quem vai esperar o cliente entrar
+function recadoDoConvite(correio){
+  return (correio && correio.enviado)
+    ? 'Convite enviado por e-mail.'
+    : 'Convite criado, mas o e-mail não saiu: o envio não está configurado neste '
+      + 'servidor. Fale com quem cuida da instalação.';
+}
+
+$('#pessoaConvida').onclick = async () => {
+  const fd = new FormData();
+  fd.set('nome', $('#pessoaNome').value.trim());
+  fd.set('email', $('#pessoaEmail').value.trim());
+  if (!fd.get('email')) { aviso('Falta o e-mail de quem vai usar.'); return; }
+  $('#pessoaConvida').disabled = true;
+  try {
+    const r = await fetch('/eu/pessoas', { method:'POST', body:fd });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok){ aviso(d.detail || 'Não deu para convidar.'); }
+    else { $('#pessoaNome').value = ''; $('#pessoaEmail').value = '';
+           aviso(recadoDoConvite(d.correio), true); }
+  } catch(e){ aviso('Não consegui falar com o servidor.'); }
+  $('#pessoaConvida').disabled = false;
+  pintarPessoas();
+};
 
 async function abrirCampanhas(){
   const caixa = $('#listaTrabalhos');
@@ -1955,6 +2052,8 @@ addEventListener('keydown', e => {
    trinta e cinco recortes de letra, e arrastar letra por letra não é edição,
    é castigo. */
 let ed = null;
+// virou "abrir de novo" porque outra pessoa da agência salvou esta peça
+let reabrirPeca = false;
 
 const arquivoUrl = nome => `/jobs/${job}/arquivos/${encodeURIComponent(nome)}`;
 
@@ -1969,8 +2068,14 @@ async function abrirEditor(fid){
   ed = { fid, peca: pc, k: 1, sel: null, trocas: {},
          boxes: pc.elementos.map(e => ({...e.box})),
          orig: pc.elementos.map(e => ({...e.box})),
+         // a versão que esta pessoa abriu: é o que impede salvar por cima do
+         // ajuste de outra pessoa da agência sem ninguém perceber
+         versao: pc.versao || 0,
          fora: new Set() };
   $('#edTitulo').textContent = `Ajustar · ${fid}`;
+  reabrirPeca = false;
+  $('#edSalva').textContent = 'Atualizar a peça';
+  if (pc.mao && pc.mao.nome) aviso(`Ajustada por ${pc.mao.nome}.`, true);
   $('#editor').classList.remove('hidden');
   pintarLona();
 }
@@ -2323,6 +2428,12 @@ addEventListener('keydown', e => {
 $('#edSalva').onclick = async () => {
   if (!ed) return;
   const fid = ed.fid;
+  if (reabrirPeca){
+    reabrirPeca = false;
+    $('#edSalva').textContent = 'Atualizar a peça';
+    fecharEditor(); abrirEditor(fid);
+    return;
+  }
   // a linha trocada vai como UM elemento: o primeiro recorte dela, com a
   // caixa da linha inteira e o texto novo. Os outros recortes não voltam, e
   // é assim que o servidor sabe que saíram
@@ -2345,10 +2456,19 @@ $('#edSalva').onclick = async () => {
   try {
     const r = await fetch(`/jobs/${job}/pecas/${fid}`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ elementos }) });
+      body: JSON.stringify({ elementos, versao: ed.versao }) });
     const resposta = await r.clone().json().catch(() => ({}));
     if (!r.ok && /plano ativo/.test(resposta.detail || '')) assinaturaParada(resposta.detail);
     for (const a of resposta.avisos || []) aviso(a);
+    // 409: outra pessoa da agência salvou esta peça enquanto esta estava
+    // aberta. Fechar e reabrir é o conserto, e tem que ser dito assim
+    if (r.status === 409 && /abra de novo|ajustou esta peça/i.test(resposta.detail || '')){
+      aviso(resposta.detail);
+      $('#edSalva').disabled = false;
+      $('#edSalva').textContent = 'Abrir a peça de novo';
+      reabrirPeca = true;        // o próximo clique recarrega em vez de salvar
+      return;
+    }
     if (!r.ok){ aviso((await r.json()).detail || 'Não deu para salvar.');
                 $('#edSalva').disabled = false; return; }
   } catch(e){ aviso('Não consegui falar com o servidor.'); $('#edSalva').disabled = false; return; }

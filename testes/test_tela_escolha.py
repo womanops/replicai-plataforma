@@ -663,3 +663,39 @@ class TestOsCartoesDePlano:
         import re
         assert "fetch('/planos')" in tela
         assert not re.search(r"R\$\s?\d[\d.,]{2,}", tela), "preço escrito na mão na tela"
+
+
+class TestQuemTemAcesso:
+    """No Agency são até três pessoas na mesma conta. A ficha precisa mostrar
+    quem entra, quem ainda não entrou, e deixar tirar o acesso de quem saiu."""
+
+    def test_a_ficha_tem_a_seção_de_acesso(self, tela):
+        assert "Quem tem acesso" in tela
+        assert 'id="listaPessoas"' in tela
+
+    def test_dá_para_convidar_e_tirar(self, tela):
+        assert "fetch('/eu/pessoas', { method:'POST'" in tela
+        assert "method:'DELETE'" in tela
+        assert "/convite`, { method:'POST' }" in tela
+
+    def test_o_campo_de_convite_some_quando_o_plano_enche(self, tela):
+        """Oferecer um campo que vai recusar é convidar para o erro."""
+        assert "const cabe = (d.acessos || 1) < (d.limite || 1);" in tela
+        assert ".convidar.cheio{display:none}" in tela
+
+    def test_a_ficha_diz_qual_pessoa_sou_eu(self, tela):
+        assert "eu.eu && !eu.eu.dono" in tela
+
+    def test_o_convite_que_nao_saiu_nao_e_anunciado_como_enviado(self, tela):
+        """E-mail gravado em arquivo não é e-mail entregue: quem vai esperar o
+        cliente entrar precisa saber a diferença."""
+        assert "function recadoDoConvite(correio)" in tela
+        assert "o e-mail não saiu" in tela
+
+    def test_o_editor_avisa_quando_outra_pessoa_salvou(self, tela):
+        assert "reabrirPeca" in tela
+        assert "versao: ed.versao" in tela
+        assert "r.status === 409" in tela
+
+    def test_o_editor_diz_quem_ajustou_antes(self, tela):
+        assert "Ajustada por ${pc.mao.nome}" in tela

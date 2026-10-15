@@ -11,6 +11,7 @@ import io
 import json
 import shutil
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 import hmac
@@ -20,7 +21,7 @@ from fastapi import (Cookie, Depends, FastAPI, File, Form, Header, HTTPException
                      Request, UploadFile)
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
-from api import ambiente, cobranca, contas, trabalhos, uso
+from api import ambiente, cobranca, contas, correio, trabalhos, uso
 from api.pipeline import MARCA_DA_MAO
 from api.tarefas import (MODOS, MODO_PADRAO, TEXTO_NOVO, previas, processar,
                          processar_video, redesenhar, refazer_fundo)
@@ -101,15 +102,28 @@ def quem_e(authorization: str | None = Header(default=None),
     este: ver a própria conta, ver os planos, sair. O resto usa `conta_atual`,
     que exige plano.
     """
+    return sessao(authorization, replicai_sessao)[0]
+
+
+def sessao(authorization: str | None = Header(default=None),
+           replicai_sessao: str | None = Cookie(default=None)
+           ) -> tuple[contas.Conta, str]:
+    """A conta e a PESSOA da requisição.
+
+    Com até três pessoas da agência na mesma conta, "quem fez isto" deixa de
+    ser curiosidade: é o que se olha quando uma peça volta diferente do que
+    alguém deixou. A chave de API não é de pessoa — é do programa, e aparece
+    como tal.
+    """
     if authorization and authorization.lower().startswith("bearer "):
         c = contas.da_chave(authorization.split(None, 1)[1].strip())
         if c:
-            return c
+            return c, "chave"
     if replicai_sessao:
-        ident = contas.abrir_selo(replicai_sessao)
-        c = contas.por_id(ident) if ident else None
-        if c and c.ativa:
-            return c
+        aberto = contas.abrir(replicai_sessao)
+        c = contas.por_id(aberto[0]) if aberto else None
+        if c and c.ativa and contas.pessoa_de(c, aberto[1]):
+            return c, aberto[1]
     raise HTTPException(401, "entre com a sua chave ou faça login",
                         headers={"WWW-Authenticate": "Bearer"})
 
@@ -136,7 +150,20 @@ def conta_atual(c: contas.Conta = Depends(quem_e)) -> contas.Conta:
 
 
 @app.post("/contas", status_code=201)
-def abrir_conta(nome: str = Form(""), email: str = Form(...), senha: str = Form(...)):
+def abrir_conta(nome: str = Form(""), email: str = Form(...), senha: str = Form(...),
+                x_admin: str | None = Header(default=None)):
+    """Cria conta na mão. É entrada de administração, não de cliente.
+
+    Ficou aberta a internet enquanto a plataforma não vendia plano: a conta
+    nascia sem poder nada, então não havia dano — mas qualquer um podia encher
+    o disco de contas vazias, e "quem chega assina" não combina com um endereço
+    que abre conta de graça. Cliente entra por `/assinatura`.
+    """
+    esperado = os.environ.get("REPLICAI_ADMIN_TOKEN", "")
+    if not esperado:
+        raise HTTPException(503, "REPLICAI_ADMIN_TOKEN não está configurado")
+    if not x_admin or not hmac.compare_digest(x_admin, esperado):
+        raise HTTPException(401, "esta entrada é de administração")
     try:
         c = contas.criar(nome, email, senha)
     except contas.ContaInvalida as e:
@@ -144,15 +171,70 @@ def abrir_conta(nome: str = Form(""), email: str = Form(...), senha: str = Form(
     return c.em_json()
 
 
+@app.post("/assinatura", status_code=201)
+def contratar(plano: str = Form(...), empresa: str = Form(...),
+              email: str = Form(...), cpf_cnpj: str = Form(...),
+              email_financeiro: str = Form(""), forma: str = Form("PIX")):
+    """A contratação, vinda da página de planos. Não dá acesso a nada.
+
+    Nasce a conta trancada — sem senha e sem plano — e nasce a assinatura no
+    meio de pagamento. Quem libera é o aviso de pagamento aprovado, e é ele
+    que manda o convite de acesso. Dado de cartão não passa por aqui: o
+    cliente digita na página do Asaas, que é quem também emite a nota.
+    """
+    if plano not in uso.A_VENDA:
+        raise HTTPException(422, f"não vendemos o plano `{plano}`")
+    if not "".join(ch for ch in cpf_cnpj if ch.isdigit()):
+        raise HTTPException(422, "CPF ou CNPJ é obrigatório: a nota fiscal exige")
+    try:
+        c, _ = contas.nascer_da_assinatura(empresa, email, plano, email_financeiro)
+    except contas.ContaInvalida as e:
+        raise HTTPException(422, str(e))
+    try:
+        cobranca.assinar(c, plano, forma, cpf_cnpj)
+        onde = cobranca.onde_pagar(c)
+    except cobranca.CobrancaIndisponivel as e:
+        # a conta fica: ela guarda quem tentou assinar, e a cobrança pode ser
+        # refeita à mão sem a pessoa digitar tudo de novo
+        raise HTTPException(503, f"não consegui abrir a cobrança: {e}")
+    return {"conta": c.id, "plano": plano, "valor": cobranca.PRECO(plano),
+            "pagamento": onde, "email": c.email,
+            "aviso": "o acesso chega por e-mail quando o pagamento for aprovado"}
+
+
+@app.post("/senha")
+def criar_senha(convite: str = Form(...), senha: str = Form(...)):
+    """Usa o convite para criar a senha e já entra.
+
+    O convite é de uso único e vale 48 horas. Nenhum e-mail do sistema leva
+    senha: e-mail fica guardado para sempre na caixa de entrada de quem
+    recebeu, e senha em e-mail é senha vazada no dia em que aquele e-mail for
+    invadido.
+    """
+    try:
+        feito = contas.definir_senha(convite, senha)
+    except contas.ContaInvalida as e:
+        raise HTTPException(422, str(e))
+    if feito is None:
+        raise HTTPException(410, "este convite não vale mais. Peça outro para quem "
+                                 "administra a conta")
+    c, quem = feito
+    r = JSONResponse(c.em_json(quem))
+    r.set_cookie(BISCOITO, contas.selar(c.id, quem), httponly=True, samesite="lax",
+                 max_age=contas.SELO_VALE)
+    return r
+
+
 @app.post("/entrar")
 def entrar(email: str = Form(...), senha: str = Form(...)):
-    c = contas.autenticar(email, senha)
-    if c is None:
+    feito = contas.entrar(email, senha)
+    if feito is None:
         # a mesma resposta para e-mail que não existe e senha errada: dizer
         # qual dos dois errou conta quais e-mails têm conta
         raise HTTPException(401, "e-mail ou senha não conferem")
-    r = JSONResponse(c.em_json())
-    r.set_cookie(BISCOITO, contas.selar(c.id), httponly=True, samesite="lax",
+    c, quem = feito
+    r = JSONResponse(c.em_json(quem))
+    r.set_cookie(BISCOITO, contas.selar(c.id, quem), httponly=True, samesite="lax",
                  max_age=contas.SELO_VALE)
     return r
 
@@ -165,8 +247,79 @@ def sair():
 
 
 @app.get("/eu")
-def eu(c: contas.Conta = Depends(quem_e)):
-    return c.em_json()
+def eu(sou: tuple = Depends(sessao)):
+    c, quem = sou
+    return c.em_json(quem)
+
+
+@app.get("/eu/pessoas")
+def minhas_pessoas(sou: tuple = Depends(sessao)):
+    c, quem = sou
+    return {"eu": quem, "acessos": contas.acessos_de(c),
+            "limite": contas.limite_de_acessos(c),
+            "pessoas": [_pessoa_em_json(q) for q in contas.logins(c)]}
+
+
+def _pessoa_em_json(q: dict) -> dict:
+    """Sem senha e sem convite: é isto que pode sair da API."""
+    return {"id": q["id"], "nome": q["nome"], "email": q["email"],
+            "dono": q.get("dono", False), "ultimo": q.get("ultimo", ""),
+            "entrou": bool(q.get("senha")),
+            "convite_ate": q.get("convite_ate", "") if not q.get("senha") else ""}
+
+
+@app.post("/eu/pessoas", status_code=201)
+def convidar_pessoa(nome: str = Form(""), email: str = Form(...),
+                    c: contas.Conta = Depends(conta_atual)):
+    """Abre acesso para mais uma pessoa da agência, dentro do limite do plano.
+
+    Exige plano ativo porque é produção: quem não paga não ganha gente nova
+    para trabalhar — mas também não perde quem já está lá.
+    """
+    try:
+        pessoa, convite = contas.convidar(c, nome, email)
+    except contas.ContaInvalida as e:
+        raise HTTPException(422, str(e))
+    carta = correio.convite_de_pessoa(c, pessoa, convite)
+    return {"pessoa": _pessoa_em_json({**pessoa, "dono": False}),
+            "acessos": contas.acessos_de(c), "limite": contas.limite_de_acessos(c),
+            "correio": carta}
+
+
+@app.post("/eu/pessoas/{quem}/convite")
+def reenviar_convite(quem: str, c: contas.Conta = Depends(conta_atual)):
+    """Manda o convite de novo: o prazo é de 48 horas e e-mail se perde."""
+    pessoa = contas.pessoa_de(c, quem)
+    if pessoa is None:
+        raise HTTPException(404, "essa pessoa não está na conta")
+    if pessoa.get("senha"):
+        raise HTTPException(409, "essa pessoa já tem senha. Para trocar, ela usa "
+                                 "o 'esqueci minha senha'")
+    convite = contas.novo_convite(c, quem)
+    carta = (correio.acesso_liberado(c, convite,
+                                     uso.limites(cobranca.plano_valendo(c))["nome"])
+             if quem == contas.DONO
+             else correio.convite_de_pessoa(c, pessoa, convite))
+    return {"pessoa": quem, "correio": carta}
+
+
+@app.delete("/eu/pessoas/{quem}")
+def tirar_pessoa(quem: str, sou: tuple = Depends(sessao)):
+    """Tira o acesso de quem saiu da agência.
+
+    Sem trocar a senha de ninguém — era esse o custo de senha compartilhada, e
+    é o motivo de cada pessoa ter a sua.
+    """
+    c, eu_mesma = sou
+    if quem == eu_mesma:
+        raise HTTPException(409, "esse é o seu próprio acesso")
+    try:
+        if not contas.remover_pessoa(c, quem):
+            raise HTTPException(404, "essa pessoa não está na conta")
+    except contas.ContaInvalida as e:
+        raise HTTPException(409, str(e))
+    return {"ok": True, "acessos": contas.acessos_de(c),
+            "limite": contas.limite_de_acessos(c)}
 
 
 @app.get("/eu/medidas")
@@ -328,10 +481,26 @@ def arquivo_da_marca(nome: str):
 
 @app.get("/", response_class=HTMLResponse)
 def tela():
-    pagina = WEB / "index.html"
-    if not pagina.exists():
+    return _pagina("index.html")
+
+
+def _pagina(nome: str) -> str:
+    alvo = WEB / nome
+    if not alvo.exists():
         raise HTTPException(404, "a interface não foi instalada nesta imagem")
-    return pagina.read_text(encoding="utf-8")
+    return alvo.read_text(encoding="utf-8")
+
+
+@app.get("/assinar", response_class=HTMLResponse)
+def pagina_de_assinar():
+    """Onde a página de planos entrega quem decidiu assinar."""
+    return _pagina("assinar.html")
+
+
+@app.get("/senha", response_class=HTMLResponse)
+def pagina_de_senha():
+    """Onde o convite do e-mail chega. O POST do mesmo endereço cria a senha."""
+    return _pagina("senha.html")
 
 
 VERSOES = Path("/app-versoes.json")
@@ -386,6 +555,10 @@ def saude():
             # aqui e na esteira, para alguém decidir
             "precos": "tabela abaixo do piso: " + ", ".join(furados)
                       if (furados := precos_.abaixo_do_piso(uso.PLANOS)) else "valendo",
+            # e-mail que não sai é acesso que não chega: o cliente paga e
+            # fica esperando uma carta que foi gravada num arquivo
+            "correio": "configurado" if correio.configurado()
+                       else "desligado: o e-mail de acesso fica em arquivo",
             "desenhando_com": desenhando_com()}
 
 
@@ -739,14 +912,21 @@ def ver_peca(job: str, formato: str, c: contas.Conta = Depends(quem_e)):
 
 @app.post("/jobs/{job}/pecas/{formato}", status_code=202)
 async def ajustar_peca(job: str, formato: str, request: Request,
-                       c: contas.Conta = Depends(conta_atual)):
+                       sou: tuple = Depends(sessao)):
     """Grava a peça remontada na mão e manda desenhar de novo.
 
     Só a geometria e o texto de cada elemento mudam, e cada um é casado com o
     que já estava gravado em vez de substituí-lo: o que a tela manda é onde a
     pessoa pôs a caixa, não uma peça nova. Elemento que a tela não mandou de
     volta foi tirado de propósito.
+
+    Com até três pessoas da agência na mesma conta, duas podem abrir a mesma
+    peça: a gravação confere a versão que o editor abriu e recusa a que
+    chegou por cima da outra. Sem isso, a última a salvar apagaria o trabalho
+    da primeira em silêncio — e ninguém saberia de onde veio a mudança.
     """
+    c, quem = sou
+    conta_atual(c)                      # produzir exige plano; abrir não
     try:
         arq = _peca_do(c.id, job, formato)
     except ValueError:
@@ -762,6 +942,14 @@ async def ajustar_peca(job: str, formato: str, request: Request,
         raise HTTPException(422, "mande `elementos` com a lista remontada")
 
     peca = json.loads(arq.read_text(encoding="utf-8"))
+    versao = int(peca.get("versao") or 0)
+    pedida = corpo.get("versao")
+    if pedida is not None and int(pedida) != versao:
+        mao = peca.get("mao") or {}
+        de_quem = mao.get("nome") or "outra pessoa"
+        raise HTTPException(409,
+            f"{de_quem} ajustou esta peça depois de você abrir. Feche e abra de "
+            "novo para não apagar o trabalho dela")
     antigos = peca.get("elementos", [])
     novos, avisos, fontes_novas = [], [], {}
     for e in pedidos:
@@ -807,6 +995,12 @@ async def ajustar_peca(job: str, formato: str, request: Request,
     # recompor por cima dela
     via = peca.get("via") or ""
     peca["via"] = via if MARCA_DA_MAO in via else via + MARCA_DA_MAO
+    # quem mexeu e quando: com três pessoas na conta, "quem fez isto" é a
+    # primeira pergunta quando a peça volta diferente do que alguém deixou
+    pessoa = contas.pessoa_de(c, quem) or {}
+    peca["versao"] = versao + 1
+    peca["mao"] = {"quem": quem, "nome": pessoa.get("nome") or c.nome,
+                   "quando": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
 
     # o aviso da fonte fica COLADO na peça, e não só no retorno desta chamada:
@@ -821,7 +1015,8 @@ async def ajustar_peca(job: str, formato: str, request: Request,
     trabalhos.gravar(c.id, job, {"ajuste": {"status": "na fila", "formato": formato}})
     trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
         redesenhar, c.id, job, formato)})
-    return {"job": job, "formato": formato, "ajuste": "na fila", "avisos": avisos}
+    return {"job": job, "formato": formato, "ajuste": "na fila", "avisos": avisos,
+            "versao": peca["versao"], "mao": peca["mao"]}
 
 
 @app.get("/jobs/{job}")

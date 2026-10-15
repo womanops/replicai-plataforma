@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<title>Assinar a ReplicAI</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="/assets/replicai-favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0E0A0C; --painel:#160F12; --painel2:#1E1518; --fgRGB:245,236,233;
+  --fg:#F5ECE9; --mut:rgba(var(--fgRGB),.58); --linha:rgba(var(--fgRGB),.13);
+  --vinho:#8E2459; --rosa:#E8B4C8; --sinal:#B6FF3C; --err:#FF5A5A;
+  --disp:'Bebas Neue',sans-serif; --corpo:'Space Grotesk',system-ui,sans-serif;
+  --mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.5 var(--corpo);
+  -webkit-font-smoothing:antialiased;display:grid;place-items:center;min-height:100vh;padding:24px}
+.folha{width:100%;max-width:520px;background:var(--painel);border:1px solid var(--linha);
+  border-radius:18px;padding:30px}
+img.logo{height:30px;display:block;margin:0 0 16px}
+h1{font:400 34px/1 var(--disp);letter-spacing:.04em;margin:0 0 4px}
+.sub{color:var(--mut);font-size:13.5px;margin:0 0 22px}
+.campo{display:block;margin:0 0 14px}
+.campo span{display:block;font:500 10.5px var(--mono);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--mut);margin:0 0 6px}
+.campo input,.campo select{width:100%;background:var(--painel2);color:var(--fg);
+  border:1px solid var(--linha);border-radius:10px;padding:11px 12px;
+  font:400 14.5px var(--corpo)}
+.campo input:focus,.campo select:focus{outline:2px solid var(--rosa);outline-offset:1px}
+.campo .dica{display:block;text-transform:none;letter-spacing:0;font:400 11.5px var(--corpo);
+  color:var(--mut);margin:5px 0 0}
+.escolhido{background:var(--painel2);border:1px solid var(--linha);border-radius:12px;
+  padding:14px 16px;margin:0 0 20px;display:flex;justify-content:space-between;align-items:baseline}
+.escolhido b{font:400 24px/1 var(--disp);letter-spacing:.04em}
+.escolhido .valor{font:500 16px var(--mono)}
+.escolhido .porpeca{font:500 10.5px var(--mono);color:var(--mut);display:block;text-align:right}
+.acao{width:100%;background:var(--vinho);color:#fff;border:0;border-radius:999px;
+  padding:13px 18px;font:500 14px var(--corpo);cursor:pointer;margin-top:4px}
+.acao:disabled{opacity:.5;cursor:default}
+.erro{color:var(--err);font-size:13px;margin:12px 0 0;min-height:19px}
+.pe{color:var(--mut);font-size:12px;line-height:1.6;margin:18px 0 0;
+  border-top:1px solid var(--linha);padding-top:14px}
+.pe a{color:var(--rosa)}
+.esperando{display:none}
+.esperando.vale{display:block}
+.form.foi{display:none}
+.passos{list-style:none;margin:16px 0 0;padding:0;counter-reset:p}
+.passos li{counter-increment:p;position:relative;padding:0 0 12px 30px;color:var(--mut);font-size:13.5px}
+.passos li::before{content:counter(p);position:absolute;left:0;top:0;width:20px;height:20px;
+  border:1px solid var(--linha);border-radius:50%;display:grid;place-items:center;
+  font:500 10px var(--mono);color:var(--rosa)}
+</style>
+
+<div class="folha">
+  <img class="logo" src="/assets/replicai-horizontal-escuro.svg" alt="ReplicAI">
+
+  <div class="form" id="form">
+    <h1>Assinar</h1>
+    <p class="sub">O acesso é criado quando o pagamento for aprovado.</p>
+
+    <div class="escolhido" id="escolhido"><b>—</b><span class="valor">—</span></div>
+
+    <label class="campo"><span>Nome da agência</span>
+      <input id="empresa" autocomplete="organization" placeholder="Como aparece na nota"></label>
+
+    <label class="campo"><span>E-mail de quem vai usar</span>
+      <input id="email" type="email" autocomplete="email" placeholder="Para onde vai o acesso">
+      <small class="dica">É este e-mail que recebe o convite para criar a senha.</small></label>
+
+    <label class="campo"><span>CPF ou CNPJ</span>
+      <input id="doc" inputmode="numeric" placeholder="Só números">
+      <small class="dica">A nota fiscal exige.</small></label>
+
+    <label class="campo"><span>E-mail do financeiro (opcional)</span>
+      <input id="financeiro" type="email" placeholder="Para a nota e a cobrança">
+      <small class="dica">Deixe em branco se for o mesmo de cima.</small></label>
+
+    <label class="campo"><span>Como prefere pagar</span>
+      <select id="forma">
+        <option value="PIX">Pix</option>
+        <option value="CREDIT_CARD">Cartão de crédito</option>
+        <option value="BOLETO">Boleto</option>
+      </select>
+      <small class="dica">Você digita os dados na página do Asaas, que também emite a nota.</small></label>
+
+    <button class="acao" id="ir">Ir para o pagamento</button>
+    <p class="erro" id="erro"></p>
+  </div>
+
+  <div class="esperando" id="esperando">
+    <h1>Pagamento em andamento</h1>
+    <p class="sub">A assinatura foi aberta. O que acontece agora:</p>
+    <ol class="passos">
+      <li>Você paga na página do Asaas, que abriu em outra aba.</li>
+      <li>A confirmação chega na hora no Pix e no cartão; no boleto leva até um dia útil.</li>
+      <li>Aí sai o e-mail com o endereço do painel e um link para você criar sua senha.</li>
+    </ol>
+    <p class="pe">Nada é enviado antes da aprovação — e nenhum e-mail nosso leva senha
+      escrita, só um link de uso único com prazo de 48 horas.<br>
+      <span id="paraOnde"></span></p>
+  </div>
+
+  <p class="pe" id="pe">Já é cliente? <a href="/">Entrar no painel</a></p>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const dinheiro = v => (v || 0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+const qual = new URLSearchParams(location.search).get('plano') || '';
+let plano = null;
+
+(async () => {
+  let cat;
+  try { cat = await (await fetch('/planos')).json(); }
+  catch(e){ $('#erro').textContent = 'Não consegui ler os planos.'; return; }
+  plano = cat.planos.find(p => p.id === qual) || cat.planos[0];
+  const pp = plano.preco / plano.pecas;
+  $('#escolhido').innerHTML = `<b>${plano.nome}</b><span class="valor">`
+    + `${dinheiro(plano.preco)} <small>/mês</small>`
+    + `<span class="porpeca">${plano.pecas} peças · ${dinheiro(pp)} por peça</span></span>`;
+})();
+
+$('#ir').onclick = async () => {
+  const fd = new FormData();
+  fd.set('plano', plano ? plano.id : qual);
+  fd.set('empresa', $('#empresa').value.trim());
+  fd.set('email', $('#email').value.trim());
+  fd.set('cpf_cnpj', $('#doc').value.trim());
+  fd.set('email_financeiro', $('#financeiro').value.trim());
+  fd.set('forma', $('#forma').value);
+  if (!fd.get('empresa') || !fd.get('email') || !fd.get('cpf_cnpj')){
+    $('#erro').textContent = 'Preencha agência, e-mail e CPF ou CNPJ.'; return;
+  }
+  $('#ir').disabled = true; $('#erro').textContent = '';
+  let d;
+  try {
+    const r = await fetch('/assinatura', { method:'POST', body:fd });
+    d = await r.json();
+    if (!r.ok){ $('#erro').textContent = d.detail || 'Não deu para abrir a assinatura.';
+                $('#ir').disabled = false; return; }
+  } catch(e){ $('#erro').textContent = 'Não consegui falar com o servidor.';
+              $('#ir').disabled = false; return; }
+  // a página de pagamento abre em outra aba para esta continuar explicando o
+  // que vai acontecer: fechar a explicação junto com o clique deixa a pessoa
+  // sem saber que o acesso vem por e-mail
+  if (d.pagamento) window.open(d.pagamento, '_blank', 'noopener');
+  $('#form').classList.add('foi');
+  $('#esperando').classList.add('vale');
+  $('#paraOnde').textContent = d.pagamento
+    ? `O acesso vai para ${d.email}.`
+    : `O acesso vai para ${d.email}. A página de pagamento não abriu — a cobrança `
+      + `vai chegar por e-mail.`;
+};
+</script>
+</html>

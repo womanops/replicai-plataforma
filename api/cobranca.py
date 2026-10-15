@@ -9,10 +9,11 @@ A chamada HTTP entra de fora, como no adaptador do modelo. Assim a integração
 inteira é testável sem chave e sem rede, e trocar de meio de pagamento é
 trocar este arquivo.
 
-**O plano só vale enquanto está pago.** Quando a cobrança atrasa, a conta cai
-para o plano de teste em vez de ser bloqueada: ela continua alcançando o que
-já produziu, com a franquia pequena. Bloquear quem esqueceu o boleto é perder
-cliente por atrito.
+**O plano só vale enquanto está pago.** Quando a cobrança atrasa, a conta
+para de produzir depois da carência, mas continua baixando o que já produziu:
+a peça é dela e já foi paga, e servir arquivo não custa por unidade. Tirar da
+pessoa o que ela já fez é perder cliente por atrito — e a carência existe
+porque boleto compensa em dias úteis.
 """
 from __future__ import annotations
 
@@ -144,6 +145,26 @@ def assinar(conta, plano: str, forma: str = "PIX", cpf_cnpj: str = "") -> dict:
             "forma": forma}
 
 
+def onde_pagar(conta) -> str:
+    """O endereço da primeira cobrança da assinatura.
+
+    Sem isto a assinatura nascia no Asaas e o cliente não tinha para onde ir:
+    criar a cobrança e não dizer onde pagar é a definição de venda perdida. É
+    a página do Asaas que pede cartão ou mostra o Pix — dado de pagamento não
+    passa por aqui, e é de propósito.
+    """
+    if not conta.asaas_assinatura:
+        return ""
+    resposta = chamar("GET", f"/subscriptions/{conta.asaas_assinatura}/payments")
+    cobrancas = resposta.get("data") or []
+    if not cobrancas:
+        return ""
+    # a primeira em aberto; se todas estiverem pagas, a mais recente serve
+    # para o cliente ver o comprovante
+    aberta = next((c for c in cobrancas if c.get("status") == "PENDING"), cobrancas[0])
+    return aberta.get("invoiceUrl") or aberta.get("bankSlipUrl") or ""
+
+
 def cancelar(conta) -> bool:
     from api import contas
 
@@ -200,7 +221,8 @@ def aplicar_evento(corpo: dict) -> dict:
     """Lê um aviso do Asaas e ajusta o acesso da conta.
 
     Pagou: o plano pedido passa a valer, com validade até o próximo
-    vencimento. Atrasou: a conta cai para teste depois da carência.
+    vencimento. Atrasou: a conta fica marcada, e quando a validade passa ela
+    deixa de produzir — continuando a baixar o que já é dela.
     """
     from api import contas
 
@@ -216,19 +238,52 @@ def aplicar_evento(corpo: dict) -> dict:
         return {"feito": "sem dono", "evento": tipo}
 
     pagamento = corpo.get("payment") or {}
+    carta = {}
     if tipo in PAGOU:
         plano = conta.plano_pedido or conta.plano
+        estreia = not conta.senha        # nunca entrou: é a primeira aprovação
         conta.plano = plano
         conta.pago_ate = _ate(pagamento)
         conta.em_atraso = False
+        contas._gravar(conta)
+        if estreia:
+            carta = _mandar_o_acesso(conta, plano)
     elif tipo in PERDEU:
         conta.em_atraso = True
+        contas._gravar(conta)
+        carta = _avisar_do_atraso(conta, pagamento)
     else:
         return {"feito": "ignorado", "evento": tipo, "conta": conta.id}
 
-    contas._gravar(conta)
     return {"feito": "aplicado", "evento": tipo, "conta": conta.id,
-            "plano": conta.plano, "pago_ate": conta.pago_ate}
+            "plano": conta.plano, "pago_ate": conta.pago_ate,
+            **({"carta": carta} if carta else {})}
+
+
+def _mandar_o_acesso(conta, plano: str) -> dict:
+    """O acesso sai aqui, na aprovação do pagamento — nunca no clique.
+
+    Mandar antes seria dar sistema a quem não pagou; mandar na mão seria a
+    pessoa esperando pelo nosso horário comercial depois de já ter pago.
+    """
+    from api import contas, correio, uso
+
+    try:
+        convite = contas.novo_convite(conta, contas.DONO)
+        return correio.acesso_liberado(conta, convite, uso.limites(plano)["nome"])
+    except Exception as e:
+        # o acesso não sair não pode desfazer um pagamento aprovado: o Asaas
+        # reenviaria o evento para sempre. Fica registrado para socorro à mão
+        return {"enviado": False, "porque": f"{type(e).__name__}: {e}"}
+
+
+def _avisar_do_atraso(conta, pagamento: dict) -> dict:
+    from api import correio
+
+    try:
+        return correio.cobranca_atrasada(conta, (pagamento.get("dueDate") or "")[:10])
+    except Exception as e:
+        return {"enviado": False, "porque": f"{type(e).__name__}: {e}"}
 
 
 def _ate(pagamento: dict) -> str:

@@ -422,3 +422,56 @@ class TestOPacoteSoLevaAsPecas:
         from api.main import para_entregar
         itens = [{"nome": "coisa.png"}]
         assert para_entregar({"prontas": []}, itens) == itens
+
+
+class TestDuasPessoasNaMesmaPeca:
+    """No Agency são até três pessoas na mesma conta. Duas podem abrir a mesma
+    peça, e a última a salvar apagaria o trabalho da primeira em silêncio."""
+
+    def _com_peca(self, cliente):
+        return TestAjusteNaMao()._com_peca(cliente)
+
+    def test_salvar_sem_dizer_a_versao_continua_valendo(self, cliente):
+        """Quem integra pelo programa não tem editor aberto: exigir versão
+        quebraria a chave de API de quem já usa."""
+        job = self._com_peca(cliente)
+        r = cliente.post(f"/jobs/{job}/pecas/gdn-300x250", json={
+            "elementos": [{"i": 0, "box": {"x": 1, "y": 1, "w": 10, "h": 10}}]})
+        assert r.status_code == 202
+
+    def test_a_versao_sobe_a_cada_ajuste(self, cliente):
+        job = self._com_peca(cliente)
+        primeira = cliente.post(f"/jobs/{job}/pecas/gdn-300x250", json={
+            "elementos": [{"i": 0, "box": {"x": 1, "y": 1, "w": 10, "h": 10}}]}).json()
+        assert primeira["versao"] == 1
+        segunda = cliente.post(f"/jobs/{job}/pecas/gdn-300x250", json={
+            "elementos": [{"i": 0, "box": {"x": 2, "y": 2, "w": 10, "h": 10}}],
+            "versao": 1}).json()
+        assert segunda["versao"] == 2
+
+    def test_quem_abriu_antes_nao_apaga_o_trabalho_de_quem_salvou(self, cliente):
+        job = self._com_peca(cliente)
+        # as duas abrem a peça na versão 0
+        aberta = cliente.get(f"/jobs/{job}/pecas/gdn-300x250").json()
+        assert aberta.get("versao", 0) == 0
+        # a primeira salva
+        cliente.post(f"/jobs/{job}/pecas/gdn-300x250", json={
+            "elementos": [{"i": 0, "box": {"x": 40, "y": 90, "w": 120, "h": 50}}],
+            "versao": 0})
+        # a segunda tenta salvar com a versão que abriu
+        r = cliente.post(f"/jobs/{job}/pecas/gdn-300x250", json={
+            "elementos": [{"i": 0, "box": {"x": 5, "y": 5, "w": 20, "h": 20}}],
+            "versao": 0})
+        assert r.status_code == 409
+        assert "abra de novo" in r.json()["detail"].lower()
+        # e o ajuste da primeira continua lá
+        d = cliente.get(f"/jobs/{job}/pecas/gdn-300x250").json()
+        assert d["elementos"][0]["box"] == {"x": 40, "y": 90, "w": 120, "h": 50}
+
+    def test_a_peca_guarda_quem_ajustou(self, cliente):
+        job = self._com_peca(cliente)
+        cliente.post(f"/jobs/{job}/pecas/gdn-300x250", json={
+            "elementos": [{"i": 0, "box": {"x": 1, "y": 1, "w": 10, "h": 10}}]})
+        mao = cliente.get(f"/jobs/{job}/pecas/gdn-300x250").json()["mao"]
+        assert mao["nome"]
+        assert mao["quando"]

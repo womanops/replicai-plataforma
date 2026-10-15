@@ -71,10 +71,31 @@ class Conta:
     # as fontes da marca. Sem elas, trocar o texto de uma peça do PSD sai na
     # letra da casa — que é o erro mais difícil de ver no olho
     fontes: list[dict] = field(default_factory=list)
+    # as outras pessoas da agência, cada uma com o login dela. O dono não está
+    # aqui: ele é o `email`/`senha` da conta, e é a pessoa que não se remove
+    pessoas: list[dict] = field(default_factory=list)
+    # quem paga não é quem usa: em agência o financeiro recebe a nota e o
+    # diretor de arte recebe o acesso. Dois e-mails, dois assuntos
+    email_financeiro: str = ""
+    # convite do DONO: o acesso dele nasce sem senha e vem por e-mail quando o
+    # pagamento é aprovado. Guarda-se o resumo, nunca o convite em claro
+    convite: str = ""
+    convite_ate: str = ""
+    ultimo: str = ""               # quando o dono entrou pela última vez
 
-    def em_json(self) -> dict:
-        """Sem segredo: é isto que pode sair da API."""
+    def em_json(self, quem: str = "") -> dict:
+        """Sem segredo: é isto que pode sair da API.
+
+        `quem` é a pessoa da conta que está olhando — com várias pessoas no
+        mesmo acesso, a tela precisa saber dizer "você" para a pessoa certa.
+        """
+        eu = next((p for p in self.pessoas if p.get("id") == quem), None)
         return {"id": self.id, "nome": self.nome, "email": self.email,
+                "eu": {"id": quem or "dono",
+                       "nome": (eu or {}).get("nome") or self.nome,
+                       "email": (eu or {}).get("email") or self.email,
+                       "dono": quem in ("", "dono")},
+                "acessos": 1 + len(self.pessoas),
                 "criada": self.criada, "plano": self.plano, "ativa": self.ativa,
                 "pago_ate": self.pago_ate, "em_atraso": self.em_atraso,
                 "assinatura": bool(self.asaas_assinatura),
@@ -250,7 +271,10 @@ def _gravar(c: Conta) -> None:
                     "asaas_assinatura": c.asaas_assinatura,
                     "plano_pedido": c.plano_pedido, "pago_ate": c.pago_ate,
                     "em_atraso": c.em_atraso, "medidas": c.medidas,
-                    "fontes": c.fontes},
+                    "fontes": c.fontes, "pessoas": c.pessoas,
+                    "email_financeiro": c.email_financeiro,
+                    "convite": c.convite, "convite_ate": c.convite_ate,
+                    "ultimo": c.ultimo},
                    ensure_ascii=False, indent=1),
         encoding="utf-8")
 
@@ -291,8 +315,16 @@ def todas() -> list[Conta]:
 
 
 def por_email(email: str) -> Conta | None:
+    """A conta de quem usa este e-mail — dono ou qualquer pessoa dela.
+
+    Procurar só pelo dono deixava a pessoa convidada sem porta: ela digitava o
+    e-mail certo e ouvia que não existe conta.
+    """
     alvo = (email or "").strip().lower()
-    return next((c for c in todas() if c.email == alvo), None)
+    for c in todas():
+        if c.email == alvo or any(p.get("email") == alvo for p in c.pessoas):
+            return c
+    return None
 
 
 def _ident_de(nome: str, email: str) -> str:
@@ -316,16 +348,217 @@ def criar(nome: str, email: str, senha: str, plano: str = "sem") -> Conta:
     return c
 
 
-def autenticar(email: str, senha: str) -> Conta | None:
-    c = por_email(email)
+def entrar(email: str, senha: str) -> tuple[Conta, str] | None:
+    """Quem é a conta e QUAL PESSOA dela está entrando.
+
+    Saber a pessoa não é vaidade de registro: com três pessoas da agência
+    mexendo nas mesmas peças, "quem ajustou isto" é a primeira pergunta — e é
+    o que permite tirar o acesso de quem saiu sem trocar a senha dos outros.
+    """
+    alvo = (email or "").strip().lower()
+    c = por_email(alvo)
     if c is None:
         # gasta o mesmo tempo de uma conta que existe: responder rápido quando
         # o e-mail não existe conta quais e-mails existem
         _amassar(senha or "", b"0" * 16)
         return None
-    if not c.ativa or not conferir_senha(senha or "", c.senha):
+    if not c.ativa:
         return None
-    return c
+    for quem in logins(c):
+        if quem["email"] != alvo:
+            continue
+        if not quem["senha"] or not conferir_senha(senha or "", quem["senha"]):
+            return None
+        _marcar_entrada(c, quem["id"])
+        return c, quem["id"]
+    return None
+
+
+def autenticar(email: str, senha: str) -> Conta | None:
+    """A conta de quem entrou. `entrar()` diz também qual pessoa."""
+    r = entrar(email, senha)
+    return r[0] if r else None
+
+
+# ------------------------------------------------- as pessoas da agência
+
+DONO = "dono"
+CONVITE_VALE_HORAS = 48
+MIN_SENHA = 10
+
+
+def logins(conta: Conta) -> list[dict]:
+    """Todas as pessoas que podem entrar nesta conta, o dono primeiro.
+
+    O dono não vive na lista `pessoas`: ele é o e-mail e a senha da própria
+    conta, e é a pessoa que não se remove. Aqui os dois falam a mesma língua.
+    """
+    return [{"id": DONO, "nome": conta.nome, "email": conta.email,
+             "senha": conta.senha, "dono": True,
+             "convite": conta.convite, "convite_ate": conta.convite_ate,
+             "ultimo": conta.ultimo}] + [
+        {**p, "dono": False} for p in conta.pessoas]
+
+
+def pessoa_de(conta: Conta, quem: str) -> dict | None:
+    return next((q for q in logins(conta) if q["id"] == quem), None)
+
+
+def acessos_de(conta: Conta) -> int:
+    """Quantas pessoas a conta já tem, contando o dono."""
+    return 1 + len(conta.pessoas)
+
+
+def limite_de_acessos(conta: Conta) -> int:
+    from api import cobranca, uso
+    return uso.limites(cobranca.plano_valendo(conta)).get("acessos", 1)
+
+
+def _marcar_entrada(conta: Conta, quem: str) -> None:
+    """Guarda quando cada pessoa entrou pela última vez.
+
+    É o que responde "esse acesso ainda é usado?" na hora de convidar a quarta
+    pessoa numa conta de três.
+    """
+    agora = _agora()
+    if quem == DONO:
+        conta.ultimo = agora
+    else:
+        for p in conta.pessoas:
+            if p.get("id") == quem:
+                p["ultimo"] = agora
+    _gravar(conta)
+
+
+def _token() -> tuple[str, str]:
+    """Um convite e o resumo dele. Guarda-se o resumo: arquivo roubado não
+    abre conta de ninguém, como já é com a chave de API."""
+    bruto = secrets.token_urlsafe(32)
+    return bruto, _resumo(bruto)
+
+
+def _ate_daqui(horas: int = CONVITE_VALE_HORAS) -> str:
+    from datetime import timedelta
+    return (datetime.now(timezone.utc) + timedelta(hours=horas)).isoformat(
+        timespec="seconds")
+
+
+def convidar(conta: Conta, nome: str, email: str) -> tuple[dict, str]:
+    """Abre um acesso para mais uma pessoa da agência. Devolve o convite.
+
+    O convite é um endereço de uso único com prazo: a senha nasce escolhida
+    pela pessoa. Senha mandada por e-mail fica guardada para sempre em caixa de
+    entrada, telefone e backup de quem recebeu.
+    """
+    email = (email or "").strip().lower()
+    if not EMAIL.fullmatch(email):
+        raise ContaInvalida("e-mail inválido")
+    if por_email(email):
+        raise ContaInvalida("esse e-mail já tem acesso")
+    limite = limite_de_acessos(conta)
+    if not limite:
+        raise ContaInvalida("esta conta não tem plano ativo")
+    if acessos_de(conta) >= limite:
+        raise ContaInvalida(
+            f"o plano permite {limite} "
+            f"{'pessoa' if limite == 1 else 'pessoas'} e já são {acessos_de(conta)}. "
+            "Remova um acesso ou suba de plano")
+    bruto, resumo = _token()
+    pessoa = {"id": f"p-{secrets.token_hex(3)}", "nome": (nome or "").strip() or email,
+              "email": email, "senha": "", "criada": _agora(),
+              "convite": resumo, "convite_ate": _ate_daqui(), "ultimo": ""}
+    conta.pessoas.append(pessoa)
+    _gravar(conta)
+    return pessoa, bruto
+
+
+def remover_pessoa(conta: Conta, quem: str) -> bool:
+    """Tira o acesso de quem saiu da agência. O dono não se remove."""
+    if quem == DONO:
+        raise ContaInvalida("o acesso do dono da conta não se remove")
+    antes = len(conta.pessoas)
+    conta.pessoas = [p for p in conta.pessoas if p.get("id") != quem]
+    if len(conta.pessoas) == antes:
+        return False
+    _gravar(conta)
+    return True
+
+
+def novo_convite(conta: Conta, quem: str = DONO) -> str:
+    """Um convite novo para quem ainda não entrou — ou esqueceu a senha."""
+    bruto, resumo = _token()
+    if quem == DONO:
+        conta.convite, conta.convite_ate = resumo, _ate_daqui()
+    else:
+        p = next((p for p in conta.pessoas if p.get("id") == quem), None)
+        if p is None:
+            raise ContaInvalida("essa pessoa não está na conta")
+        p["convite"], p["convite_ate"] = resumo, _ate_daqui()
+    _gravar(conta)
+    return bruto
+
+
+def _vencido(ate: str) -> bool:
+    try:
+        return datetime.fromisoformat(ate) < datetime.now(timezone.utc)
+    except (TypeError, ValueError):
+        return True
+
+
+def dono_do_convite(bruto: str) -> tuple[Conta, dict] | None:
+    """De quem é este convite, se ainda vale."""
+    resumo = _resumo(bruto or "")
+    if not bruto:
+        return None
+    for c in todas():
+        for quem in logins(c):
+            if quem.get("convite") and hmac.compare_digest(quem["convite"], resumo):
+                if _vencido(quem.get("convite_ate", "")):
+                    return None
+                return c, quem
+    return None
+
+
+def definir_senha(bruto: str, senha: str) -> tuple[Conta, str] | None:
+    """Usa o convite para criar a senha. O convite morre aqui."""
+    achado = dono_do_convite(bruto)
+    if achado is None:
+        return None
+    conta, quem = achado
+    if len(senha or "") < MIN_SENHA:
+        raise ContaInvalida(f"a senha precisa de pelo menos {MIN_SENHA} caracteres")
+    amassada = _amassar(senha, secrets.token_bytes(16))
+    if quem["id"] == DONO:
+        conta.senha, conta.convite, conta.convite_ate = amassada, "", ""
+    else:
+        for p in conta.pessoas:
+            if p.get("id") == quem["id"]:
+                p["senha"], p["convite"], p["convite_ate"] = amassada, "", ""
+    _gravar(conta)
+    return conta, quem["id"]
+
+
+def nascer_da_assinatura(empresa: str, email: str, plano_pedido: str,
+                         financeiro: str = "") -> tuple[Conta, str]:
+    """A conta que nasce de uma contratação, antes de o pagamento ser aprovado.
+
+    Nasce **sem senha e sem plano**: existe para a cobrança ter dono e para o
+    aviso de pagamento ter onde chegar. Quem libera é o aviso do meio de
+    pagamento, e é ele que dispara o convite de acesso.
+    """
+    email = (email or "").strip().lower()
+    financeiro = (financeiro or "").strip().lower()
+    if not EMAIL.fullmatch(email):
+        raise ContaInvalida("e-mail inválido")
+    if financeiro and not EMAIL.fullmatch(financeiro):
+        raise ContaInvalida("e-mail do financeiro inválido")
+    if por_email(email):
+        raise ContaInvalida("já existe conta com esse e-mail")
+    c = Conta(id=_ident_de(empresa, email), nome=(empresa or "").strip() or email,
+              email=email, criada=_agora(), plano="sem", senha="",
+              email_financeiro=financeiro, plano_pedido=plano_pedido)
+    _gravar(c)
+    return c, novo_convite(c, DONO)
 
 
 # ----------------------------------------------------------------- chaves
@@ -417,22 +650,25 @@ def segredo_configurado() -> bool:
     return bool(os.environ.get("REPLICAI_SEGREDO"))
 
 
-def selar(conta_id: str) -> str:
-    """Um selo de sessão: quem é, até quando, e a assinatura disso."""
+def selar(conta_id: str, quem: str = "dono") -> str:
+    """Um selo de sessão: a conta, a pessoa, até quando, e a assinatura disso.
+
+    A pessoa entra no selo porque é o que permite dizer quem ajustou cada peça
+    sem perguntar de novo a cada requisição.
+    """
     ate = int(datetime.now(timezone.utc).timestamp()) + SELO_VALE
-    corpo = f"{conta_id}:{ate}"
+    corpo = f"{conta_id}:{quem}:{ate}"
     assinatura = hmac.new(_segredo(), corpo.encode(), hashlib.sha256).hexdigest()
     return f"{corpo}:{assinatura}"
 
 
-def abrir_selo(selo: str) -> str | None:
-    """Devolve a conta do selo, ou nada. Assinatura conferida antes da data:
-    selo forjado não merece nem a conta de prazo."""
+def abrir(selo: str) -> tuple[str, str] | None:
+    """Devolve (conta, pessoa) do selo, ou nada."""
     try:
-        conta_id, ate, assinatura = (selo or "").rsplit(":", 2)
+        conta_id, quem, ate, assinatura = (selo or "").rsplit(":", 3)
     except ValueError:
         return None
-    esperado = hmac.new(_segredo(), f"{conta_id}:{ate}".encode(),
+    esperado = hmac.new(_segredo(), f"{conta_id}:{quem}:{ate}".encode(),
                         hashlib.sha256).hexdigest()
     if not hmac.compare_digest(assinatura, esperado):
         return None
@@ -441,4 +677,13 @@ def abrir_selo(selo: str) -> str | None:
             return None
     except ValueError:
         return None
-    return conta_id
+    return conta_id, quem
+
+
+def abrir_selo(selo: str) -> str | None:
+    """Devolve a conta do selo, ou nada. Assinatura conferida antes da data:
+    selo forjado não merece nem a conta de prazo."""
+    aberto = abrir(selo)
+    return aberto[0] if aberto else None
+
+

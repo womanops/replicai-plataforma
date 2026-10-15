@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pt-BR">
+<meta charset="utf-8">
+<title>Criar senha · ReplicAI</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="/assets/replicai-favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0E0A0C; --painel:#160F12; --painel2:#1E1518; --fgRGB:245,236,233;
+  --fg:#F5ECE9; --mut:rgba(var(--fgRGB),.58); --linha:rgba(var(--fgRGB),.13);
+  --vinho:#8E2459; --rosa:#E8B4C8; --sinal:#B6FF3C; --err:#FF5A5A;
+  --disp:'Bebas Neue',sans-serif; --corpo:'Space Grotesk',system-ui,sans-serif;
+  --mono:'JetBrains Mono',monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:400 15px/1.5 var(--corpo);
+  -webkit-font-smoothing:antialiased;display:grid;place-items:center;min-height:100vh;padding:24px}
+.folha{width:100%;max-width:420px;background:var(--painel);border:1px solid var(--linha);
+  border-radius:18px;padding:30px}
+img.logo{height:30px;display:block;margin:0 0 16px}
+h1{font:400 34px/1 var(--disp);letter-spacing:.04em;margin:0 0 4px}
+.sub{color:var(--mut);font-size:13.5px;margin:0 0 22px}
+.campo{display:block;margin:0 0 14px}
+.campo span{display:block;font:500 10.5px var(--mono);letter-spacing:.12em;
+  text-transform:uppercase;color:var(--mut);margin:0 0 6px}
+.campo input{width:100%;background:var(--painel2);color:var(--fg);
+  border:1px solid var(--linha);border-radius:10px;padding:11px 12px;
+  font:400 14.5px var(--corpo)}
+.campo input:focus{outline:2px solid var(--rosa);outline-offset:1px}
+.forca{display:flex;gap:4px;margin:8px 0 0}
+.forca i{height:3px;flex:1;background:var(--linha);border-radius:2px}
+.forca i.ok{background:var(--sinal)}
+.acao{width:100%;background:var(--vinho);color:#fff;border:0;border-radius:999px;
+  padding:13px 18px;font:500 14px var(--corpo);cursor:pointer;margin-top:6px}
+.acao:disabled{opacity:.5;cursor:default}
+.erro{color:var(--err);font-size:13px;margin:12px 0 0;min-height:19px}
+.pe{color:var(--mut);font-size:12px;line-height:1.6;margin:18px 0 0;
+  border-top:1px solid var(--linha);padding-top:14px}
+.pe a{color:var(--rosa)}
+</style>
+
+<div class="folha">
+  <img class="logo" src="/assets/replicai-horizontal-escuro.svg" alt="ReplicAI">
+  <h1>Crie sua senha</h1>
+  <p class="sub" id="sub">Este link vale uma vez só.</p>
+
+  <label class="campo"><span>Senha</span>
+    <input id="senha" type="password" autocomplete="new-password">
+    <div class="forca" id="forca"><i></i><i></i><i></i><i></i></div></label>
+
+  <label class="campo"><span>Repita a senha</span>
+    <input id="senha2" type="password" autocomplete="new-password"></label>
+
+  <button class="acao" id="ok">Criar senha e entrar</button>
+  <p class="erro" id="erro"></p>
+  <p class="pe">Pelo menos 10 caracteres. Se o link já tiver vencido, peça outro a
+    quem administra a conta da sua agência.</p>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const convite = new URLSearchParams(location.search).get('convite') || '';
+if (!convite){
+  $('#sub').textContent = 'Este endereço precisa vir do link do e-mail.';
+  $('#ok').disabled = true;
+}
+
+// quatro riscos, não uma nota: a pessoa vê o que falta sem ser repreendida
+const mede = s => [s.length >= 10, s.length >= 14, /[^a-zA-Z]/.test(s),
+                   /[a-z]/.test(s) && /[A-Z]/.test(s)].filter(Boolean).length;
+$('#senha').oninput = () => {
+  const n = mede($('#senha').value);
+  document.querySelectorAll('#forca i').forEach((el, i) => el.classList.toggle('ok', i < n));
+};
+
+$('#ok').onclick = async () => {
+  const senha = $('#senha').value, senha2 = $('#senha2').value;
+  if (senha.length < 10){ $('#erro').textContent = 'A senha precisa de pelo menos 10 caracteres.'; return; }
+  if (senha !== senha2){ $('#erro').textContent = 'As duas senhas não são iguais.'; return; }
+  $('#ok').disabled = true; $('#erro').textContent = '';
+  const fd = new FormData();
+  fd.set('convite', convite); fd.set('senha', senha);
+  try {
+    const r = await fetch('/senha', { method:'POST', body:fd });
+    if (!r.ok){
+      const d = await r.json().catch(() => ({}));
+      $('#erro').textContent = d.detail || 'Não deu para criar a senha.';
+      $('#ok').disabled = false; return;
+    }
+  } catch(e){ $('#erro').textContent = 'Não consegui falar com o servidor.';
+              $('#ok').disabled = false; return; }
+  // o /senha já devolve a sessão: entra direto, sem pedir o que acabou de ser criado
+  location.href = '/';
+};
+</script>
+</html>

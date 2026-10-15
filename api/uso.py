@@ -142,12 +142,18 @@ def meses(conta: str) -> list[str]:
 # `sem` não é um degrau da escada — é o estado de quem ainda não contratou ou
 # deixou de pagar. Com ele a produção para, em vez de cair caladamente para
 # uma franquia de brinde.
+# `acessos` é quantas PESSOAS da agência podem entrar, cada uma com o login
+# dela. Senha compartilhada parecia mais simples e não é: o celular de alguém
+# consome um lugar, quem sai da agência obriga todo mundo a trocar de senha, e
+# ninguém sabe quem ajustou qual peça — com três pessoas mexendo, isso deixa de
+# ser detalhe. O degrau de pessoas acompanha o de volume: 600 peças por mês não
+# cabem numa cabeça só.
 PLANOS = {
-    "sem":        {"pecas": 0,    "videos": 0,   "nome": "Sem plano"},
-    "basic":      {"pecas": 80,   "videos": 8,   "nome": "Basic"},
-    "freelancer": {"pecas": 250,  "videos": 25,  "nome": "Freelancer"},
-    "studio":     {"pecas": 600,  "videos": 60,  "nome": "Studio"},
-    "agency":     {"pecas": 1200, "videos": 120, "nome": "Agency"},
+    "sem":        {"pecas": 0,    "videos": 0,   "acessos": 0, "nome": "Sem plano"},
+    "basic":      {"pecas": 80,   "videos": 8,   "acessos": 1, "nome": "Basic"},
+    "freelancer": {"pecas": 250,  "videos": 25,  "acessos": 1, "nome": "Freelancer"},
+    "studio":     {"pecas": 600,  "videos": 60,  "acessos": 2, "nome": "Studio"},
+    "agency":     {"pecas": 1200, "videos": 120, "acessos": 3, "nome": "Agency"},
 }
 PLANO_PADRAO = "sem"
 
