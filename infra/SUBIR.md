@@ -32,6 +32,38 @@ Localização: **Brasil ou leste dos Estados Unidos**. O cliente sobe arquivos d
 centenas de MB, e a distância aparece no tempo de upload — não na velocidade de
 render.
 
+### Começar com 8 GB
+
+Faz sentido quando ainda não se sabe a que velocidade a carteira cresce — que é
+o caso. O plano de 8 GB do ServerSP (4 vCPU, 8 GB, **100 GB**) sai por
+**R$ 125/mês** no mensal, contra R$ 249 do de 16 GB.
+
+**Duas condições**, as duas medidas:
+
+1. **`REPLICAI_WORKERS=1` no `.env`.** Com 8 GB, dois workers abrindo PSD ao
+   mesmo tempo chegam a 7,3 GB e o sistema vai para o swap — a peça passa a
+   demorar mais do que se tivesse simplesmente esperado na fila. Com um worker,
+   o pico é de 5,3 GB e sobra folga. O custo é que dois trabalhos não correm em
+   paralelo: o segundo espera um ou dois minutos.
+2. **Confirmar antes de assinar que dá para crescer sem recriar a máquina** —
+   disco e memória. É o que torna começar pequeno uma decisão barata em vez de
+   uma dívida.
+
+**Até quando os 100 GB duram**, pelos números medidos (2,41 MB por peça
+entregue, para sempre; 160 MB de bruto por trabalho com PSD, por 30 dias):
+
+| carteira | peças/mês | enche em |
+|---|---|---|
+| 2 Freelancer | 500 | mais de 3 anos |
+| 3 Freelancer | 750 | mais de 3 anos |
+| 5 Freelancer | 1.250 | 22 meses |
+| 2 Studio | 1.200 | 23 meses |
+| 10 Freelancer | 2.500 | **7 meses** |
+
+Ou seja: até quatro ou cinco clientes, 100 GB está confortável. O aviso de disco
+avisa com semanas de antecedência quando for hora de crescer, e crescer é
+aumentar o disco — não trocar de máquina.
+
 ### Onde contratar — comparação de 15/10/2026
 
 Na mesma configuração de 8 vCPU e 16 GB:
@@ -250,7 +282,46 @@ metade o que fica em trânsito.
 
 ---
 
-## 10. Backup
+## 10. Backup — e por que são dois
+
+| | o que salva | de quê | com que frequência |
+|---|---|---|---|
+| **do ServerSP** (R$ 25/mês) | a máquina inteira | disco que morreu, sistema quebrado | **semanal** |
+| **a cópia diária** (`api/copia.py`) | o trabalho entregue e as contas | engano, apagão, máquina perdida | **diária, fora do servidor** |
+
+O do provedor é semanal: um problema na quinta perde o que foi feito desde
+domingo. Numa agência que produz 250 peças por mês, isso é uma semana de
+trabalho que ninguém tem como devolver — o cliente pagou por ela.
+
+**A cópia diária leva o mesmo que a faxina guarda**: as contas e, de cada
+trabalho, as peças entregues, os vídeos, a apresentação e os JSONs da montagem.
+O material bruto fica de fora de propósito: ele já tem prazo de 30 dias e é 85%
+do disco. Numa carteira real medida aqui, o pacote deu 57 MB com 126 arquivos.
+
+Ela sai para armazenamento de objetos — **fora do servidor**, porque cópia no
+mesmo disco não protege do caso que importa, que é a máquina morrer. Serve
+qualquer um que fale S3: Magalu Object Storage (em real, com nota fiscal),
+Cloudflare R2, Backblaze B2, AWS. No volume esperado custa poucos reais por mês.
+Preencha `REPLICAI_COPIA_*` no `.env`; sem isso **nenhuma cópia acontece** e
+`/saude` diz `"copia": "desligada"`.
+
+Para ver o que entraria, antes de ligar o armazenamento:
+
+```bash
+docker compose -f infra/docker-compose.yml run --rm copia python -m api.copia --sem-enviar
+```
+
+**Restaurar** é descompactar por cima da pasta de dados — os caminhos do pacote
+já são relativos a ela, para não haver adivinhação na pior hora:
+
+```bash
+# com a api parada
+docker compose -f infra/docker-compose.yml stop api worker worker-video
+tar xzf replicai-2026-10-16.tar.gz -C /dados
+docker compose -f infra/docker-compose.yml start api worker worker-video
+```
+
+## 11. Backup do volume, na mão
 
 O que não pode sumir é um volume só, o `dados`: contas, trabalhos e entregas.
 

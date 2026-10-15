@@ -11,7 +11,7 @@ está marcado como **premissa** é o que ainda espera confirmação de alguém.
 | # | O quê | Para quê | Custo | Hoje |
 |---|---|---|---|---|
 | 1 | **Servidor** ServerSP Cloud VPS 16GB SP, São Paulo | onde tudo roda | **R$ 249/mês** | **falta contratar** |
-| 2 | **Domínio** + **backup diário** | o endereço, e o que salva o disco | **R$ 55/mês** (premissa do backup) | **falta contratar** |
+| 2 | **Domínio** + **backup semanal** | o endereço, e o que salva a máquina | **R$ 30/mês** (R$ 5 + R$ 25, conferido) | **falta contratar** |
 | 3 | **Certificado HTTPS** | sem ele a senha trafega legível | grátis (Let's Encrypt) | pronto no contêiner |
 | 4 | **Anthropic** | compõe a peça | US$ 0,039/peça | **ligado** |
 | 5 | **Higgsfield** | continua o desenho do fundo | 2,80 créditos/fundo | **ligado** |
@@ -20,10 +20,11 @@ está marcado como **premissa** é o que ainda espera confirmação de alguém.
 | 8 | **Segredo da sessão** (`REPLICAI_SEGREDO`) | sem ele, reiniciar desloga todo mundo | grátis | **falta gerar** |
 | 9 | **Token de administração** (`REPLICAI_ADMIN_TOKEN`) | criar conta na mão | grátis | **falta gerar** |
 | 10 | **Aviso de disco** (`REPLICAI_AVISO_PARA`) | o disco avisa antes de encher | grátis | **falta o seu e-mail** |
-| 11 | Redis (fila) | peça e vídeo em filas próprias | grátis, no contêiner | pronto |
-| 12 | Fontes da marca | tipografia igual à da arte | grátis, pasta montada | pronto |
+| 11 | **Cópia diária** (`REPLICAI_COPIA_*`) | o backup do provedor é semanal; isto salva o trabalho entregue | poucos reais/mês | **falta o armazenamento** |
+| 12 | Redis (fila) | peça e vídeo em filas próprias | grátis, no contêiner | pronto |
+| 13 | Fontes da marca | tipografia igual à da arte | grátis, pasta montada | pronto |
 
-**Custo fixo: R$ 304/mês.** É o que sai do caixa com zero cliente.
+**Custo fixo: R$ 279/mês.** É o que sai do caixa com zero cliente.
 
 O passo a passo de cada ligação está em [`infra/SUBIR.md`](infra/SUBIR.md).
 
@@ -62,7 +63,7 @@ o uso; o imposto e o gateway são percentuais do que o cliente paga.
 | imposto (Simples 8%) | R$ 71,20 | 8,0% |
 | meio de pagamento (Asaas 2%) | R$ 17,80 | 2,0% |
 | **sobra** | **R$ 744,14** | **83,6%** |
-| sobra depois do custo fixo do mês | R$ 440,14 | |
+| sobra depois do custo fixo do mês | R$ 465,14 | |
 
 ### Freelancer · R$ 1.990 · 250 peças
 
@@ -73,7 +74,7 @@ o uso; o imposto e o gateway são percentuais do que o cliente paga.
 | imposto (Simples 8%) | R$ 159,20 | 8,0% |
 | meio de pagamento (Asaas 2%) | R$ 39,80 | 2,0% |
 | **sobra** | **R$ 1.613,33** | **81,1%** |
-| sobra depois do custo fixo do mês | R$ 1.309,33 | |
+| sobra depois do custo fixo do mês | R$ 1.334,33 | |
 
 ### Studio · R$ 4.490 · 600 peças
 
@@ -84,7 +85,7 @@ o uso; o imposto e o gateway são percentuais do que o cliente paga.
 | imposto (Simples 8%) | R$ 359,20 | 8,0% |
 | meio de pagamento (Asaas 2%) | R$ 89,80 | 2,0% |
 | **sobra** | **R$ 3.614,58** | **80,5%** |
-| sobra depois do custo fixo do mês | R$ 3.310,58 | |
+| sobra depois do custo fixo do mês | R$ 3.335,58 | |
 
 ### Agency · R$ 8.530 · 1.200 peças
 
@@ -95,13 +96,13 @@ o uso; o imposto e o gateway são percentuais do que o cliente paga.
 | imposto (Simples 8%) | R$ 682,40 | 8,0% |
 | meio de pagamento (Asaas 2%) | R$ 170,60 | 2,0% |
 | **sobra** | **R$ 6.824,17** | **80,0%** |
-| sobra depois do custo fixo do mês | R$ 6.520,17 | |
+| sobra depois do custo fixo do mês | R$ 6.545,17 | |
 
 **O que esses números dizem.** O custo de produzir é a menor parte de tudo:
 entre 6% e 10% do que o cliente paga, mesmo quando ele usa a franquia inteira.
 O imposto custa mais que o modelo e o fundo somados em todos os planos — por
 isso a alíquota é o número mais importante a confirmar aqui, e não o preço da
-peça. E o custo fixo do mês some: ele pesa 34% no Basic e 4% no Agency, o que é
+peça. E o custo fixo do mês some: ele pesa 37% no Basic e 4% no Agency, o que é
 outra forma de dizer que o primeiro cliente paga a casa.
 
 **Os vídeos não aparecem** porque não custam dinheiro por unidade: animam uma
@@ -174,7 +175,7 @@ coisa que o cliente descobre no extrato.
 | o quê | quem | o que muda |
 |---|---|---|
 | alíquota do Simples (hoje 8%) | contabilidade | um número em `api/precos.py`, e todos os planos se recalculam |
-| custo do backup diário (hoje R$ 55 com o domínio) | ServerSP | o custo fixo, não o preço dos planos |
+| cópia diária do que é dos clientes | decisão sua | o backup do ServerSP é SEMANAL: uma semana de trabalho entregue pode se perder |
 | contratar servidor e domínio | você | tira o sistema do seu computador |
 | conta no Resend e domínio verificado | você | sem isso o cliente paga e **não recebe acesso** |
 | chaves do Asaas de produção | você | sem isso ninguém assina |

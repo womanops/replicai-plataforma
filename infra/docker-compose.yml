@@ -87,7 +87,11 @@ services:
     depends_on:
       - redis
     deploy:
-      replicas: 2
+      # Quantos workers de peça. Numa máquina de 8 GB é **1**: dois abrindo PSD
+      # ao mesmo tempo chegam a 7,3 GB e o sistema começa a usar swap, que é
+      # quando a peça demora mais do que se ela tivesse esperado na fila. Com
+      # 16 GB, 2 é o número — e é o padrão.
+      replicas: ${REPLICAI_WORKERS:-2}
 
   worker-video:
     build:
@@ -127,6 +131,25 @@ services:
     environment:
       STORAGE_DIR: /dados
       REPLICAI_FAXINA_DIAS: ${REPLICAI_FAXINA_DIAS:-30}
+    volumes:
+      - dados:/dados
+
+  # A cópia diária do que é dos clientes, mandada para FORA do servidor. O
+  # backup do provedor é semanal e salva a máquina; isto salva o trabalho
+  # entregue, que é o que o cliente pagou e não tem como ser refeito.
+  #
+  # Serviço à parte da faxina de propósito: a faxina apaga e esta guarda. Uma
+  # parada não pode parar a outra — e a hora de descobrir que a cópia não
+  # acontece não pode ser a hora de precisar dela.
+  copia:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    command: sh -c 'while true; do python -m api.copia; sleep 86400; done'
+    env_file:
+      - ../.env
+    environment:
+      STORAGE_DIR: /dados
     volumes:
       - dados:/dados
 

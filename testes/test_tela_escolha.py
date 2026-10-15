@@ -50,15 +50,22 @@ class TestEscolherPorCanal:
         # a única limpeza do atalho de canal é a do botão de limpar, e ela é
         # explícita. Fora dele há outra, em `reabrir`, que troca a escolha
         # pela da campanha que está sendo aberta — essa é outra história
-        assert "if (!canal){ filtro.length = 0; escolhidos.clear(); }" in tela
+        assert "else if (!canal){ filtro.length = 0; escolhidos.clear(); }" in tela
         atalho = tela.split("function pintarCanais(){")[1].split("function pintarFormatos(")[0]
         assert atalho.count("escolhidos.clear()") == 1
 
-    def test_o_canal_tambem_filtra_o_que_esta_a_vista(self, tela):
-        """"Ao clicar num canal, apenas ele fica visível e no topo, como um
-        filtro mesmo; conforme vai clicando em outros, aparecem apenas os
-        selecionados em vez de ficar aquela lista enorme." """
-        assert "const canais = filtro.length ? filtro.filter(c => m[c]) : Object.keys(m);" in tela
+    def test_a_grade_nasce_fechada(self, tela):
+        """"Nenhuma lista de formatos fica aberta como padrão: ela aparece
+        conforme o usuário clica nos canais." Cinquenta retângulos na cara de
+        quem ainda vai decidir onde a peça roda é lista que ninguém lê."""
+        assert ": filtro.filter(c => m[c]);" in tela
+        assert "Escolha um canal acima para " in tela
+
+    def test_com_trabalho_na_tela_a_grade_mostra_o_que_foi_pedido(self, tela):
+        """A mesma grade vira o resultado. Fechada ali, a pessoa encomendaria
+        vinte peças e ficaria olhando para o nada."""
+        assert "const canais = job" in tela
+        assert "(m[c] || []).some(f => escolhidos.has(f.id))" in tela
 
     def test_o_filtro_guarda_a_ordem_dos_cliques(self, tela):
         """Quem clicou em LinkedIn depois de Instagram espera o LinkedIn
@@ -66,8 +73,16 @@ class TestEscolherPorCanal:
         assert "filtro.push(canal)" in tela
         assert "const filtro = [];" in tela
 
-    def test_da_para_voltar_a_ver_tudo(self, tela):
-        assert "'ver tudo' : 'limpar'" in tela
+    def test_ver_tudo_abre_e_limpar_fecha(self, tela):
+        """Eram o mesmo botão quando a grade nascia aberta, e aí "ver tudo"
+        queria dizer "fechar o filtro" — o contrário do que está escrito."""
+        assert 'data-canal="*">ver tudo' in tela
+        assert "filtro.push(...Object.keys(porCanal()))" in tela
+        assert 'data-canal="">limpar' in tela
+
+    def test_a_medida_livre_abre_o_canal_dela(self, tela):
+        """A grade fechada esconderia a medida que a pessoa acabou de guardar."""
+        assert "if (!filtro.includes(CANAL_MEU)) filtro.push(CANAL_MEU);" in tela
 
     def test_clicar_de_novo_desmarca_so_aquele_canal(self, tela):
         assert "const inteiro = fs.every(f => escolhidos.has(f.id));" in tela
@@ -99,8 +114,10 @@ class TestMedidaGuardada:
         assert "method: 'DELETE'" in tela
         assert "Tirar das minhas medidas" in tela
 
-    def test_a_medida_nova_nao_nasce_escondida_atras_do_filtro(self, tela):
-        assert "if (filtro.length && !filtro.includes(CANAL_MEU)) filtro.push(CANAL_MEU);" in tela
+    def test_a_medida_nova_nao_nasce_escondida(self, tela):
+        """Com a grade nascendo fechada, guardar uma medida sem abrir o canal
+        dela seria guardar no escuro."""
+        assert "if (!filtro.includes(CANAL_MEU)) filtro.push(CANAL_MEU);" in tela
 
 
 class TestVerAPecaPronta:

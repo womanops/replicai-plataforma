@@ -267,9 +267,22 @@ class TestOEnvDeExemplo:
                                         arq.read_text(encoding="utf-8")))
         return nomes
 
+    # lidas pelo compose, não pelo código: o Caddy pega o domínio e o compose
+    # decide quantos workers sobem. Ficam de fora da conta, mas têm que estar
+    # escritas em algum lugar — por isso o teste seguinte
+    DO_COMPOSE = {"DOMINIO", "REPLICAI_WORKERS"}
+
     def test_o_exemplo_nao_promete_o_que_ninguem_le(self):
-        fora = self._exemplo() - self._lidas() - {"DOMINIO"}   # DOMINIO é do Caddy
+        fora = self._exemplo() - self._lidas() - self.DO_COMPOSE
         assert not fora, f"prometido no .env.example e nunca lido: {sorted(fora)}"
+
+    def test_as_do_compose_existem_mesmo_no_compose(self, compose):
+        """A exceção não pode virar porta dos fundos: o que entra nela tem que
+        ser lido pelo compose de verdade."""
+        from pathlib import Path
+        caddy = (RAIZ / "infra" / "Caddyfile").read_text(encoding="utf-8")
+        for nome in self.DO_COMPOSE:
+            assert f"${{{nome}" in compose or f"${{{nome}" in caddy, nome
 
     def test_as_obrigatorias_estao_no_exemplo(self):
         assert {"ANTHROPIC_API_KEY", "REPLICAI_SEGREDO", "ASAAS_API_KEY",

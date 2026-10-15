@@ -51,11 +51,13 @@ MARGEM_ALVO = 0.80             # margem com o cliente usando a franquia inteira
 # NVMe em São Paulo. Preço conferido em 15/10/2026 — a comparação com Vultr e
 # Magalu está em `infra/SUBIR.md`
 SERVIDOR_MES = 249.0
-# domínio (~R$ 50/ano no Registro.br) e backup diário do servidor. O backup é
-# PREMISSA até o ServerSP cotar: é o único número aqui que não foi conferido.
+# domínio (~R$ 50/ano no Registro.br, R$ 5/mês) e backup do servidor (R$ 25,
+# conferido com o ServerSP em 16/10/2026 — e é SEMANAL, não diário, o que não
+# protege o trabalho entregue de um cliente: a cópia diária do que é dos
+# clientes é assunto à parte, e ainda não existe).
 # O envio de e-mail (Resend) não entra: até 3 mil e-mails por mês é de graça, e
 # o acesso de um cliente são dois ou três e-mails no mês inteiro
-FERRAMENTAS_MES = 55.0
+FERRAMENTAS_MES = 30.0
 ATENDIMENTO_MES = 0.0          # o tempo de quem atende, se você quiser vê-lo
                                # aqui como linha. Fica em zero porque a margem
                                # é o que paga esse tempo — somar aqui e pedir

@@ -649,6 +649,9 @@ def saude():
             # disco cheio não deixa lento: para a produção. A previsão vale
             # mais que a porcentagem — "72%" não move ninguém
             "disco": _disco_em_json(),
+            # cópia que ninguém sabe que não está acontecendo é pior do que
+            # nenhuma: o dia de descobrir seria o dia de precisar dela
+            "copia": __import__("api.copia", fromlist=["copia"]).em_json(),
             # e-mail que não sai é acesso que não chega: o cliente paga e
             # fica esperando uma carta que foi gravada num arquivo
             "correio": "configurado" if correio.configurado()

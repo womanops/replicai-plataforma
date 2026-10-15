@@ -181,6 +181,36 @@ def disco_apertando(medida: dict, nivel: str, previsao: dict) -> dict:
     return enviar(para, f"ReplicAI: disco em {nivel} ({medida['cheio']:.0%})", texto)
 
 
+def copia_mudou(estado: dict) -> dict:
+    """A cópia diária quebrou — ou voltou. Vai para quem opera.
+
+    Só nas mudanças: carta diária dizendo "falhou de novo" vira carta que
+    ninguém lê, e a que avisa que voltou evita alguém mexer no que já está
+    consertado.
+    """
+    from api import disco
+
+    para = disco.para_quem()
+    if not para:
+        return {"enviado": False, "porque": "REPLICAI_AVISO_PARA não está configurado"}
+
+    if estado.get("ok"):
+        texto = ("A cópia diária da ReplicAI voltou a funcionar.\n\n"
+                 f"Última: {estado.get('arquivos')} arquivos, "
+                 f"{estado.get('tamanho_mb')} MB, em {estado.get('quando')}.")
+        return enviar(para, "ReplicAI: a cópia diária voltou", texto)
+
+    texto = (
+        "A cópia diária da ReplicAI NÃO está sendo feita.\n\n"
+        f"Motivo: {estado.get('porque')}\n"
+        f"Quando: {estado.get('quando')}\n\n"
+        "Enquanto isso, o que protege o trabalho entregue dos clientes é só o "
+        "backup do provedor, que é semanal: um problema hoje perde o que foi "
+        "feito desde a última cópia dele.\n\n"
+        "Confira as chaves em REPLICAI_COPIA_* e o espaço no armazenamento.")
+    return enviar(para, "ReplicAI: a cópia diária falhou", texto)
+
+
 def cobranca_atrasada(conta, quando: str = "") -> dict:
     """O aviso de atraso. Vai para o financeiro, se houver, e para o dono."""
     texto = (
