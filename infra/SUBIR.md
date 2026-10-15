@@ -12,13 +12,21 @@ esteja tudo o resto.
 | | mínimo | recomendado | por quê |
 |---|---|---|---|
 | Processador | 4 vCPU | **8 vCPU** | o motor mede o texto abrindo um Chromium por peça, e o vídeo renderiza quadro a quadro |
-| Memória | 8 GB | **16 GB** | pelo `docker-compose.yml`: cada worker de peça custa 0,7 GB, o de vídeo 2 GB, e um PSD de 250 MB aberto para extração sobe bem acima do tamanho do arquivo |
+| Memória | 8 GB | **16 GB** | cada worker de peça custa 0,7 GB em repouso e o de vídeo 2 GB (está no `docker-compose.yml`); a extração de um PSD custa de 0,4 a 1,3 GB por cima disso, medido em oito KVs reais |
 | Disco | 160 GB SSD | **250 GB SSD** | medido em `api/faxina.py`: quarenta clientes geram 94 GB de material bruto por mês, dos quais o PSD é 85%. A faxina apaga o bruto com 30 dias e o acúmulo permanente cai para 8 GB por mês |
 | Arquitetura | **x86_64 (amd64)** | — | a tipografia da peça está travada e conferida na esteira com um Chromium amd64. Outra arquitetura mede o texto de outro jeito e a peça sai diferente, sem erro nenhum para avisar |
 | Sistema | Ubuntu 24.04 LTS ou Debian 13 | — | só precisa rodar Docker; o resto vem dentro da imagem |
 | IP | IPv4 fixo | — | o certificado é emitido para o domínio que aponta para este IP |
 | Tráfego | 2 TB/mês | — | sobe PSD de até 250 MB e desce pacote de peças |
 | Swap | 2 GB | 4 GB | é o que segura o pico de abrir um PSD grande sem o sistema matar o worker |
+
+**Sobre a memória do PSD**, porque é a linha que decide entre 8 e 16 GB: o pico
+não acompanha o tamanho do arquivo. Medido nos KVs reais que passaram por aqui,
+um PSD de 201 MB custou 0,73 GB e levou 9 segundos, enquanto um de 24 MB custou
+1,30 GB e levou 22 — o que pesa é a quantidade e o tamanho das camadas abertas
+para recorte, não os bytes do arquivo. Com 16 GB, dois workers podem extrair ao
+mesmo tempo no pior caso medido e ainda sobra folga. Com 8 GB funciona, mas uma
+peça espera a outra quando as duas são pesadas.
 
 Localização: **Brasil ou leste dos Estados Unidos**. O cliente sobe arquivos de
 centenas de MB, e a distância aparece no tempo de upload — não na velocidade de
@@ -83,6 +91,11 @@ planos. `/saude` denuncia quando está ligado.
 ```bash
 docker compose -f infra/docker-compose.yml up -d --build
 ```
+
+Para dar conta de mais clientes, suba `replicas` nos **workers**, não na `api`:
+a tranca que segura quem fica tentando senha conta na memória do processo, e
+duas apis contariam cada uma por si — oito tentativas viram dezesseis. Uma api
+atende muita gente; quem faz força é o worker.
 
 Uma vez só, para o fundo generativo ter login:
 

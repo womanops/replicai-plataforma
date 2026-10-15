@@ -207,3 +207,28 @@ class TestOSegredoNaoSaiDaquiEmClaro:
         guardado = contas.por_id(c.id).convite
         assert convite not in guardado
         assert contas.dono_do_convite(guardado) is None
+
+
+class TestATrancaExigeUmaApiSo:
+    """A contagem vive na memória do processo. Duas apis contariam cada uma
+    por si, e oito tentativas virariam dezesseis — quem subir réplica precisa
+    saber disso, e o roteiro de subida precisa dizer."""
+
+    def test_o_roteiro_avisa_para_nao_replicar_a_api(self):
+        from pathlib import Path
+        roteiro = Path("infra/SUBIR.md").read_text(encoding="utf-8")
+        assert "não na `api`" in roteiro
+
+    def test_o_compose_sobe_uma_api_so(self):
+        from pathlib import Path
+        linhas = Path("infra/docker-compose.yml").read_text(encoding="utf-8").splitlines()
+        dentro, achou = False, []
+        for linha in linhas:
+            crua = linha.strip()
+            if linha.startswith("  ") and linha[2:3] not in (" ", "#") and crua.endswith(":"):
+                dentro = crua == "api:"           # trocou de serviço
+                continue
+            if dentro and crua and not crua.startswith("#"):
+                achou.append(crua)
+        assert achou, "não achei o serviço api no compose"
+        assert not any("replicas" in l for l in achou), achou
