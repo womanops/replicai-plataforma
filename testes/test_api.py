@@ -102,9 +102,14 @@ class TestEnvioComEntradaTorta:
         assert r.status_code == 422
         assert "/formatos" in r.json()["detail"]
 
-    def test_recusa_pedido_sem_formato(self, cliente):
+    def test_sem_formato_o_envio_vira_rascunho(self, cliente):
+        """Deixou de ser erro: a arte sobe primeiro e os formatos vêm depois,
+        que é a ordem em que a pessoa decide. Quem manda rodar sem formato aí
+        sim é recusado — está em `test_rascunho.py`."""
         r = enviar(cliente, formatos="  ")
-        assert r.status_code == 422
+        assert r.status_code == 200
+        assert r.json()["status"] == "rascunho"
+        assert cliente.fila.pedidos == []
 
     def test_a_mensagem_diz_qual_formato_esta_errado(self, cliente):
         r = enviar(cliente, formatos="ig-stories,inventado-99")

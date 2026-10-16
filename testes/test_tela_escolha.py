@@ -58,13 +58,13 @@ class TestEscolherPorCanal:
         """"Nenhuma lista de formatos fica aberta como padrão: ela aparece
         conforme o usuário clica nos canais." Cinquenta retângulos na cara de
         quem ainda vai decidir onde a peça roda é lista que ninguém lê."""
-        assert ": filtro.filter(c => m[c]);" in tela
+        assert "? filtro.filter(c => m[c])" in tela
         assert "Escolha um canal acima para " in tela
 
     def test_com_trabalho_na_tela_a_grade_mostra_o_que_foi_pedido(self, tela):
         """A mesma grade vira o resultado. Fechada ali, a pessoa encomendaria
         vinte peças e ficaria olhando para o nada."""
-        assert "const canais = job" in tela
+        assert "const canais = escolhendo()" in tela
         assert "(m[c] || []).some(f => escolhidos.has(f.id))" in tela
 
     def test_o_filtro_guarda_a_ordem_dos_cliques(self, tela):
@@ -124,7 +124,8 @@ class TestVerAPecaPronta:
     def test_clicar_na_peca_pronta_amplia(self, tela):
         """Dava para ajustar e não dava para ver: só o botãozinho de canto
         ampliava. Para decidir se quer ajustar, primeiro é preciso enxergar."""
-        assert "if (job){ if (vd || im) ampliar((vd || im).src, b.dataset.id, !!vd); return; }" in tela
+        assert ("if (!escolhendo()){ if (vd || im) ampliar((vd || im).src, "
+                "b.dataset.id, !!vd); return; }") in tela
 
     def test_a_peca_animada_tambem_amplia(self, tela):
         """O vídeo substituía o conteúdo do cartão e levava junto o botão de
@@ -782,3 +783,41 @@ class TestOFantasmaMostraAPranchetaEscolhida:
         """Era isso que deixava o cartão vazio com um xadrez cinza enquanto a
         peça não ficava pronta: o trabalho já existia, e o fantasma sumia."""
         assert "const fantasma = previa && !job" not in tela
+
+
+class TestAOrdemDoEnvio:
+    """A arte sobe quando é solta, não no clique final. Num PSD de 190 MB a
+    espera passa a acontecer enquanto a pessoa decide, e a pergunta da
+    prancheta chega ANTES dos formatos — que é a ordem certa, porque a
+    prancheta decide o que cada formato vai recortar."""
+
+    def test_soltar_a_arte_ja_sobe(self, tela):
+        assert "async function subirArte()" in tela
+        depois = tela.split("async function receber(f)")[1].split("async function subirArte")[0]
+        assert "await subirArte();" in depois
+
+    def test_o_botao_manda_rodar_o_rascunho(self, tela):
+        """Sem isso a arte subiria duas vezes."""
+        assert "fetch(`/jobs/${rascunho}/rodar`" in tela
+        assert "fd.append('arte', peca.arquivo)" in tela.split("$('#btnIr').onclick")[0]
+        assert "fd.append('arte'" not in tela.split("$('#btnIr').onclick")[1][:900]
+
+    def test_a_prancheta_e_perguntada_no_envio(self, tela):
+        depois = tela.split("async function subirArte()")[1][:1400]
+        assert "escolherPrancheta(r.pranchetas)" in depois
+
+    def test_escolher_a_prancheta_num_rascunho_nao_acompanha(self, tela):
+        """Não há fila para acompanhar: o trabalho ainda nem tem formatos."""
+        depois = tela.split("async function mandarPrancheta(")[1][:1200]
+        assert "if (rascunho){" in depois
+
+    def test_a_grade_continua_clicavel_durante_o_rascunho(self, tela):
+        """O defeito que isso evita: com a arte já no servidor, a tela achava
+        que o trabalho estava rodando e travava a escolha dos formatos."""
+        assert "const escolhendo = () => !job || !!rascunho;" in tela
+        assert "if (!escolhendo()) return;" in tela
+        assert "if (job) return;" not in tela
+
+    def test_o_botao_espera_a_prancheta(self, tela):
+        assert "const esperaPrancheta =" in tela
+        assert "!esperaPrancheta" in tela

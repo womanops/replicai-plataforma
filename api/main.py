@@ -691,7 +691,8 @@ def formatos():
 @app.post("/jobs", status_code=202)
 async def criar(
     arte: UploadFile = File(...),
-    formatos: str = Form(..., description="ids separados por vírgula"),
+    formatos: str = Form("", description="ids separados por vírgula; vazio abre "
+                                         "um rascunho, para escolher depois"),
     headline: str = Form(""),
     cta: str = Form(""),
     titulo: str = Form(""),
@@ -712,19 +713,24 @@ async def criar(
         raise HTTPException(415, f"não trabalho com `{ext or 'arquivo sem extensão'}`. "
                                  f"Mande {', '.join(sorted(ACEITOS))}")
     pedidos = [f.strip() for f in formatos.split(",") if f.strip()]
-    if not pedidos:
-        raise HTTPException(422, "escolha ao menos um formato")
+    # Sem formatos o envio é um RASCUNHO: a arte sobe, o PSD é lido e as
+    # pranchetas voltam para quem está escolhendo. A ordem importa — a
+    # prancheta decide o que cada formato vai recortar, então perguntar o
+    # formato antes dela é perguntar na ordem errada. Quem integra pelo
+    # programa continua podendo mandar tudo de uma vez.
+    rascunho = not pedidos
     desconhecidos = [f for f in pedidos if not formato_by_id(f)]
     if desconhecidos:
         raise HTTPException(422, f"formato desconhecido: {', '.join(desconhecidos)}. "
                                  f"Veja /formatos")
 
-    pode, porque = uso.cabe(c.id, cobranca.plano_valendo(c), pecas=len(pedidos),
-                            dia_do_ciclo=cobranca.dia_do_ciclo(c))
-    if not pode:
-        # conferido antes de enfileirar: recusar um trabalho já renderizado é
-        # gastar o custo e não poder cobrar
-        raise HTTPException(402, porque)
+    if not rascunho:
+        pode, porque = uso.cabe(c.id, cobranca.plano_valendo(c), pecas=len(pedidos),
+                                dia_do_ciclo=cobranca.dia_do_ciclo(c))
+        if not pode:
+            # conferido antes de enfileirar: recusar um trabalho já renderizado
+            # é gastar o custo e não poder cobrar
+            raise HTTPException(402, porque)
 
     job = trabalhos.novo_id(titulo or Path(arte.filename or "peca").stem)
     pasta = trabalhos.pasta_do(c.id, job)
@@ -760,16 +766,73 @@ async def criar(
             # parado esperando uma escolha
             return JSONResponse(status_code=200, content={
                 "job": job, "status": "escolha a prancheta", "pranchetas": lista,
+                "rascunho": rascunho,
                 "como": f"POST /jobs/{job}/prancheta com o nome"})
         if prancheta and prancheta not in {p.nome for p in achadas}:
             raise HTTPException(422, f"não existe prancheta `{prancheta}` nesse arquivo. "
                                      f"Tem: {', '.join(p.nome for p in achadas)}")
+
+    if rascunho:
+        trabalhos.gravar(c.id, job, {**comum, "status": "rascunho",
+                                     "prancheta": prancheta})
+        return JSONResponse(status_code=200, content={
+            "job": job, "status": "rascunho", "pranchetas": [],
+            "rascunho": True, "como": f"POST /jobs/{job}/rodar com os formatos"})
 
     trabalhos.gravar(c.id, job, {**comum, "status": "na fila", "prancheta": prancheta})
     na_fila = FILA.enfileirar(processar, c.id, job, str(destino), pedidos, headline, cta,
                               brief, prancheta, False, modo)
     trabalhos.gravar(c.id, job, {"id_na_fila": na_fila})
     return {"job": job, "status": trabalhos.ler(c.id, job)["status"]}
+
+
+@app.post("/jobs/{job}/rodar", status_code=202)
+def rodar(job: str, formatos: str = Form(...), headline: str = Form(""),
+          cta: str = Form(""), titulo: str = Form(""), brief: str = Form(""),
+          modo: str = Form(MODO_PADRAO), c: contas.Conta = Depends(conta_atual)):
+    """Põe para rodar um rascunho que já tem arte — e prancheta, se precisava.
+
+    É a segunda metade do envio. A primeira sobe a arte e descobre as
+    pranchetas; esta recebe o que a pessoa decidiu depois de ver o que tinha
+    dentro do arquivo.
+    """
+    try:
+        estado = trabalhos.ler(c.id, job)
+    except ValueError:
+        raise HTTPException(400, "identificador inválido")
+    if estado is None:
+        raise HTTPException(404, "trabalho não existe")
+    if estado.get("status") not in ("rascunho", "escolha a prancheta"):
+        raise HTTPException(409, f"este trabalho já saiu do rascunho: "
+                                 f"está {estado.get('status')}")
+    if estado.get("pranchetas") and not estado.get("prancheta"):
+        raise HTTPException(409, "escolha a prancheta antes de rodar")
+    if modo not in MODOS:
+        raise HTTPException(422, f"modo desconhecido: `{modo}`. Use {', '.join(MODOS)}")
+    if modo == TEXTO_NOVO and not headline.strip():
+        raise HTTPException(422, "para escrever texto novo preciso da chamada")
+
+    pedidos = [f.strip() for f in formatos.split(",") if f.strip()]
+    if not pedidos:
+        raise HTTPException(422, "escolha ao menos um formato")
+    desconhecidos = [f for f in pedidos if not formato_by_id(f)]
+    if desconhecidos:
+        raise HTTPException(422, f"formato desconhecido: {', '.join(desconhecidos)}. "
+                                 f"Veja /formatos")
+    pode, porque = uso.cabe(c.id, cobranca.plano_valendo(c), pecas=len(pedidos),
+                            dia_do_ciclo=cobranca.dia_do_ciclo(c))
+    if not pode:
+        raise HTTPException(402, porque)
+
+    arte = trabalhos.pasta_do(c.id, job) / estado["arte"]
+    trabalhos.gravar(c.id, job, {"formatos": pedidos, "headline": headline, "cta": cta,
+                                 "brief": brief, "modo": modo, "status": "na fila",
+                                 **({"titulo": titulo} if titulo else {})})
+    trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
+        processar, c.id, job, str(arte), pedidos, headline, cta, brief,
+        estado.get("prancheta", ""), False, modo)})
+    return {"job": job, "status": trabalhos.ler(c.id, job)["status"],
+            "formatos": pedidos}
 
 
 @app.post("/jobs/{job}/prancheta", status_code=202)
@@ -788,6 +851,14 @@ def escolher_prancheta(job: str, nome: str = Form(...),
     if nome not in nomes:
         raise HTTPException(422, f"não existe prancheta `{nome}`. "
                                  f"Tem: {', '.join(sorted(nomes))}")
+
+    # num rascunho a escolha é só a escolha: quem manda rodar é `/rodar`, com
+    # os formatos que a pessoa vai escolher VENDO a prancheta que escolheu
+    if not (estado.get("formatos") or []):
+        trabalhos.gravar(c.id, job, {"prancheta": nome, "status": "rascunho"})
+        return JSONResponse(status_code=200, content={
+            "job": job, "status": "rascunho", "prancheta": nome,
+            "como": f"POST /jobs/{job}/rodar com os formatos"})
 
     arte = trabalhos.pasta_do(c.id, job) / estado["arte"]
     trabalhos.gravar(c.id, job, {"status": "na fila", "prancheta": nome})

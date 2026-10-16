@@ -874,6 +874,21 @@ header .saldo.apertado .fio i{background:var(--err)}
 const $ = s => document.querySelector(s);
 const escolhidos = new Set();
 let catalogo = [], peca = null, job = null, pulso = null;
+// o trabalho que já tem arte e ainda não tem formatos. Enquanto ele existe, o
+// botão "replicar" manda rodar em vez de subir de novo
+let rascunho = null;
+
+// "tem trabalho" deixou de significar "está rodando" no dia em que a arte
+// passou a subir antes dos formatos: durante o rascunho o trabalho existe e a
+// pessoa ainda está escolhendo. Quem decide o que a tela deixa fazer é esta
+// pergunta, não a existência do `job` — senão a grade trava justo na hora de
+// escolher.
+const escolhendo = () => !job || !!rascunho;
+// o que a zona diz quando está vazia: guardado porque a arte que não conseguiu
+// subir precisa devolver a zona ao estado de antes, e não a um retângulo mudo
+const ZONA_VAZIA = `<div><h2>Arraste a peça aqui</h2>
+  <p>PSD, PNG, JPEG ou PDF.<br>O PSD rende mais: abre em camadas e o fundo vem inteiro.
+    <br><span id="dicaLimite" style="opacity:.7"></span></p></div>`;
 const refazer = new Set();          // formatos cuja miniatura ficou velha
 // as ressalvas do trabalho aberto, por formato: a folha e a lupa oferecem a
 // saída a partir delas, e as duas precisam das mesmas
@@ -967,6 +982,41 @@ async function receber(f){
     else { peca.w=r.w; peca.h=r.h; pinta(r.capa, `${r.w}×${r.h} · ${tam}`); }
     pintarFormatos(); lerModo();
   } else { pinta(null, tam); lerModo(); }
+
+  // A arte sobe AGORA, antes de escolher formato nenhum. Dois motivos: num PSD
+  // de 190 MB a espera acontece enquanto a pessoa ainda está decidindo, em vez
+  // de depois do último clique; e a pergunta da prancheta chega antes dos
+  // formatos, que é a ordem certa — a prancheta é que decide o que cada
+  // formato vai recortar.
+  await subirArte();
+}
+
+async function subirArte(){
+  if (!peca || !peca.arquivo) return;
+  job = null; rascunho = null;
+  const fd = new FormData();
+  fd.append('arte', peca.arquivo);
+  fd.set('titulo', $('#titulo').value.trim());
+  $('#conta').textContent = 'Lendo a arte';
+  $('#detalhe').textContent = 'Subindo o arquivo…';
+  pintarRodape();
+  let r;
+  try { r = await (await fetch('/jobs', { method:'POST', body:fd })).json(); }
+  catch(e){ r = { detail:'Não consegui falar com o servidor.' }; }
+  if (!r.job){
+    if (/plano ativo/.test(r.detail || '')) assinaturaParada(r.detail);
+    else aviso(r.detail || 'Não consegui subir a arte.');
+    $('#conta').textContent = 'Pronto para replicar';
+    $('#detalhe').textContent = '';
+    peca = null; $('#zona').innerHTML = ZONA_VAZIA;
+    pintarRodape(); return;
+  }
+  job = r.job; rascunho = r.job;
+  $('#conta').textContent = 'Arte no servidor';
+  $('#detalhe').textContent = (r.pranchetas || []).length
+    ? 'Escolha a prancheta.' : 'Escolha os formatos e mande replicar.';
+  if ((r.pranchetas || []).length) escolherPrancheta(r.pranchetas);
+  pintarFormatos(); pintarRodape();
 }
 
 $('#zona').onclick = () => $('#arquivo').click();
@@ -981,7 +1031,10 @@ addEventListener('dragenter', e => { if (![...(e.dataTransfer?.types||[])].inclu
 addEventListener('dragover', e => { if ([...(e.dataTransfer?.types||[])].includes('Files')) e.preventDefault(); });
 addEventListener('dragleave', e => { if (!e.relatedTarget){ arrastando=0; document.body.classList.remove('recebendo'); } });
 addEventListener('drop', e => { arrastando=0; document.body.classList.remove('recebendo');
-  const f = e.dataTransfer?.files?.[0]; if (!f) return; e.preventDefault(); if (!job) receber(f); });
+  const f = e.dataTransfer?.files?.[0]; if (!f) return; e.preventDefault();
+  // trocar de arte vale enquanto nada foi para a fila: o rascunho anterior fica
+  // no servidor sem ter custado peça nenhuma, e a faxina o leva embora
+  if (!job || rascunho) receber(f); });
 
 /* ---------- formatos, em proporção real ---------- */
 async function carregarFormatos(){
@@ -1029,7 +1082,7 @@ function pintarCanais(){
   // "ver tudo" abre os canais que faltam; "limpar" fecha tudo e desmarca.
   // Eram o mesmo botão quando a grade nascia aberta — e aí "ver tudo" queria
   // dizer "fechar o filtro", que é o contrário do que está escrito
-  if (!job){
+  if (escolhendo()){
     if (filtro.length < Object.keys(m).length)
       fichas.push(`<button type="button" class="limpa" data-canal="*">ver tudo</button>`);
     if (filtro.length || escolhidos.size)
@@ -1037,7 +1090,7 @@ function pintarCanais(){
   }
   $('#canais').innerHTML = fichas.join('');
   $('#canais').querySelectorAll('button').forEach(b => b.onclick = () => {
-    if (job) return;
+    if (!escolhendo()) return;
     const canal = b.dataset.canal;
     if (canal === '*'){ filtro.length = 0; filtro.push(...Object.keys(porCanal())); }
     else if (!canal){ filtro.length = 0; escolhidos.clear(); }
@@ -1064,9 +1117,9 @@ function pintarFormatos(){
   const m = porCanal();
   // com trabalho na tela a grade é o RESULTADO: aí ela mostra os canais das
   // peças pedidas, senão a pessoa fica sem ver o que acabou de encomendar
-  const canais = job
-    ? Object.keys(m).filter(c => (m[c] || []).some(f => escolhidos.has(f.id)))
-    : filtro.filter(c => m[c]);
+  const canais = escolhendo()
+    ? filtro.filter(c => m[c])
+    : Object.keys(m).filter(c => (m[c] || []).some(f => escolhidos.has(f.id)));
   if (!canais.length){
     $('#formatos').innerHTML = `<p class="semcanal">Escolha um canal acima para `
       + `ver os formatos dele.</p>`;
@@ -1083,7 +1136,7 @@ function pintarFormatos(){
       // ampliava, e clicar na peça não fazia nada — para decidir se quer
       // ajustar, primeiro é preciso enxergar
       const vd = b.querySelector('.cx video'), im = b.querySelector('.cx img');
-      if (job){ if (vd || im) ampliar((vd || im).src, b.dataset.id, !!vd); return; }
+      if (!escolhendo()){ if (vd || im) ampliar((vd || im).src, b.dataset.id, !!vd); return; }
       escolhidos.has(b.dataset.id) ? escolhidos.delete(b.dataset.id) : escolhidos.add(b.dataset.id);
       b.classList.toggle('on'); pintarCanais(); pintarRodape();
     };
@@ -1165,7 +1218,7 @@ function cartao(f){
   // altura pela proporção verdadeira do destino: o retângulo É o formato
   const alt = Math.max(26, Math.min(190, Math.round(LARG * f.h / f.w)));
   const on = escolhidos.has(f.id) ? ' on' : '';
-  const tira = f.livre && !job
+  const tira = f.livre && escolhendo()
     ? `<button class="tira" type="button" title="Tirar das minhas medidas">✕</button>` : '';
   const medida = `${f.w}×${f.h}`;
   // a arte-mãe apagada dentro do cartão vazio: enquanto a peça não fica
@@ -1199,18 +1252,26 @@ function espelhar(ligado, f){
 function pintarRodape(){
   const n = escolhidos.size;
   $('#resumoSel').textContent = n ? `${n} formato${n>1?'s':''} escolhido${n>1?'s':''}` : 'nenhum formato escolhido';
-  if (job) return;
+  // trabalho rodando manda no rodapé; rascunho não, que é justamente a fase em
+  // que ela ainda está escolhendo
+  if (job && !rascunho) return;
   const temPeca = !!peca, escreve = modoPeca() === 'novo';
   const falta = escreve && !$('#headline').value.trim();
-  $('#btnIr').disabled = semPlano || !(temPeca && n && !falta);
+  const esperaPrancheta = !!(ultimasPranchetas || []).length && !pranchetaEscolhida;
+  $('#btnIr').disabled = semPlano || !(rascunho && n && !falta && !esperaPrancheta);
   if (semPlano){
     $('#conta').textContent = 'Assine um plano';
     $('#detalhe').textContent = 'Esta conta não tem plano ativo. Escolha um para começar.';
     return;
   }
-  $('#conta').textContent = !temPeca ? 'Comece pela peça' : falta ? 'Falta a chamada'
+  $('#conta').textContent = !temPeca ? 'Comece pela peça'
+    : !rascunho ? 'Lendo a arte'
+    : esperaPrancheta ? 'Escolha a prancheta'
+    : falta ? 'Falta a chamada'
     : !n ? 'Escolha os formatos' : `${n} peça${n>1?'s':''} para replicar`;
   $('#detalhe').textContent = !temPeca ? 'Arraste a arte aprovada em qualquer lugar da tela.'
+    : !rascunho ? 'O arquivo está subindo — já pode ir escolhendo.'
+    : esperaPrancheta ? 'O arquivo tem mais de uma arte dentro.'
     : falta ? 'A chamada é o texto principal da peça.'
     : !n ? 'Cada retângulo está na proporção real do destino.'
     : 'Leva cerca de um minuto por peça.';
@@ -1243,8 +1304,9 @@ function contar(){
 
 /* ---------- enviar e acompanhar ---------- */
 $('#btnIr').onclick = async () => {
+  // a arte já está no servidor desde que foi solta: aqui vai só a decisão
+  if (!rascunho){ aviso('A arte ainda não terminou de subir.'); return; }
   const fd = new FormData();
-  fd.append('arte', peca.arquivo);
   fd.set('formatos', [...escolhidos].join(','));
   fd.set('headline', $('#headline').value.trim());
   fd.set('cta', $('#cta').value.trim());
@@ -1252,20 +1314,18 @@ $('#btnIr').onclick = async () => {
   fd.set('brief', $('#brief').value.trim());
   fd.set('modo', modoPeca());
   $('#btnIr').disabled = true; $('#conta').textContent = 'Enviando';
-  $('#detalhe').textContent = 'Subindo a arte…';
+  $('#detalhe').textContent = 'Montando a fila…';
   let r;
-  try { r = await (await fetch('/jobs', { method:'POST', body:fd })).json(); }
+  try { r = await (await fetch(`/jobs/${rascunho}/rodar`, { method:'POST', body:fd })).json(); }
   catch(e){ r = { detail:'Não consegui falar com o servidor.' }; }
   if (!r.job){
     if (/plano ativo/.test(r.detail || '')) assinaturaParada(r.detail);
     else aviso(r.detail || 'O envio falhou.');
     $('#btnIr').disabled=false; pintarRodape(); return;
   }
-  job = r.job;
+  job = r.job; rascunho = null;
   pintarFormatos();
   $('#btnIr').style.display='none';
-  // PSD com várias pranchetas não entrou na fila: está parado esperando escolha
-  if (r.status === 'escolha a prancheta'){ escolherPrancheta(r.pranchetas); return; }
   acompanhar();
 };
 
@@ -1750,6 +1810,11 @@ async function mandarPrancheta(nome){
   if (escolhida && escolhida.previa)
     pranchetaEscolhida = `/jobs/${job}/arquivos/${encodeURIComponent(escolhida.previa)}`;
   pintarFormatos();
+  // no rascunho a escolha é só a escolha: quem manda rodar é o botão, depois
+  // dos formatos. Acompanhar aqui ficaria esperando uma fila que não existe
+  if (rascunho){ $('#conta').textContent = 'Arte no servidor';
+                 $('#detalhe').textContent = `Usando ${nome}. Escolha os formatos.`;
+                 pintarRodape(); return; }
   acompanhar();
 }
 
