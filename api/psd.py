@@ -728,7 +728,11 @@ def _blocos_de_texto(elementos: list[dict]) -> list[list[dict]]:
         y0 = min(p["box"]["y"] for p in pedacos)
         y1 = max(p["box"]["y"] + p["box"]["h"] for p in pedacos)
         caixas.append((y0, y1, pedacos))
-    caixas.sort()
+    # pelo alto e pela base, NUNCA pelo terceiro item: duas linhas na mesma
+    # altura — texto ao lado de texto, que é o normal num KV largo — faziam o
+    # desempate cair nos próprios elementos, e dois dicionários não se comparam.
+    # O banner de 728×90 morria aqui com "'<' not supported between dict"
+    caixas.sort(key=lambda c: (c[0], c[1]))
 
     blocos, atual = [], [caixas[0]]
     for anterior, linha in zip(caixas, caixas[1:]):

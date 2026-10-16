@@ -204,3 +204,59 @@ class TestOCaminhoDeUmaTacadaContinua:
         cliente.fila.pedidos.clear()
         cliente.post(f"/jobs/{job}/prancheta", data={"nome": "Prancheta 2"})
         assert cliente.fila.pedidos[-1][0] == "processar"
+
+
+class TestRascunhoAbandonadoNaoFicaNoDisco:
+    """Ela trocou a arte três vezes e cada tentativa guardou 194 MB do PSD.
+    Rascunho é arte que subiu e nunca rodou: não tem peça a preservar."""
+
+    def test_da_para_jogar_fora_um_rascunho(self, cliente):
+        job = subir(cliente).json()["job"]
+        from api import trabalhos
+        pasta = trabalhos.pasta_do(cliente.conta.id, job)
+        assert pasta.exists()
+        r = cliente.delete(f"/jobs/{job}")
+        assert r.status_code == 200
+        assert r.json()["liberou_mb"] >= 0
+        assert not pasta.exists()
+
+    def test_trabalho_que_rodou_nao_se_apaga_por_ai(self, cliente):
+        """A peça é dela: some pela faxina quando envelhece, não num clique."""
+        job = subir(cliente).json()["job"]
+        cliente.post(f"/jobs/{job}/rodar", data={"formatos": "ig-feed-1x1"})
+        r = cliente.delete(f"/jobs/{job}")
+        assert r.status_code == 409
+
+    def test_o_rascunho_do_outro_nao_existe_para_mim(self, cliente):
+        job = subir(cliente).json()["job"]
+        from fastapi.testclient import TestClient
+        from api import contas, main
+        from testes.conftest import assinatura_valendo
+        outra = assinatura_valendo(
+            contas.criar("Outra", "outra2@exemplo.com", "senha-bem-comprida"))
+        c2 = TestClient(main.app,
+                        headers={"Authorization": f"Bearer {contas.nova_chave(outra)}"})
+        assert c2.delete(f"/jobs/{job}").status_code == 404
+
+    def test_a_faxina_varre_rascunho_de_ontem_inteiro(self, cliente):
+        from datetime import datetime, timedelta, timezone
+        from api import faxina, trabalhos
+        job = subir(cliente).json()["job"]
+        pasta = trabalhos.pasta_do(cliente.conta.id, job)
+        amanha = datetime.now(timezone.utc) + timedelta(days=faxina.DIAS_RASCUNHO + 1)
+        r = faxina.varrer_trabalho(cliente.conta.id, job, agora=amanha)
+        assert r.get("rascunho") is True
+        assert not pasta.exists()
+
+    def test_a_faxina_nao_varre_o_rascunho_de_hoje(self, cliente):
+        """Ela pode estar com a janela aberta, decidindo os formatos."""
+        from api import faxina, trabalhos
+        job = subir(cliente).json()["job"]
+        r = faxina.varrer_trabalho(cliente.conta.id, job)
+        assert "rascunho de hoje" in r.get("pulou", "")
+        assert trabalhos.pasta_do(cliente.conta.id, job).exists()
+
+    def test_a_tela_joga_fora_o_anterior_ao_trocar_de_arte(self):
+        from pathlib import Path
+        tela = Path("web/index.html").read_text(encoding="utf-8")
+        assert "fetch(`/jobs/${rascunho}`, { method:'DELETE' })" in tela

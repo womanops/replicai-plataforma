@@ -33,6 +33,11 @@ DIAS = int(os.environ.get("REPLICAI_FAXINA_DIAS", "30"))
 # estados em que o trabalho ainda pode estar mexendo nos próprios arquivos
 EM_ANDAMENTO = {"na fila", "rodando", "escolha a prancheta"}
 
+# Rascunho é arte que subiu e nunca rodou: trocar o arquivo antes de replicar
+# deixa um PSD de 200 MB parado. Ele não tem peça para preservar, então sai
+# inteiro — e bem antes dos trinta dias do material bruto de quem produziu.
+DIAS_RASCUNHO = int(os.environ.get("REPLICAI_RASCUNHO_DIAS", "1"))
+
 
 def _guardar(estado: dict) -> set[str]:
     """Os caminhos, relativos à pasta do trabalho, que não se apaga."""
@@ -68,6 +73,19 @@ def varrer_trabalho(conta: str, job: str, agora: datetime | None = None,
     if quando is None:
         return {"job": job, "pulou": "sem data"}
     idade = (agora - quando).days
+
+    # rascunho abandonado sai inteiro: não há peça entregue a preservar
+    if estado.get("status") == "rascunho" and not (estado.get("formatos") or []):
+        if idade < DIAS_RASCUNHO:
+            return {"job": job, "pulou": f"rascunho de hoje ({idade} dias)"}
+        import shutil
+        pasta = trabalhos.pasta_do(conta, job)
+        liberou = sum(f.stat().st_size for f in pasta.rglob("*") if f.is_file())
+        if de_verdade:
+            shutil.rmtree(pasta, ignore_errors=True)
+        return {"job": job, "rascunho": True, "apagados": ["(trabalho inteiro)"],
+                "liberou_mb": round(liberou / 1e6, 1)}
+
     if idade < dias:
         return {"job": job, "pulou": f"tem {idade} dias, ainda não"}
 

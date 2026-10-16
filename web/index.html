@@ -345,6 +345,12 @@ header .campanhas:hover{color:var(--fg)}
   font:400 13.5px var(--corpo)}
 .convidar.cheio{display:none}
 .semcanal{margin:0;padding:26px 2px;color:var(--mut);font-size:13.5px}
+.semcanal b{color:var(--fg);font-weight:500}
+/* pisca uma vez quando a decisão passa a ser aqui */
+#canais.chama{animation:chama 1.2s ease 2}
+@keyframes chama{0%,100%{opacity:1}50%{opacity:.45}}
+@media (prefers-reduced-motion:reduce){#canais.chama{animation:none;
+  outline:2px solid var(--rosa);outline-offset:6px;border-radius:12px}}
 .regra{margin:18px 0 0;font-size:12.5px;color:var(--mut);line-height:1.5;
   border-top:1px solid var(--linha);padding-top:14px}
 .regra b{color:var(--fg);font-weight:500}
@@ -993,6 +999,9 @@ async function receber(f){
 
 async function subirArte(){
   if (!peca || !peca.arquivo) return;
+  // trocar de arte antes de rodar não pode deixar o PSD anterior no disco:
+  // são 200 MB por tentativa, e três tentativas já são meio giga parado
+  if (rascunho){ try { await fetch(`/jobs/${rascunho}`, { method:'DELETE' }); } catch(e){} }
   job = null; rascunho = null;
   const fd = new FormData();
   fd.append('arte', peca.arquivo);
@@ -1121,8 +1130,12 @@ function pintarFormatos(){
     ? filtro.filter(c => m[c])
     : Object.keys(m).filter(c => (m[c] || []).some(f => escolhidos.has(f.id)));
   if (!canais.length){
-    $('#formatos').innerHTML = `<p class="semcanal">Escolha um canal acima para `
-      + `ver os formatos dele.</p>`;
+    $('#formatos').innerHTML = `<p class="semcanal">`
+      + (pranchetaEscolhida
+         ? `Prancheta escolhida. <b>Agora escolha um canal acima</b> para ver os `
+           + `formatos e mandar replicar.`
+         : `Escolha um canal acima para ver os formatos dele.`)
+      + `</p>`;
     pintarCanais();
     return;
   }
@@ -1807,14 +1820,28 @@ async function mandarPrancheta(nome){
   // a partir daqui os cartões vazios mostram A PRANCHETA ESCOLHIDA, não o PSD
   // inteiro: é o que a pessoa acabou de escolher, e é o que vai ser recortado
   const escolhida = (ultimasPranchetas || []).find(pr => pr.nome === nome);
-  if (escolhida && escolhida.previa)
+  if (escolhida && escolhida.previa){
     pranchetaEscolhida = `/jobs/${job}/arquivos/${encodeURIComponent(escolhida.previa)}`;
+    // a arte na zona vira A PRANCHETA. Sem isso a tela continua mostrando o
+    // PSD inteiro e a escolha parece não ter acontecido — foi o que ela viu
+    const medida = escolhida.w && escolhida.h ? `${escolhida.w}×${escolhida.h}` : nome;
+    $('#zona').innerHTML = `<div><img class="arte" src="${pranchetaEscolhida}" alt="">`
+      + `<span class="medida">${esc(nome)} · ${medida}</span></div>`;
+    if (escolhida.w) { peca.w = escolhida.w; peca.h = escolhida.h; }
+  }
   pintarFormatos();
   // no rascunho a escolha é só a escolha: quem manda rodar é o botão, depois
   // dos formatos. Acompanhar aqui ficaria esperando uma fila que não existe
-  if (rascunho){ $('#conta').textContent = 'Arte no servidor';
-                 $('#detalhe').textContent = `Usando ${nome}. Escolha os formatos.`;
-                 pintarRodape(); return; }
+  if (rascunho){
+    $('#conta').textContent = `Usando ${nome}`;
+    $('#detalhe').textContent = 'Agora escolha os canais e os formatos.';
+    // o olho estava na janela que acabou de fechar: isto leva ele para onde a
+    // decisão continua
+    $('#canais').classList.add('chama');
+    setTimeout(() => $('#canais').classList.remove('chama'), 2400);
+    $('#canais').scrollIntoView({behavior:'smooth', block:'center'});
+    pintarRodape(); return;
+  }
   acompanhar();
 }
 

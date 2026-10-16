@@ -771,7 +771,7 @@ class TestOFantasmaMostraAPranchetaEscolhida:
         assert "if (pranchetaEscolhida) return pranchetaEscolhida;" in tela
 
     def test_escolher_a_prancheta_troca_a_fonte(self, tela):
-        depois = tela.split("async function mandarPrancheta(")[1][:900]
+        depois = tela.split("async function mandarPrancheta(")[1].split("\n}")[0]
         assert "pranchetaEscolhida = `/jobs/${job}/arquivos/" in depois
         assert "pintarFormatos();" in depois
 
@@ -808,7 +808,7 @@ class TestAOrdemDoEnvio:
 
     def test_escolher_a_prancheta_num_rascunho_nao_acompanha(self, tela):
         """Não há fila para acompanhar: o trabalho ainda nem tem formatos."""
-        depois = tela.split("async function mandarPrancheta(")[1][:1200]
+        depois = tela.split("async function mandarPrancheta(")[1].split("\n}")[0]
         assert "if (rascunho){" in depois
 
     def test_a_grade_continua_clicavel_durante_o_rascunho(self, tela):

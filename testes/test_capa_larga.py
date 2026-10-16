@@ -188,3 +188,43 @@ class TestOndeOCorpoComeca:
         """Sem medida o texto para na caixa: pior diagramação, peça entregue."""
         from api.psd import _comeco_do_corpo
         assert _comeco_do_corpo(tmp_path / "nao-existe.png") == 0.0
+
+
+class TestDuasLinhasNaMesmaAltura:
+    """Num KV largo é normal ter texto ao lado de texto, começando e
+    terminando na mesma altura. O agrupamento ordenava as linhas e, no empate,
+    o desempate caía nos próprios elementos — dois dicionários, que o Python
+    não compara. Os banners de 728×90 e 970×250 de um trabalho real morreram
+    assim, com "o fundo não saiu: '<' not supported between dict and dict"."""
+
+    def _linha(self, camada, x, y, papel="apoio"):
+        return {"papel": papel, "camada": camada, "texto": camada,
+                "box": {"x": x, "y": y, "w": 100, "h": 40}}
+
+    def test_empate_de_altura_nao_derruba(self):
+        from api.psd import _blocos_de_texto
+        els = [self._linha("esquerda", 0, 10, "headline"),
+               self._linha("direita", 300, 10)]
+        assert len(_blocos_de_texto(els)) == 1
+
+    def test_tres_linhas_empatadas_tambem_nao(self):
+        from api.psd import _blocos_de_texto
+        els = [self._linha(f"t{i}", i * 200, 10) for i in range(3)]
+        assert sum(len(b) for b in _blocos_de_texto(els)) == 3
+
+    def test_o_que_esta_longe_continua_sendo_outro_bloco(self):
+        """O conserto não pode colar tudo num bloco só."""
+        from api.psd import _blocos_de_texto
+        els = [self._linha("alto", 0, 10, "headline"),
+               self._linha("ao lado", 300, 10),
+               self._linha("longe", 0, 400, "cta")]
+        blocos = _blocos_de_texto(els)
+        assert len(blocos) == 2
+        assert {p["texto"] for p in blocos[0]} == {"alto", "ao lado"}
+        assert [p["texto"] for p in blocos[1]] == ["longe"]
+
+    def test_a_ordenacao_nao_olha_os_elementos(self):
+        import inspect
+        from api import psd
+        fonte = inspect.getsource(psd._blocos_de_texto)
+        assert "caixas.sort(key=lambda c: (c[0], c[1]))" in fonte

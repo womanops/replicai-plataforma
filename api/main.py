@@ -786,6 +786,30 @@ async def criar(
     return {"job": job, "status": trabalhos.ler(c.id, job)["status"]}
 
 
+@app.delete("/jobs/{job}")
+def jogar_fora(job: str, c: contas.Conta = Depends(quem_e)):
+    """Apaga um rascunho — trabalho que subiu arte e nunca rodou.
+
+    Só rascunho: trabalho que produziu peça é dela, e some pela faxina quando
+    envelhece, não por um clique. Serve para a arte trocada antes de rodar não
+    deixar 200 MB de PSD parados no disco por trinta dias.
+    """
+    import shutil
+
+    try:
+        estado = trabalhos.ler(c.id, job)
+    except ValueError:
+        raise HTTPException(400, "identificador inválido")
+    if estado is None:
+        raise HTTPException(404, "trabalho não existe")
+    if estado.get("status") != "rascunho" or estado.get("formatos"):
+        raise HTTPException(409, "este trabalho já rodou: ele não se apaga por aqui")
+    pasta = trabalhos.pasta_do(c.id, job)
+    liberou = sum(f.stat().st_size for f in pasta.rglob("*") if f.is_file())
+    shutil.rmtree(pasta, ignore_errors=True)
+    return {"ok": True, "job": job, "liberou_mb": round(liberou / 1e6, 1)}
+
+
 @app.post("/jobs/{job}/rodar", status_code=202)
 def rodar(job: str, formatos: str = Form(...), headline: str = Form(""),
           cta: str = Form(""), titulo: str = Form(""), brief: str = Form(""),
