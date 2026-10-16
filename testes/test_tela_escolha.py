@@ -821,3 +821,33 @@ class TestAOrdemDoEnvio:
     def test_o_botao_espera_a_prancheta(self, tela):
         assert "const esperaPrancheta =" in tela
         assert "!esperaPrancheta" in tela
+
+
+class TestAVezDeCadaEscolha:
+    """Ela descreveu a sequência: "sobe o PSD, ele diz que já pode escolher o
+    formato, eu escolho, aí abre a janela da prancheta, escolho e ele continua
+    pedindo prancheta e não libera". Duas coisas: a escolha da prancheta
+    dependia da IMAGEM dela, que é composta depois; e os formatos ficavam
+    abertos antes da vez deles."""
+
+    def test_a_escolha_vale_antes_da_imagem(self, tela):
+        assert "let pranchetaNome = null" in tela
+        assert "const esperaPrancheta = !!(ultimasPranchetas || []).length && !pranchetaNome;" in tela
+        depois = tela.split("async function mandarPrancheta(")[1].split("\n}")[0]
+        assert "pranchetaNome = nome;" in depois
+
+    def test_a_imagem_chega_depois_e_a_tela_troca_sozinha(self, tela):
+        assert "function esperarAPrevia(nome)" in tela
+        assert "olhoNaPreviaEscolhida" in tela
+
+    def test_enquanto_le_o_arquivo_a_tela_diz(self, tela):
+        assert "let lendoArte = false" in tela
+        assert "Lendo o arquivo…" in tela
+
+    def test_os_canais_ficam_de_molho_ate_a_vez_deles(self, tela):
+        assert "classList.toggle('demolho', aindaNao)" in tela
+        assert "#canais.demolho{opacity:.35;pointer-events:none}" in tela
+
+    def test_a_grade_diz_qual_e_a_etapa(self, tela):
+        assert "<b>Escolha a prancheta</b> para ver os formatos" in tela
+        assert "Agora escolha um canal acima" in tela

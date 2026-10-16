@@ -346,6 +346,8 @@ header .campanhas:hover{color:var(--fg)}
 .convidar.cheio{display:none}
 .semcanal{margin:0;padding:26px 2px;color:var(--mut);font-size:13.5px}
 .semcanal b{color:var(--fg);font-weight:500}
+/* de molho: a decisão ainda não é aqui */
+#canais.demolho{opacity:.35;pointer-events:none}
 /* pisca uma vez quando a decisão passa a ser aqui */
 #canais.chama{animation:chama 1.2s ease 2}
 @keyframes chama{0%,100%{opacity:1}50%{opacity:.45}}
@@ -967,7 +969,8 @@ async function receber(f){
   peca = { arquivo:f, ext, w:null, h:null };
   // arte nova apaga a prancheta escolhida na anterior: senão os cartões
   // mostrariam o recorte de um PSD que não está mais na tela
-  pranchetaEscolhida = null; ultimasPranchetas = [];
+  pranchetaNome = null; pranchetaEscolhida = null; ultimasPranchetas = [];
+  clearInterval(olhoNaPreviaEscolhida);
   if (!$('#titulo').value) $('#titulo').value = f.name.replace(/\.[^.]+$/,'').replace(/[_-]+/g,' ');
 
   const pinta = (url, medida) => {
@@ -999,6 +1002,8 @@ async function receber(f){
 
 async function subirArte(){
   if (!peca || !peca.arquivo) return;
+  lendoArte = true;
+  pintarFormatos();
   // trocar de arte antes de rodar não pode deixar o PSD anterior no disco:
   // são 200 MB por tentativa, e três tentativas já são meio giga parado
   if (rascunho){ try { await fetch(`/jobs/${rascunho}`, { method:'DELETE' }); } catch(e){} }
@@ -1015,11 +1020,13 @@ async function subirArte(){
   if (!r.job){
     if (/plano ativo/.test(r.detail || '')) assinaturaParada(r.detail);
     else aviso(r.detail || 'Não consegui subir a arte.');
+    lendoArte = false;
     $('#conta').textContent = 'Pronto para replicar';
     $('#detalhe').textContent = '';
     peca = null; $('#zona').innerHTML = ZONA_VAZIA;
     pintarRodape(); return;
   }
+  lendoArte = false;
   job = r.job; rascunho = r.job;
   $('#conta').textContent = 'Arte no servidor';
   $('#detalhe').textContent = (r.pranchetas || []).length
@@ -1056,7 +1063,13 @@ const LARG = 132;
 // arquivo que subiu — que num PSD de várias pranchetas é o PSD INTEIRO — e
 // passa a ser a prancheta escolhida assim que ela é escolhida: era isso que
 // ela via de errado, o desenho das seis pranchetas dentro de cada cartão.
-let pranchetaEscolhida = null, ultimasPranchetas = [];
+// `pranchetaNome` é a ESCOLHA; `pranchetaEscolhida` é só a imagem dela, que
+// é composta no servidor e pode demorar. Eram a mesma coisa, e aí escolher
+// antes de a imagem ficar pronta não liberava nada: a tela continuava pedindo
+// uma escolha que já tinha sido feita.
+let pranchetaNome = null, pranchetaEscolhida = null, ultimasPranchetas = [];
+// enquanto o arquivo sobe e é lido não há nada a escolher ainda
+let lendoArte = false, olhoNaPreviaEscolhida = null;
 
 function fonteDoFantasma(){
   if (pranchetaEscolhida) return pranchetaEscolhida;
@@ -1097,6 +1110,12 @@ function pintarCanais(){
     if (filtro.length || escolhidos.size)
       fichas.push(`<button type="button" class="limpa" data-canal="">limpar</button>`);
   }
+  // a vez de escolher formato só chega depois de ler o arquivo e, se ele tiver
+  // mais de uma arte dentro, depois de escolher a prancheta. Deixar os canais
+  // clicáveis antes disso é convidar a escolher duas vezes — foi o que ela fez
+  const aindaNao = lendoArte
+    || (!!(ultimasPranchetas || []).length && !pranchetaNome);
+  $('#canais').classList.toggle('demolho', aindaNao);
   $('#canais').innerHTML = fichas.join('');
   $('#canais').querySelectorAll('button').forEach(b => b.onclick = () => {
     if (!escolhendo()) return;
@@ -1131,9 +1150,14 @@ function pintarFormatos(){
     : Object.keys(m).filter(c => (m[c] || []).some(f => escolhidos.has(f.id)));
   if (!canais.length){
     $('#formatos').innerHTML = `<p class="semcanal">`
-      + (pranchetaEscolhida
-         ? `Prancheta escolhida. <b>Agora escolha um canal acima</b> para ver os `
-           + `formatos e mandar replicar.`
+      + (lendoArte
+         ? `<b>Lendo o arquivo…</b> num PSD grande isto leva um tempo. Se ele `
+           + `tiver mais de uma arte dentro, eu já pergunto qual é.`
+         : (ultimasPranchetas || []).length && !pranchetaNome
+         ? `<b>Escolha a prancheta</b> para ver os formatos com o recorte certo.`
+         : pranchetaNome
+         ? `Usando ${esc(pranchetaNome)}. <b>Agora escolha um canal acima</b> para `
+           + `ver os formatos e mandar replicar.`
          : `Escolha um canal acima para ver os formatos dele.`)
       + `</p>`;
     pintarCanais();
@@ -1270,7 +1294,7 @@ function pintarRodape(){
   if (job && !rascunho) return;
   const temPeca = !!peca, escreve = modoPeca() === 'novo';
   const falta = escreve && !$('#headline').value.trim();
-  const esperaPrancheta = !!(ultimasPranchetas || []).length && !pranchetaEscolhida;
+  const esperaPrancheta = !!(ultimasPranchetas || []).length && !pranchetaNome;
   $('#btnIr').disabled = semPlano || !(rascunho && n && !falta && !esperaPrancheta);
   if (semPlano){
     $('#conta').textContent = 'Assine um plano';
@@ -1787,6 +1811,28 @@ function escolherPrancheta(lista){
   trocarPorPrevias();
 }
 
+/* A imagem da prancheta escolhida pode ficar pronta DEPOIS da escolha: ela é
+   composta no servidor, camada por camada. Enquanto não chega, a escolha já
+   vale — isto só troca o desenho quando ele aparece. */
+function esperarAPrevia(nome){
+  clearInterval(olhoNaPreviaEscolhida);
+  let tentativas = 0;
+  olhoNaPreviaEscolhida = setInterval(async () => {
+    if (++tentativas > 40 || pranchetaNome !== nome){ clearInterval(olhoNaPreviaEscolhida); return; }
+    let d; try { d = await (await fetch(`/jobs/${job}`)).json(); } catch(e){ return; }
+    const pr = (d.pranchetas || []).find(p => p.nome === nome);
+    if (!pr || !pr.previa) return;
+    clearInterval(olhoNaPreviaEscolhida);
+    ultimasPranchetas = d.pranchetas;
+    pranchetaEscolhida = `/jobs/${job}/arquivos/${encodeURIComponent(pr.previa)}`;
+    const medida = pr.w && pr.h ? `${pr.w}×${pr.h}` : nome;
+    $('#zona').innerHTML = `<div><img class="arte" src="${pranchetaEscolhida}" alt="">`
+      + `<span class="medida">${esc(nome)} · ${medida}</span></div>`;
+    if (pr.w){ peca.w = pr.w; peca.h = pr.h; }
+    pintarFormatos();
+  }, 1500);
+}
+
 /* A prévia composta troca o borrão assim que fica pronta, uma por uma. */
 async function trocarPorPrevias(){
   clearInterval(olhoNaPrancheta);
@@ -1819,7 +1865,10 @@ async function mandarPrancheta(nome){
   } catch(e){ aviso('Não consegui falar com o servidor.'); return; }
   // a partir daqui os cartões vazios mostram A PRANCHETA ESCOLHIDA, não o PSD
   // inteiro: é o que a pessoa acabou de escolher, e é o que vai ser recortado
+  // a escolha vale AQUI, antes de qualquer imagem: é o que destrava a tela
+  pranchetaNome = nome;
   const escolhida = (ultimasPranchetas || []).find(pr => pr.nome === nome);
+  if (escolhida && !escolhida.previa) esperarAPrevia(nome);
   if (escolhida && escolhida.previa){
     pranchetaEscolhida = `/jobs/${job}/arquivos/${encodeURIComponent(escolhida.previa)}`;
     // a arte na zona vira A PRANCHETA. Sem isso a tela continua mostrando o
