@@ -559,19 +559,24 @@ class TestOAvisoDoArquivoAchatado:
     def test_fala_do_que_falta_e_do_que_fazer(self, tela):
         # a frase quebra em duas linhas no arquivo: comparar sem os espaços
         corrido = " ".join(tela.split())
-        assert "Esta arte é uma imagem só, sem camadas" in corrido
+        assert "ela é uma imagem só, sem camadas" in corrido
         assert "não há foto, logo nem texto para mover separado" in corrido
         assert "Mande o PSD para poder mexer dentro dela" in corrido
         assert "chegam achatados" not in corrido
+        # agora ele explica um modo DESLIGADO, e não um limite de um modo à
+        # escolha: a frase precisa dizer isso na primeira palavra
+        assert "Indisponível para esta arte" in corrido
 
     def test_mora_dentro_do_modo_de_que_fala(self, tela):
         modo = tela.split('value="com" checked')[1].split("</label>")[0]
         assert 'id="travaPsd"' in modo
 
     def test_so_aparece_quando_e_verdade(self, tela):
-        """Arquivo achatado E o modo que promete ajustar: nos outros dois ele
-        não limita nada."""
-        assert "$('#travaPsd').hidden = !(v === 'com' && achatado);" in tela
+        """Arquivo achatado. Antes era também "e o modo escolhido": o aviso só
+        aparecia depois de marcar o modo que não serve, e era tarde — agora ele
+        é o porquê de o modo estar desligado, então aparece junto com a arte."""
+        assert "$(porque).hidden = !achatado;" in tela
+        assert "'#travaPsd'" in tela
 
 
 class TestOCampoOrienta:
@@ -851,3 +856,82 @@ class TestAVezDeCadaEscolha:
     def test_a_grade_diz_qual_e_a_etapa(self, tela):
         assert "<b>Escolha a prancheta</b> para ver os formatos" in tela
         assert "Agora escolha um canal acima" in tela
+
+
+class TestABarraDoVideo:
+    """"Quando solicito animação da peça não dá pra saber se está ou não
+    acontecendo, fica parado sem barra de progresso."
+
+    A barra existia e já era alimentada pelo vídeo — mas pela única conta que
+    o estado trazia: prontos sobre formatos. Como o estado só era gravado no
+    fim, isso era zero do começo ao fim do render.
+    """
+
+    def test_a_barra_do_video_le_o_passo_e_nao_so_o_que_acabou(self, tela):
+        assert "PESO_VIDEO" in tela, "o vídeo não tem peso por etapa"
+        assert "v.feito ?? (v.prontos||[]).length" in tela
+
+    def test_o_detalhe_diz_a_etapa_e_o_formato(self, tela):
+        """"2 de 5 vídeos" não distingue um render andando de um travado."""
+        assert "v.etapa || 'montando o vídeo'" in tela
+
+    def test_a_estimativa_usa_o_relogio_do_video(self, tela):
+        """Era o da replicação, que pode ter sido ontem."""
+        assert "? v.desde : ((d.progresso || {}).desde || d.inicio)" in tela
+
+    def test_a_trilha_mostra_que_esta_viva(self, tela):
+        """Fração verdadeira e parada minutos a fio volta a parecer travamento."""
+        assert ".trilha.trabalhando::after" in tela
+        assert "trilha.classList.toggle('trabalhando', andandoAlgo)" in tela
+        assert "$('#andTrilha').classList.toggle('trabalhando', tem)" in tela
+
+    def test_quem_desliga_animacao_ve_a_barra_parada(self, tela):
+        """Acessibilidade: o brilho que atravessa é decoração, não informação."""
+        i = tela.find(".trilha.trabalhando::after")
+        assert i > 0
+        regra = tela[i:i + 600]
+        assert "prefers-reduced-motion" in regra
+        assert "animation:none" in regra.split("prefers-reduced-motion")[1]
+
+    def test_o_painel_abre_no_clique_e_nao_na_proxima_volta(self, tela):
+        """Eram dois segundos e meio de tela parada logo depois do clique —
+        justamente quando a dúvida é se o pedido chegou."""
+        i = tela.find("$('#btnAnimarOk').onclick")
+        assert i > 0
+        assert "espelhar(true, null)" in tela[i:i + 900]
+
+
+class TestOModoQueAArteComporta:
+    """"Se ele não possibilita ajuste de diagramação de logo, de fonte, porque
+    é uma peça estática, não deveria ter as outras opções."
+
+    "Adaptação + Ajustes" era o modo marcado por padrão. Com JPEG ou PNG ele
+    entregava exatamente a mesma peça do primeiro modo e abria um editor sem
+    nada para mover — a tela avisava disso em letra miúda, depois de escolhido.
+    Avisar não resolve: o modo sai da mesa.
+    """
+
+    def test_os_dois_modos_que_mexem_na_arte_desligam(self, tela):
+        """Ajustar não tem o que mover; escrever não tem como corrigir."""
+        assert "PRECISA_DE_CAMADAS = { com: '#travaPsd', novo: '#travaTexto' }" in tela
+        assert "r.disabled = achatado;" in tela
+
+    def test_e_a_escolha_cai_para_o_que_a_arte_permite(self, tela):
+        assert "if (trocar) document.querySelector(`input[name=modo][value=sem]`" in tela \
+            or "if (trocar) document.querySelector('input[name=modo][value=sem]')" in tela
+
+    def test_o_porque_fica_a_vista_e_nao_so_quando_escolhido(self, tela):
+        """Antes o aviso só aparecia depois de marcar o modo que não serve."""
+        assert "$(porque).hidden = !achatado;" in tela
+        assert "label.modo.fora small.travado" in tela
+
+    def test_cada_modo_desligado_diz_o_seu_proprio_porque(self, tela):
+        """Os dois motivos são diferentes, e dizer o errado é não dizer nada:
+        um não tem o que mover, o outro não tem como corrigir."""
+        corrido = " ".join(tela.split())
+        assert "não há foto, logo nem texto para mover separado" in corrido
+        assert "sem camadas não há como ajustar o que for escrito" in corrido
+
+    def test_o_modo_desligado_continua_na_tela(self, tela):
+        """Sumir faria parecer que a plataforma não faz — ela faz, com PSD."""
+        assert "label.modo.fora{opacity:" in tela

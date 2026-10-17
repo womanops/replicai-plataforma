@@ -16,11 +16,25 @@ from PIL import Image
 from testes.test_api import FilaEspia, arte_png, cliente, enviar      # noqa: F401
 
 
+def enviar_psd(cliente, monkeypatch, **extra):
+    """O mesmo envio, em camadas. É o arquivo que comporta os três modos: numa
+    imagem achatada a arte decide e sobra um só."""
+    from api import psd
+    monkeypatch.setattr(psd, "pranchetas",
+                        lambda a: [psd.Prancheta("Prancheta 1", 0, 0, 1920, 1080)])
+    campos = {"formatos": "gdn-300x250", "headline": "Chegamos a Porto Belo"}
+    campos.update(extra)
+    return cliente.post("/jobs",
+                        files={"arte": ("arte.psd", b"8BPS" + b"\0" * 60,
+                                        "image/vnd.adobe.photoshop")},
+                        data=campos)
+
+
 class TestEscolhaDoModo:
-    def test_sem_modo_a_plataforma_nao_escreve(self, cliente):
+    def test_sem_modo_a_plataforma_nao_escreve(self, cliente, monkeypatch):
         """O padrão é conservador. Entre inventar texto e não inventar, o
         erro barato é não inventar: dá para pedir de novo pedindo texto."""
-        r = enviar(cliente)
+        r = enviar_psd(cliente, monkeypatch)
         assert r.status_code == 202
         assert cliente.fila.pedidos[-1][1][-1] == "com"
 
@@ -31,9 +45,8 @@ class TestEscolhaDoModo:
                          data={"formatos": "gdn-300x250", "modo": "sem"})
         assert r.status_code == 202
 
-    def test_texto_novo_sem_chamada_e_recusado(self, cliente):
-        r = cliente.post("/jobs", files={"arte": ("arte.png", arte_png(), "image/png")},
-                         data={"formatos": "gdn-300x250", "modo": "novo"})
+    def test_texto_novo_sem_chamada_e_recusado(self, cliente, monkeypatch):
+        r = enviar_psd(cliente, monkeypatch, modo="novo", headline="")
         assert r.status_code == 422
         assert "chamada" in r.json()["detail"]
 
@@ -42,11 +55,21 @@ class TestEscolhaDoModo:
         assert r.status_code == 422
         assert "turbo" in r.json()["detail"]
 
-    def test_o_modo_chega_ate_a_fila(self, cliente):
-        enviar(cliente, modo="novo")
+    def test_o_modo_chega_ate_a_fila(self, cliente, monkeypatch):
+        enviar_psd(cliente, monkeypatch, modo="novo")
         nome, args = cliente.fila.pedidos[-1]
         assert nome == "processar"
         assert args[-1] == "novo"
+
+    def test_na_imagem_achatada_a_arte_decide(self, cliente):
+        """"Se ele não possibilita ajuste de diagramação de logo, de fonte,
+        porque é uma peça estática, não deveria ter as outras opções."
+
+        Sem camadas não há o que mover nem como corrigir o que for escrito:
+        a peça é 100% do formato dela, e os outros dois modos não existem."""
+        for pedido in ("com", "novo"):
+            enviar(cliente, modo=pedido)
+            assert cliente.fila.pedidos[-1][1][-1] == "sem", pedido
 
     def test_o_modo_sobrevive_a_exportacao_final(self, cliente):
         """Finalizar refaz o trabalho. Refazer com outro modo entregaria uma

@@ -21,6 +21,30 @@ TEXTO_NOVO = "novo"      # o modelo escreve chamada e CTA no espaço que sobrou
 MODOS = (SO_FORMATO, DIAGRAMAR, TEXTO_NOVO)
 MODO_PADRAO = DIAGRAMAR
 
+# só PSD entrega camadas. JPEG, PNG e PDF chegam achatados: uma imagem só
+EM_CAMADAS = {".psd", ".psb"}
+
+
+def modo_possivel(modo: str, ext: str) -> str:
+    """O modo que ESTA arte comporta. Sem camadas, só adaptação de formato.
+
+    "Ajustes" promete mover a foto, o logo e o texto separados. Numa imagem
+    achatada não há o que mover: a peça sai idêntica à do primeiro modo e o
+    editor abre sem nada dentro.
+
+    "Novos Textos" ainda caberia — ele escreve na faixa que o reenquadramento
+    abriu ao lado, sem tocar na arte. Mas é justamente nessa peça que não há
+    como corrigir o que foi escrito: sem camadas o editor não abre, e a chamada
+    sai onde a régua pôs, na fonte que ela escolheu, para sempre. Texto que não
+    dá para ajustar depois é pior do que texto nenhum.
+
+    Então a arte achatada tem um modo só, e ele é 100% dela: o quadro muda, o
+    conteúdo não.
+    """
+    if (ext or "").lower() in EM_CAMADAS:
+        return modo
+    return SO_FORMATO
+
 
 def compositor(arte: str, headline: str, cta: str, modo: str = MODO_PADRAO):
     """Quem compõe, conforme o que foi pedido.
@@ -176,20 +200,33 @@ def processar_video(conta: str, job: str, formatos: list[str], preset: str,
     """O que o worker executa para animar. Separado de `processar` porque é
     outra ferramenta e outro tempo: a peça parada leva segundos, o vídeo leva
     minutos, e quem quer só a peça não deve esperar pelo vídeo."""
+    from time import time
+
     from api import animacao
-    trabalhos.gravar(conta, job, {"video": {"status": "rodando", "preset": preset,
-                                            "formatos": formatos}})
+    # `desde` é o relógio do vídeo, e não o da peça parada: a tela estimava o
+    # que falta a partir do início da replicação, que às vezes foi ontem
+    comecou = time()
+    estado = {"status": "rodando", "preset": preset, "formatos": formatos,
+              "desde": comecou, "prontos": [], "feito": 0, "total": len(formatos)}
+    trabalhos.gravar(conta, job, {"video": estado})
+
+    def andando(p: dict) -> None:
+        # a cada passo, como na esteira da peça: sem isto a barra do vídeo
+        # ficava em zero do começo ao fim e parecia travamento
+        trabalhos.gravar(conta, job, {"video": {**estado, **p, "status": "rodando"}})
+
     try:
         prontos, falhas = animacao.animar(trabalhos.pasta_do(conta, job), formatos,
-                                          preset, segundos)
-        estado = "pronto" if prontos and not falhas else ("parcial" if prontos else "erro")
+                                          preset, segundos, progresso=andando)
+        acabou = "pronto" if prontos and not falhas else ("parcial" if prontos else "erro")
         for fid in sorted(prontos):
             uso.registrar(conta, uso.VIDEO, job=job, formato=fid, preset=preset)
-        trabalhos.gravar(conta, job, {"video": {"status": estado, "preset": preset,
+        trabalhos.gravar(conta, job, {"video": {**estado, "status": acabou,
                                                 "prontos": sorted(prontos),
+                                                "feito": len(formatos),
                                                 "falhas": falhas}})
     except Exception as e:
-        trabalhos.gravar(conta, job, {"video": {"status": "erro", "erro": str(e)}})
+        trabalhos.gravar(conta, job, {"video": {**estado, "status": "erro", "erro": str(e)}})
         raise
 
 

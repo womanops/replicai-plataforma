@@ -25,6 +25,18 @@ def subir(cliente, **extra):
                         data={"titulo": "prova", **extra})
 
 
+def subir_psd(cliente, monkeypatch, **extra):
+    """O mesmo rascunho, mas em camadas: é o arquivo que comporta os três
+    modos. Uma prancheta só, para o envio não parar na escolha."""
+    from api import psd
+    monkeypatch.setattr(psd, "pranchetas",
+                        lambda a: [psd.Prancheta("Prancheta 1", 0, 0, 1920, 1080)])
+    return cliente.post("/jobs",
+                        files={"arte": ("arte.psd", b"8BPS" + b"\0" * 60,
+                                        "image/vnd.adobe.photoshop")},
+                        data={"titulo": "prova", **extra})
+
+
 class TestOEnvioEmDoisPassos:
     def test_sem_formatos_nasce_rascunho_e_nao_vai_para_a_fila(self, cliente):
         r = subir(cliente)
@@ -58,8 +70,8 @@ class TestOEnvioEmDoisPassos:
         pasta = trabalhos.pasta_do(cliente.conta.id, job)
         assert len(list(pasta.glob("arte.*"))) == 1
 
-    def test_o_texto_e_o_modo_vem_no_segundo_passo(self, cliente):
-        job = subir(cliente).json()["job"]
+    def test_o_texto_e_o_modo_vem_no_segundo_passo(self, cliente, monkeypatch):
+        job = subir_psd(cliente, monkeypatch).json()["job"]
         cliente.post(f"/jobs/{job}/rodar", data={
             "formatos": "ig-feed-1x1", "modo": "novo",
             "headline": "Chegamos a Porto Belo", "cta": "Saiba mais",
@@ -96,8 +108,8 @@ class TestOQueRodarRecusa:
         assert r.status_code == 422
         assert "formato desconhecido" in r.json()["detail"]
 
-    def test_texto_novo_sem_chamada_e_recusado(self, cliente):
-        job = subir(cliente).json()["job"]
+    def test_texto_novo_sem_chamada_e_recusado(self, cliente, monkeypatch):
+        job = subir_psd(cliente, monkeypatch).json()["job"]
         r = cliente.post(f"/jobs/{job}/rodar",
                          data={"formatos": "ig-feed-1x1", "modo": "novo"})
         assert r.status_code == 422
@@ -260,3 +272,38 @@ class TestRascunhoAbandonadoNaoFicaNoDisco:
         from pathlib import Path
         tela = Path("web/index.html").read_text(encoding="utf-8")
         assert "fetch(`/jobs/${rascunho}`, { method:'DELETE' })" in tela
+
+
+class TestOModoQueAArteComporta:
+    """A regra não pode morar só na tela: quem manda pelo programa, e o
+    rascunho criado com PSD cuja arte foi trocada depois, chegam aqui."""
+
+    def test_imagem_achatada_tem_um_modo_so(self):
+        from api.tarefas import MODOS, SO_FORMATO, modo_possivel
+        for ext in (".png", ".jpg", ".jpeg", ".pdf"):
+            for m in MODOS:
+                assert modo_possivel(m, ext) == SO_FORMATO, (m, ext)
+
+    def test_pela_rota_tambem(self, cliente):
+        """A regra não pode viver só na tela: quem manda pelo programa também
+        recebe a peça que a arte comporta, e o estado diz a verdade."""
+        job = subir(cliente).json()["job"]
+        r = cliente.post(f"/jobs/{job}/rodar",
+                         data={"formatos": "ig-feed-1x1", "modo": "novo",
+                               "headline": "Chegamos a Porto Belo"})
+        assert r.status_code == 202, r.text
+        assert cliente.get(f"/jobs/{job}").json()["modo"] == "sem"
+
+    def test_a_chamada_deixa_de_ser_exigida_quando_nada_vai_ser_escrito(self, cliente):
+        """Senão a arte achatada era barrada por causa de um texto que a peça
+        dela nunca ia ter."""
+        r = cliente.post("/jobs",
+                         files={"arte": ("arte.png", arte_png(), "image/png")},
+                         data={"titulo": "p", "formatos": "ig-feed-1x1", "modo": "novo"})
+        assert r.status_code == 202, r.text
+
+    def test_psd_mantem_os_tres(self):
+        from api.tarefas import MODOS, modo_possivel
+        for ext in (".psd", ".PSD", ".psb"):
+            for m in MODOS:
+                assert modo_possivel(m, ext) == m, (m, ext)

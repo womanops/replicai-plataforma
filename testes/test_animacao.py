@@ -108,6 +108,47 @@ class TestAnimar:
         assert prontos["ig-feed-1x1"] == job / "video" / "ig-feed-1x1-lettering.mp4"
 
 
+class TestDarSinalDeVida:
+    """"Quando solicito animação da peça não dá pra saber se está ou não
+    acontecendo, fica parado sem barra de progresso."
+
+    O render leva minutos e era o único pedaço da plataforma que não contava
+    nada enquanto rodava: o estado do vídeo só era gravado no começo e no fim,
+    então a tela dividia zero prontos por quatro formatos e mostrava 0% do
+    princípio ao fim. De fora, isso é igual a um travamento.
+    """
+
+    def test_cada_passo_e_contado(self, job, monkeypatch):
+        monkeypatch.setattr(animacao, "renderizar", render_falso)
+        passos = []
+        animar(job, ["ig-feed-1x1"], progresso=passos.append)
+        assert [p["etapa"] for p in passos] == ["montando a cena",
+                                                "renderizando o vídeo", "pronto"]
+        assert passos[-1]["feito"] == 1 and passos[0]["feito"] == 0
+
+    def test_o_que_ja_saiu_vai_junto(self, job, monkeypatch):
+        """Senão a tela só sabe dos vídeos quando o último terminar."""
+        monkeypatch.setattr(animacao, "renderizar", render_falso)
+        passos = []
+        animar(job, ["ig-feed-1x1", "ig-stories"], progresso=passos.append)
+        assert passos[-1]["prontos"] == ["ig-feed-1x1"]
+        assert passos[-1]["total"] == 2
+
+    def test_o_formato_que_falha_tambem_avança(self, job, monkeypatch):
+        """A barra não pode parar no formato que não saiu: o trabalho segue."""
+        monkeypatch.setattr(animacao, "renderizar", render_falso)
+        passos = []
+        animar(job, ["ig-stories"], progresso=passos.append)
+        assert passos[-1]["feito"] == 1
+        assert passos[-1]["falhas"], "a falha não chegou ao andamento"
+
+    def test_sem_callback_continua_funcionando(self, job, monkeypatch):
+        """Quem chama de fora da esteira (teste, script) não precisa saber."""
+        monkeypatch.setattr(animacao, "renderizar", render_falso)
+        prontos, _ = animar(job, ["ig-feed-1x1"])
+        assert set(prontos) == {"ig-feed-1x1"}
+
+
 class TestSemProjeto:
     def test_sem_node_modules_diz_o_que_fazer(self, job, monkeypatch):
         monkeypatch.setattr(animacao, "instalado", lambda: False)
@@ -143,3 +184,45 @@ class TestOQueAJanelaMostra:
         from pathlib import Path
         for pid in animacao.PRESETS:
             assert (Path("web/assets") / f"exemplo-{pid}.webp").exists(), pid
+
+
+class TestOAndamentoChegaNaTela:
+    """De nada adianta contar os passos se o estado gravado não os carrega: é
+    o `trabalho.json` que a tela lê de dois em dois segundos e meio."""
+
+    def test_o_estado_do_video_guarda_o_passo_e_o_relogio(self, tmp_path, monkeypatch):
+        from api import animacao, tarefas, trabalhos, uso
+        monkeypatch.setenv("STORAGE_DIR", str(tmp_path))
+        monkeypatch.setattr(uso, "registrar", lambda *a, **k: {"gravado": True})
+
+        fotos = []
+
+        def animar_devagar(pasta, formatos, preset, segundos, progresso=None):
+            progresso({"etapa": "renderizando o vídeo", "formato": formatos[0],
+                       "feito": 0, "total": len(formatos), "prontos": [],
+                       "falhas": {}, "desde_formato": 1.0})
+            fotos.append(trabalhos.ler("conta-teste", "job-teste")["video"])
+            return {f: pasta / f for f in formatos}, {}
+
+        monkeypatch.setattr(animacao, "animar", animar_devagar)
+        tarefas.processar_video("conta-teste", "job-teste", ["ig-feed-1x1", "ig-stories"], "seco", 6.0)
+
+        meio = fotos[0]
+        assert meio["status"] == "rodando"
+        assert meio["etapa"] == "renderizando o vídeo" and meio["formato"] == "ig-feed-1x1"
+        assert meio["total"] == 2, "a tela não sabe por quanto dividir"
+        assert meio["desde"], "sem relógio do vídeo a estimativa usa o da replicação"
+        assert trabalhos.ler("conta-teste", "job-teste")["video"]["status"] == "pronto"
+
+    def test_o_relogio_do_video_e_dele_e_nao_o_da_peca(self, tmp_path, monkeypatch):
+        """A peça pode ter sido replicada ontem. Estimar o que falta pelo
+        início dela dava "~4 h restando" num render de dois minutos."""
+        from api import animacao, tarefas, trabalhos, uso
+        monkeypatch.setenv("STORAGE_DIR", str(tmp_path))
+        monkeypatch.setattr(uso, "registrar", lambda *a, **k: {"gravado": True})
+        trabalhos.gravar("conta-teste", "job-teste", {"inicio": 1.0})
+        monkeypatch.setattr(animacao, "animar",
+                            lambda *a, **k: ({"ig-feed-1x1": tmp_path}, {}))
+        tarefas.processar_video("conta-teste", "job-teste", ["ig-feed-1x1"], "seco", 6.0)
+        d = trabalhos.ler("conta-teste", "job-teste")
+        assert d["video"]["desde"] > d["inicio"]

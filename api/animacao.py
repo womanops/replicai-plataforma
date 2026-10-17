@@ -17,6 +17,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
+from time import time
 
 RAIZ = Path(__file__).resolve().parent.parent
 VIDEO = RAIZ / "video"
@@ -166,22 +167,37 @@ def renderizar(props: Path, destino: Path, espera: int = ESPERA) -> Path:
 
 
 def animar(pasta: Path, formatos: list[str], preset: str = PRESET_PADRAO,
-           segundos: float = SEGUNDOS_PADRAO) -> tuple[dict, dict]:
+           segundos: float = SEGUNDOS_PADRAO, progresso=None) -> tuple[dict, dict]:
     """Anima os formatos pedidos. Devolve (prontos, falhas).
 
     Um formato que falha não derruba os outros — mesma regra da esteira de
     peça parada: entregar quatro de seis com a lista do que faltou é melhor do
     que não entregar nada.
+
+    `progresso(dict)` é chamado a cada passo, como na esteira da peça parada. O
+    vídeo é a parte mais demorada da plataforma e era a única que não dava
+    sinal: a tela ficava com a barra em zero do começo ao fim, e de fora um
+    render de três minutos e um travamento são a mesma coisa.
     """
     pasta = Path(pasta)
     prontos, falhas = {}, {}
-    for fid in formatos:
+
+    def avisar(etapa: str, fid: str, feito: int) -> None:
+        if progresso:
+            progresso({"etapa": etapa, "formato": fid, "feito": feito,
+                       "total": len(formatos), "prontos": sorted(prontos),
+                       "falhas": dict(falhas), "desde_formato": time()})
+
+    for i, fid in enumerate(formatos):
         try:
+            avisar("montando a cena", fid, i)
             props, slug = preparar(pasta, fid, preset, segundos)
+            avisar("renderizando o vídeo", fid, i)
             saida = renderizar(props, pasta / "video" / f"{fid}-{preset}.mp4")
             prontos[fid] = saida
         except VideoImpossivel as e:
             falhas[fid] = str(e)
         except Exception as e:
             falhas[fid] = f"erro inesperado no vídeo: {e}"
+        avisar("pronto", fid, i + 1)
     return prontos, falhas

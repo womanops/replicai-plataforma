@@ -23,8 +23,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 
 from api import ambiente, cobranca, contas, correio, tranca, trabalhos, uso
 from api.pipeline import MARCA_DA_MAO
-from api.tarefas import (MODOS, MODO_PADRAO, TEXTO_NOVO, previas, processar,
-                         processar_video, redesenhar, refazer_fundo)
+from api.tarefas import (MODOS, MODO_PADRAO, TEXTO_NOVO, modo_possivel, previas,
+                         processar, processar_video, redesenhar, refazer_fundo)
 from api.fila import FILA_VIDEO, fila_do_ambiente
 from motor.replica import formato_by_id, load_formatos
 
@@ -703,15 +703,19 @@ async def criar(
 ):
     if modo not in MODOS:
         raise HTTPException(422, f"modo desconhecido: `{modo}`. Use {', '.join(MODOS)}")
+    ext = Path(arte.filename or "").suffix.lower()
+    if ext not in ACEITOS:
+        raise HTTPException(415, f"não trabalho com `{ext or 'arquivo sem extensão'}`. "
+                                 f"Mande {', '.join(sorted(ACEITOS))}")
+    # a arte decide o que o modo pode prometer, e decide ANTES de exigir a
+    # chamada: numa imagem achatada nada vai ser escrito, então pedir a frase
+    # seria barrar o trabalho por causa de um texto que não vai existir
+    modo = modo_possivel(modo, ext)
     # a chamada só é exigida de quem pediu texto novo. Exigir sempre travava o
     # pedido de quem queria apenas a mesma peça noutros formatos — e não há
     # chamada a escrever quando nada vai ser escrito
     if modo == TEXTO_NOVO and not headline.strip():
         raise HTTPException(422, "para escrever texto novo preciso da chamada")
-    ext = Path(arte.filename or "").suffix.lower()
-    if ext not in ACEITOS:
-        raise HTTPException(415, f"não trabalho com `{ext or 'arquivo sem extensão'}`. "
-                                 f"Mande {', '.join(sorted(ACEITOS))}")
     pedidos = [f.strip() for f in formatos.split(",") if f.strip()]
     # Sem formatos o envio é um RASCUNHO: a arte sobe, o PSD é lido e as
     # pranchetas voltam para quem está escolhendo. A ordem importa — a
@@ -833,6 +837,7 @@ def rodar(job: str, formatos: str = Form(...), headline: str = Form(""),
         raise HTTPException(409, "escolha a prancheta antes de rodar")
     if modo not in MODOS:
         raise HTTPException(422, f"modo desconhecido: `{modo}`. Use {', '.join(MODOS)}")
+    modo = modo_possivel(modo, Path(estado["arte"]).suffix)
     if modo == TEXTO_NOVO and not headline.strip():
         raise HTTPException(422, "para escrever texto novo preciso da chamada")
 

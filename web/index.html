@@ -433,8 +433,15 @@ label.modo.on{background:var(--vinho-fundo);border-left-color:var(--vinho)}
 label.modo.on b{color:var(--rosa)}
 /* o aviso mora DENTRO do modo de que ele fala, e não solto embaixo da caixa:
    ele é o limite daquela promessa, não um recado geral da tela */
-label.modo.on small.travado{display:block;margin-top:8px;padding-left:9px;
-  border-left:2px solid var(--err);color:rgba(var(--fgRGB),.75)}
+label.modo.on small.travado,label.modo.fora small.travado{display:block;margin-top:8px;
+  padding-left:9px;border-left:2px solid var(--err);color:rgba(var(--fgRGB),.75)}
+/* modo que ESTA arte não comporta. Fica à vista e apagado, com o porquê
+   embaixo: sumir faria parecer que a plataforma não faz, e ela faz — com PSD.
+   Avisar e deixar escolher, que era o que acontecia, é pior do que as duas:
+   a peça saía igual à do primeiro modo e o editor abria vazio. */
+label.modo.fora{opacity:.55;cursor:not-allowed}
+label.modo.fora small{display:block}
+label.modo.fora input{pointer-events:none}
 
 /* ---------- progresso ----------
    Ele morava só no rodapé, numa tira de 3 px embaixo de tudo: quem está
@@ -458,6 +465,19 @@ label.modo.on small.travado{display:block;margin-top:8px;padding-left:9px;
    sem fingir uma porcentagem que ninguém mediu */
 #andamento.sem .trilha i{width:30%;animation:vaivem 1.6s ease-in-out infinite}
 @keyframes vaivem{0%{margin-left:-30%}100%{margin-left:100%}}
+/* fração verdadeira, passo demorado: a barra fica no mesmo lugar minutos a fio
+   (um render de vídeo) e volta a parecer travamento. O brilho atravessa a
+   trilha enquanto houver trabalho — diz que está acontecendo sem mexer no
+   número, que é medido. */
+.trilha.trabalhando{position:relative}
+.trilha.trabalhando::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,rgba(var(--fgRGB),.26),transparent);
+  animation:atravessa 1.9s linear infinite}
+@keyframes atravessa{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+@media (prefers-reduced-motion:reduce){
+  .trilha.trabalhando::after{animation:none}
+  #andamento.sem .trilha i{animation:none;width:100%;opacity:.45}
+}
 
 /* ---------- o "mais" do rodapé ---------- */
 footer .mais{position:relative}
@@ -780,12 +800,15 @@ header .saldo.apertado .fio i{background:var(--err)}
         <small>Gera os formatos e deixa você ajustar a diagramação e os textos de cada
         peça antes de exportar: mover, redimensionar, trocar o texto e tirar o que não
         cabe.</small>
-        <small class="travado" id="travaPsd" hidden>Esta arte é uma imagem só, sem
-        camadas: não há foto, logo nem texto para mover separado. Mande o PSD para
-        poder mexer dentro dela.</small></span></label>
+        <small class="travado" id="travaPsd" hidden>Indisponível para esta arte: ela é
+        uma imagem só, sem camadas, então não há foto, logo nem texto para mover
+        separado. Mande o PSD para poder mexer dentro dela.</small></span></label>
       <label class="modo"><input type="radio" name="modo" value="novo">
         <span><b>Adaptação + Novos Textos</b>
-        <small>Além do acima, uma chamada e um CTA novos entram no espaço que sobrou.</small></span></label>
+        <small>Além do acima, uma chamada e um CTA novos entram no espaço que sobrou.</small>
+        <small class="travado" id="travaTexto" hidden>Indisponível para esta arte: sem
+        camadas não há como ajustar o que for escrito, e a chamada sairia onde caiu, na
+        fonte que a máquina escolheu. Mande o PSD para escrever texto novo.</small></span></label>
     </div>
     <label class="campo" id="campoHead" hidden><span>Chamada <i class="conta" id="cHead"></i></span>
       <input type="text" id="headline" placeholder="Insira a nova chamada" maxlength="120"></label>
@@ -1281,6 +1304,7 @@ function espelhar(ligado, f){
   $('#andDet').textContent = $('#detalhe').textContent;
   const tem = f !== null && f !== undefined;
   a.classList.toggle('sem', !tem);
+  $('#andTrilha').classList.toggle('trabalhando', tem);
   $('#andPct').textContent = tem ? Math.round(f * 100) + '%' : '';
   $('#andTrilha').firstElementChild.style.width = tem ? Math.round(f * 100) + '%' : '';
 }
@@ -1319,15 +1343,32 @@ function pintarRodape(){
    que nem sempre existe: quem só quer a mesma peça noutro formato não tem
    texto novo nenhum a escrever. */
 const modoPeca = () => (document.querySelector('input[name=modo]:checked')||{}).value || 'com';
+// o que cada modo precisa encontrar dentro do arquivo
+const PRECISA_DE_CAMADAS = { com: '#travaPsd', novo: '#travaTexto' };
 function lerModo(){
+  // só PSD entrega camadas. Em JPEG, PNG e PDF a peça é uma imagem só, e os
+  // outros dois modos saem da mesa em vez de só avisar.
+  // "Ajustes" não teria o que mover — entregava a peça do primeiro modo com um
+  // editor vazio atrás. "Novos Textos" até caberia, na faixa que abre ao lado,
+  // mas é nessa peça que não há como corrigir o que a máquina escreveu: sem
+  // camadas o editor não abre, e a chamada fica onde caiu. Texto que não dá
+  // para ajustar depois é pior do que texto nenhum.
+  const achatado = !!peca && !['psd','psb'].includes(peca.ext);
+  let trocar = false;
+  for (const [v, porque] of Object.entries(PRECISA_DE_CAMADAS)){
+    const r = document.querySelector(`input[name=modo][value=${v}]`);
+    r.disabled = achatado;
+    r.closest('label.modo').classList.toggle('fora', achatado);
+    $(porque).hidden = !achatado;
+    if (achatado && r.checked) trocar = true;
+  }
+  if (trocar) document.querySelector('input[name=modo][value=sem]').checked = true;
+
   const v = modoPeca();
   document.querySelectorAll('label.modo').forEach(l =>
-    l.classList.toggle('on', l.querySelector('input').checked));
+    l.classList.toggle('on', !l.classList.contains('fora') && l.querySelector('input').checked));
   $('#campoHead').hidden = v !== 'novo';
   $('#campoCta').hidden  = v !== 'novo';
-  // só PSD entrega camadas; arquivo achatado não tem foto nem grafismo a mover
-  const achatado = peca && !['psd','psb'].includes(peca.ext);
-  $('#travaPsd').hidden = !(v === 'com' && achatado);
   pintarRodape();
 }
 document.querySelectorAll('input[name=modo]').forEach(r => r.onchange = lerModo);
@@ -1374,10 +1415,16 @@ $('#btnIr').onclick = async () => {
 const PESO = {'lendo a arte':0, 'abrindo o PSD em camadas':0, 'preparando o fundo':.05,
               'compondo':.62, 'desenhando':.82, 'pronta':0,
               'montando a apresentação':0};
+// o mesmo para o vídeo: montar a cena é rápido, renderizar é o que demora
+const PESO_VIDEO = {'montando a cena':.08, 'renderizando o vídeo':.18, 'pronto':0};
 function fracao(d){
   const v = d.video || {};
-  if (['rodando','na fila'].includes(v.status||''))
-    return (v.prontos||[]).length / Math.max(1, (v.formatos||[]).length);
+  if (['rodando','na fila'].includes(v.status||'')){
+    const total = Math.max(1, v.total || (v.formatos||[]).length);
+    const feito = v.feito ?? (v.prontos||[]).length;
+    const dentro = feito < total ? (PESO_VIDEO[v.etapa] ?? 0) : 0;
+    return Math.min(1, (feito + dentro) / total);
+  }
   const p = d.progresso;
   if (!p || !p.total) return null;
   const dentro = p.feito < p.total ? (PESO[p.etapa] ?? 0) : 0;
@@ -1393,7 +1440,11 @@ function falta(d, f){
   // erraria pelo fuso e pelo atraso de cada máquina.
   // `desde` é quando o trabalho por formato começou; `inicio` incluiria o
   // minuto de abrir um PSD grande, que não se repete, e a conta estourava
-  const zero = (d.progresso || {}).desde || d.inicio;
+  // durante o vídeo o relógio é o do vídeo. Era o da replicação, que podia ter
+  // começado ontem: a conta dava "~4 h restando" num render de dois minutos
+  const v = d.video || {};
+  const zero = ['rodando','na fila'].includes(v.status||'')
+             ? v.desde : ((d.progresso || {}).desde || d.inicio);
   if (!zero || !d.agora || !f || f < .04) return '';
   const correu = d.agora - zero;
   if (correu < 3) return '';
@@ -1501,7 +1552,9 @@ async function acompanhar(){
                      : !d.fila.a_frente ? 'o próximo a ser feito'
                      : `${d.fila.a_frente} trabalho${d.fila.a_frente>1?'s':''} na frente`
                        + (d.fila.segundos ? ` · começa em ~${emTempo(d.fila.segundos)}` : ''))
-      : v.status === 'rodando' ? `${(v.prontos||[]).length} de ${(v.formatos||[]).length} vídeos`
+      : v.status === 'rodando' ? `${v.etapa || 'montando o vídeo'}${v.formato ? ' · ' + v.formato : ''}`
+                                 + ` · ${v.feito ?? (v.prontos||[]).length} de `
+                                 + `${v.total || (v.formatos||[]).length} vídeos`
       : v.status === 'na fila' ? 'na fila do vídeo'
       : andando && p && p.etapa ? `${p.etapa}${p.formato ? ' · ' + p.formato : ''} · ${p.feito} de ${p.total}`
       : andando ? `${feitas} de ${total}`
@@ -1517,6 +1570,7 @@ async function acompanhar(){
     const f = fracao(d);
     const trilha = $('#trilha');
     trilha.classList.toggle('hidden', !andandoAlgo);
+    trilha.classList.toggle('trabalhando', andandoAlgo);
     if (andandoAlgo && f !== null){
       trilha.querySelector('i').style.width = Math.round(f*100) + '%';
       const resta = falta(d, f);
@@ -1530,6 +1584,7 @@ async function acompanhar(){
     if (parado){
       clearInterval(pulso);
       trilha.classList.add('hidden');
+      trilha.classList.remove('trabalhando');
       espelhar(false);
       if ((d.ajuste||{}).status === 'erro') aviso(d.ajuste.erro || 'O ajuste não desenhou.');
       // só avisa de ajuste pedido agora: ao reabrir um trabalho antigo o
@@ -2121,6 +2176,10 @@ $('#btnAnimarOk').onclick = async () => {
   } catch(e){ aviso('Não consegui falar com o servidor.'); return; }
   $('#conta').textContent = 'Animando';
   $('#detalhe').textContent = 'O vídeo leva mais tempo que a peça parada.';
+  // o painel abre já: esperar a primeira resposta do servidor deixava dois
+  // segundos e meio de tela parada logo depois do clique, que é justamente
+  // quando a dúvida é se o pedido chegou
+  espelhar(true, null);
   acompanhar();
 };
 
