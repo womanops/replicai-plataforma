@@ -226,3 +226,59 @@ class TestOAndamentoChegaNaTela:
         tarefas.processar_video("conta-teste", "job-teste", ["ig-feed-1x1"], "seco", 6.0)
         d = trabalhos.ler("conta-teste", "job-teste")
         assert d["video"]["desde"] > d["inicio"]
+
+
+@pytest.mark.lento
+class TestPecaEmCamadasNaoDesmonta:
+    """Peça de PSD: a arte É as camadas.
+
+    O vídeo tratava cada camada como um objeto que entra e sai. O resultado foi
+    um vídeo de cinco segundos que passava dois deles em BRANCO: a prancheta do
+    PSD no começo, antes de a arte chegar, e a prancheta de novo no fim, depois
+    de a arte ir embora — com o maior "selo" voando para o centro e crescendo,
+    que no Energiza era o algarismo zero de "2027".
+    """
+
+    def _quadro(self, mp4, segundo, destino):
+        import subprocess
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-ss", str(segundo),
+                        "-i", str(mp4), "-frames:v", "1", str(destino)], check=True)
+        return Image.open(destino).convert("RGB")
+
+    def test_o_comeco_e_o_fim_mostram_a_arte_e_nao_a_prancheta(self, tmp_path):
+        import shutil
+        if not animacao.instalado():
+            pytest.skip("o projeto de vídeo não está instalado")
+
+        pasta = tmp_path / "trab"
+        (pasta / "pecas").mkdir(parents=True)
+        Image.new("RGB", (200, 200), "#ffffff").save(pasta / "prancheta.png")
+        Image.new("RGB", (200, 200), "#0b1030").save(pasta / "arte.png")
+        Image.new("RGB", (12, 16), "#ffffff").save(pasta / "selo.png")
+        (pasta / "pecas" / "quadrado.json").write_text(json.dumps({
+            "canvas": {"w": 200, "h": 200},
+            "fundo": {"tipo": "imagem", "src": "prancheta.png", "fit": "cover"},
+            "elementos": [
+                {"tipo": "imagem", "papel": "figura", "ancorado": True, "ordem": 0,
+                 "src": "arte.png", "fit": "fill",
+                 "box": {"x": 0, "y": 0, "w": 200, "h": 200}},
+                {"tipo": "imagem", "papel": "selo", "ancorado": True, "ordem": 1,
+                 "letra": 0, "src": "selo.png", "fit": "fill",
+                 "box": {"x": 90, "y": 150, "w": 12, "h": 16}},
+            ]}), encoding="utf-8")
+
+        props, slug = preparar(pasta, "quadrado", preset="lettering", segundos=2.0)
+        try:
+            mp4 = animacao.renderizar(props, tmp_path / "saida.mp4")
+            primeiro = self._quadro(mp4, 0.05, tmp_path / "a.png")
+            ultimo = self._quadro(mp4, 1.90, tmp_path / "b.png")
+        finally:
+            shutil.rmtree(animacao.VIDEO / "public" / "peca" / slug, ignore_errors=True)
+            props.unlink(missing_ok=True)
+
+        # no centro só pode estar a arte: branco ali é a prancheta aparecendo
+        # — ou o selo que voou para o meio e cresceu
+        for quando, q in (("no primeiro quadro", primeiro), ("no último quadro", ultimo)):
+            r, g, b = q.getpixel((100, 100))
+            assert max(r, g, b) < 120, f"a prancheta está à mostra {quando}: {(r, g, b)}"
+        assert ultimo.getpixel((96, 158))[0] > 200, "o selo sumiu no fim: a peça se desmontou"

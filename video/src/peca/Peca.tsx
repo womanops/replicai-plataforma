@@ -295,6 +295,13 @@ export const Peca: React.FC<PecaProps> = ({
   // — marca, nome, assinatura — e não na ordem em que as camadas estão
   // empilhadas no arquivo. Cada bloco só começa depois que o anterior acabou
   // de entrar, senão as letras de um atropelam as do outro.
+  // Peça desenhada em camadas (PSD): a arte É as camadas. Montá-la do zero
+  // deixa a prancheta nua no começo e desmontá-la no fim devolve essa mesma
+  // prancheta — que num PSD costuma ser branca. Era daí que saía o "fundo
+  // branco" no começo e no fim do vídeo. Numa peça assim o desenho já está
+  // posto: anima o que se lê por cima, e nada sai.
+  const emCamadas = elementos.some((e) => e.ancorado);
+
   const porLetra = P.revela === 'lettering' || P.revela === 'letra';
   const RESPIRO_BLOCO = 0.38;
   const inicioDe: Record<number, number> = {};
@@ -350,6 +357,7 @@ export const Peca: React.FC<PecaProps> = ({
   const cascEf = Math.min(S.cascata, Math.max(0, JANELA - S.dur) / nEl);
   const inicioSaida = fimDoFecho - S.dur - cascEf * nEl;
   const saidaDe = (el: El) => {
+    if (emCamadas) return 0;
     const i = ordemSaida.indexOf(el);
     return Math.min(1, Math.max(0, (t - (inicioSaida + i * cascEf)) / S.dur));
   };
@@ -357,7 +365,12 @@ export const Peca: React.FC<PecaProps> = ({
   // A assinatura não sai: caminha para o centro e fica. É a MAIOR marca da peça
   // — a logo bordada na manga do personagem também conta como marca, e ela é
   // arte, não assinatura: tem que sair com o resto em vez de voar para o meio.
-  const marcas = comTempo.filter((x) => x.pap === 'marca');
+  // `papelDe` junta marca e selo na mesma família para eles entrarem juntos —
+  // mas selo é o ANO, e o maior selo de "2027" é um algarismo. Ele virava a
+  // assinatura e era um "0" que voava para o centro e crescia. Quem assina a
+  // peça é a marca, pelo nome da camada.
+  const marcas = emCamadas ? [] : comTempo.filter(
+    (x) => x.pap === 'marca' && /logo|marca|assinatura/.test((x.e.papel || '').toLowerCase()));
   const assinatura = marcas.length
     ? marcas.reduce((a, b) => (a.e.box.w * a.e.box.h >= b.e.box.w * b.e.box.h ? a : b)).e
     : null;
@@ -374,9 +387,12 @@ export const Peca: React.FC<PecaProps> = ({
       )}
 
       {comTempo.map(({ e, pap, t0, m }, k) => {
+        // Cenário: o desenho de uma peça em camadas. Não entra, não sai, não
+        // deriva — está lá desde o primeiro quadro, como numa peça parada.
+        const cenario = emCamadas && (pap === 'objeto' || pap === 'base' || pap === 'scrim');
         const bruto = (t - t0) / m.dur;
-        if (bruto <= 0) return null;
-        const p = m.mola
+        if (!cenario && bruto <= 0) return null;
+        const p = cenario ? 1 : m.mola
           ? spring({ frame: frame - t0 * fps, fps, config: { damping: 14, stiffness: 120, mass: 0.8 } })
           : interpolate(bruto, [0, 1], [0, 1], { extrapolateRight: 'clamp', easing: (x) => 1 - Math.pow(1 - x, 3) });
 
