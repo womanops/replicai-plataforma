@@ -8,7 +8,8 @@ rodar teste — e o Redis de verdade é provado na integração contínua.
 import fakeredis
 import pytest
 
-from api.fila import FILA_PECA, FILA_VIDEO, FilaDireta, FilaRQ, fila_do_ambiente
+from api.fila import (FILA_PECA, FILA_VIDEO, FilaDireta, FilaEmFio, FilaRQ,
+                      fila_do_ambiente)
 
 marcas = []
 
@@ -87,13 +88,72 @@ class TestFilaRQ:
 
 
 class TestEscolha:
-    def test_sem_redis_roda_na_hora(self, monkeypatch):
+    """Sem Redis a plataforma roda em FIO, não dentro da requisição.
+
+    Rodando dentro, o `POST /rodar` só respondia com a última peça pronta — e
+    a tela, que pergunta o andamento depois da resposta, encontrava tudo
+    pronto. A barra de progresso existia e nunca tinha o que mostrar. O
+    sintoma na mão de quem usa: "a barra não foi implementada".
+    """
+
+    def test_sem_redis_roda_em_fio(self, monkeypatch):
         monkeypatch.delenv("REDIS_URL", raising=False)
         f = fila_do_ambiente()
-        assert isinstance(f, FilaDireta) and "sem REDIS_URL" in f.porque
+        assert isinstance(f, FilaEmFio) and "sem REDIS_URL" in f.porque
 
     def test_redis_quebrado_cai_mas_conta(self, monkeypatch):
         monkeypatch.setenv("REDIS_URL", "redis://127.0.0.1:6399/0")
         f = fila_do_ambiente()
-        assert isinstance(f, FilaDireta)
+        assert isinstance(f, FilaEmFio)
         assert "6399" in f.porque and "não respondeu" in f.porque
+
+
+class TestFilaEmFio:
+    def test_devolve_na_hora_e_executa_depois(self):
+        """É isso que dá à tela o intervalo em que existe progresso."""
+        import threading
+        solta, feito = threading.Event(), threading.Event()
+
+        def demorado():
+            solta.wait(5)
+            feito.set()
+
+        f = FilaEmFio()
+        id_ = f.enfileirar(demorado)
+        assert id_.startswith("fio-")
+        assert not feito.is_set(), "executou dentro de quem chamou"
+        solta.set()
+        assert feito.wait(5), "não executou no fio"
+
+    def test_uma_peca_de_cada_vez_na_mesma_fila(self):
+        """Mesmo comportamento do worker lá fora, com um trabalhador só."""
+        import threading
+        ordem, trava = [], threading.Lock()
+
+        def anota(n):
+            with trava:
+                ordem.append(n)
+
+        f = FilaEmFio()
+        for n in range(5):
+            f.enfileirar(anota, n)
+        import time
+        for _ in range(50):
+            if len(ordem) == 5:
+                break
+            time.sleep(0.1)
+        assert ordem == [0, 1, 2, 3, 4]
+
+    def test_estouro_no_fio_nao_some(self, capsys):
+        """Erro dentro do fio não tem quem o receba: sem isto ele sumiria."""
+        def explode():
+            raise RuntimeError("o render caiu")
+
+        f = FilaEmFio()
+        f.enfileirar(explode)
+        import time
+        for _ in range(30):
+            if "o render caiu" in capsys.readouterr().err:
+                return
+            time.sleep(0.05)
+        raise AssertionError("o estouro sumiu dentro do fio")

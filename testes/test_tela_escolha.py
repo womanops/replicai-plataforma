@@ -808,8 +808,10 @@ class TestAOrdemDoEnvio:
         assert "fd.append('arte'" not in tela.split("$('#btnIr').onclick")[1][:900]
 
     def test_a_prancheta_e_perguntada_no_envio(self, tela):
-        depois = tela.split("async function subirArte()")[1][:1400]
-        assert "escolherPrancheta(r.pranchetas)" in depois
+        # a função inteira, e não os N primeiros caracteres dela: fatiar por
+        # tamanho faz o teste quebrar sozinho quando a função cresce
+        corpo = tela.split("async function subirArte()")[1].split("\n}")[0]
+        assert "escolherPrancheta(r.pranchetas)" in corpo
 
     def test_escolher_a_prancheta_num_rascunho_nao_acompanha(self, tela):
         """Não há fila para acompanhar: o trabalho ainda nem tem formatos."""
@@ -990,3 +992,48 @@ class TestSemPalavraQueNinguemExplicou:
         esteira = Path("api/pipeline.py").read_text(encoding="utf-8")
         assert "o fundo não saiu" not in esteira
         assert "não consegui montar esta medida" in esteira
+
+
+class TestOProgressoQueFaltava:
+    """"A barra de progresso com percentual não foi implementada: nem para
+    leitura do PSD, nem para geração dos formatos, nem para animação."
+
+    A barra existia. O que faltava era o trabalho ainda estar acontecendo
+    quando alguém pudesse olhar: sem Redis a fila rodava DENTRO da requisição,
+    então o `POST /rodar` só respondia com tudo pronto — e a tela, que pergunta
+    o andamento depois da resposta, nunca via progresso nenhum. Ver
+    `test_fila.py`.
+
+    O que de fato não existia era a porcentagem da SUBIDA, e ela é a espera
+    mais longa do trabalho num PSD de 200 MB.
+    """
+
+    def test_a_subida_conta_quanto_ja_foi(self, tela):
+        """`fetch` não conta o enviado; XHR conta."""
+        assert "function subirComProgresso" in tela
+        assert "x.upload.onprogress" in tela
+
+    def test_e_a_porcentagem_aparece_na_barra(self, tela):
+        corpo = tela.split("function subirComProgresso")[1].split("\n}")[0]
+        assert "Subindo o arquivo —" in corpo
+        assert "espelhar(true, f < 1 ? f : null)" in corpo
+
+    def test_terminada_a_subida_ela_diz_o_que_vem(self, tela):
+        """100% de subida não é peça pronta: o servidor ainda vai abrir o PSD,
+        e aí não há porcentagem honesta para mostrar."""
+        corpo = tela.split("function subirComProgresso")[1].split("\n}")[0]
+        assert "Abrindo as camadas" in corpo
+
+    def test_a_animacao_avisa_antes_de_pedir(self, tela):
+        """Entre clicar e o servidor responder a tela ficava idêntica à de
+        antes do clique."""
+        corpo = tela.split("$('#btnAnimarOk').onclick")[1].split("\n};")[0]
+        i_aviso = corpo.find("'Animando'")
+        i_pedido = corpo.find("fetch(`/jobs/${job}/animar`")
+        assert 0 <= i_aviso < i_pedido, "o aviso vem depois do pedido"
+        assert "espelhar(true, null)" in corpo[:i_pedido]
+
+    def test_e_desfaz_o_aviso_se_o_pedido_falhar(self, tela):
+        """Senão a tela fica dizendo "Animando" para sempre."""
+        corpo = tela.split("$('#btnAnimarOk').onclick")[1].split("\n};")[0]
+        assert corpo.count("espelhar(false); pintarRodape(); return;") == 2

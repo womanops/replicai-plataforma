@@ -1023,6 +1023,30 @@ async function receber(f){
   await subirArte();
 }
 
+/* ---------- a subida, com porcentagem ----------
+   `fetch` não conta o que já foi enviado; XHR conta. Num PSD de 200 MB essa
+   é a espera mais longa do trabalho, e a única com número honesto para
+   mostrar: o resto do tempo é o servidor lendo o arquivo, e ninguém sabe
+   quanto falta disso. */
+function subirComProgresso(url, fd){
+  return new Promise((ok, erro) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', url);
+    x.upload.onprogress = ev => {
+      if (!ev.lengthComputable) return;
+      const f = ev.loaded / ev.total;
+      $('#detalhe').textContent = f < 1
+        ? `Subindo o arquivo — ${Math.round(f * 100)}%`
+        : 'Arquivo no servidor. Abrindo as camadas…';
+      espelhar(true, f < 1 ? f : null);
+    };
+    x.onload = () => { try { ok(JSON.parse(x.responseText)); }
+                       catch(e){ ok({ detail: 'Resposta que eu não entendi.' }); } };
+    x.onerror = () => erro(new Error('rede'));
+    x.send(fd);
+  });
+}
+
 async function subirArte(){
   if (!peca || !peca.arquivo) return;
   lendoArte = true;
@@ -1037,8 +1061,13 @@ async function subirArte(){
   $('#conta').textContent = 'Lendo a arte';
   $('#detalhe').textContent = 'Subindo o arquivo…';
   pintarRodape();
+  espelhar(true, 0);
   let r;
-  try { r = await (await fetch('/jobs', { method:'POST', body:fd })).json(); }
+  // XHR e não `fetch` por um motivo só: ele conta quanto do arquivo já subiu.
+  // Num PSD de 200 MB a subida é a espera mais longa do trabalho inteiro, e
+  // era a única com uma porcentagem de verdade para mostrar — a tela dizia
+  // "Subindo o arquivo…" e ficava parada minutos.
+  try { r = await subirComProgresso('/jobs', fd); }
   catch(e){ r = { detail:'Não consegui falar com o servidor.' }; }
   if (!r.job){
     if (/plano ativo/.test(r.detail || '')) assinaturaParada(r.detail);
@@ -2174,16 +2203,23 @@ async function finalizar(){
 $('#btnAnimarOk').onclick = async () => {
   $('#animar').classList.add('hidden');
   const fd = new FormData(); fd.set('preset', presetEscolhido);
+  // o aviso vem ANTES do pedido, não depois da resposta: entre clicar e o
+  // servidor responder a tela ficava idêntica à de antes do clique, e não
+  // havia como saber que a animação tinha começado
+  $('#conta').textContent = 'Animando';
+  $('#detalhe').textContent = 'Montando a cena do vídeo…';
+  espelhar(true, null);
   try {
     const r = await fetch(`/jobs/${job}/animar`, { method:'POST', body:fd });
-    if (!r.ok){ aviso((await r.json()).detail || 'Não deu para animar.'); return; }
-  } catch(e){ aviso('Não consegui falar com o servidor.'); return; }
-  $('#conta').textContent = 'Animando';
+    if (!r.ok){
+      aviso((await r.json()).detail || 'Não deu para animar.');
+      espelhar(false); pintarRodape(); return;
+    }
+  } catch(e){
+    aviso('Não consegui falar com o servidor.');
+    espelhar(false); pintarRodape(); return;
+  }
   $('#detalhe').textContent = 'O vídeo leva mais tempo que a peça parada.';
-  // o painel abre já: esperar a primeira resposta do servidor deixava dois
-  // segundos e meio de tela parada logo depois do clique, que é justamente
-  // quando a dúvida é se o pedido chegou
-  espelhar(true, null);
   acompanhar();
 };
 

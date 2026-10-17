@@ -209,7 +209,16 @@ class TestDePontaAPonta:
         job = c.post("/jobs", files={"arte": ("arte.png", arte_png(), "image/png")},
                      data={"formatos": "gdn-300x250", "headline": "Chegamos a Porto Belo"}
                      ).json()["job"]
-        estado = c.get(f"/jobs/{job}").json()
+        # sem Redis a plataforma roda num FIO, e não dentro da requisição: a
+        # resposta sai na hora e o trabalho continua. É o que dá à tela o
+        # intervalo em que existe progresso para mostrar — e aqui obriga a
+        # esperar, como quem está olhando a tela espera
+        import time
+        for _ in range(600):
+            estado = c.get(f"/jobs/{job}").json()
+            if estado["status"] in ("pronto", "parcial", "erro"):
+                break
+            time.sleep(0.1)
         assert estado["status"] == "pronto", estado
         assert "gdn-300x250" in estado["prontas"]
         nome = next(e["nome"] for e in estado["entregas"] if e["nome"].endswith(".png")

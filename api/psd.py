@@ -1859,7 +1859,13 @@ def cobertura_na_mae(leitura: Leitura, pasta: Path) -> dict[str, float]:
     mascote cobre 16% do CANDIDATE-SE de propósito — é gesto de apresentar, e
     acusar isso como defeito seria acusar o desenho.
     """
-    figuras = [c for c in leitura.camadas if c.plantada]
+    # TODA figura, não só a plantada. A linha de base existe para dizer o que a
+    # arte-mãe já fazia; medindo só a plantada, qualquer outra figura entra na
+    # peça com base ZERO e o primeiro encostão vira "a arte-mãe não encostava"
+    # — que é uma afirmação sobre o arquivo que ninguém conferiu. Na Prancheta
+    # 7 isso acusou uma tira de 42x6 px que roça 2 pixels no topo do nome, e
+    # que está exatamente assim no arquivo.
+    figuras = [c for c in leitura.camadas if c.tipo != "texto"]
     textos = [c for c in leitura.camadas if c.tipo == "texto"]
     if not figuras or not textos:
         return {}
@@ -2113,13 +2119,21 @@ def ampliar_e_centrar(leitura: "Leitura", formato: dict, pasta: Path,
     larg = (W - s["left"] - s["right"]) * INFORMACAO_NA_LARGURA
     alt = (H - s["top"] - s["bottom"]) * INFORMACAO_NA_LARGURA
     k = min(larg / max(1, caixa[2] - caixa[0]), alt / max(1, caixa[3] - caixa[1]))
-    cx, cy = W / 2, H / 2
     mx, my = (caixa[0] + caixa[2]) / 2, (caixa[1] + caixa[3]) / 2
-    postos = [dict(e, box={
-        "x": round(cx + (e["box"]["x"] - mx) * k),
-        "y": round(cy + (e["box"]["y"] - my) * k),
-        "w": max(1, round(e["box"]["w"] * k)),
-        "h": max(1, round(e["box"]["h"] * k))}) for e in assinatura]
+
+    def pousar(cx, cy):
+        return [dict(e, box={
+            "x": round(cx + (e["box"]["x"] - mx) * k),
+            "y": round(cy + (e["box"]["y"] - my) * k),
+            "w": max(1, round(e["box"]["w"] * k)),
+            "h": max(1, round(e["box"]["h"] * k))}) for e in assinatura]
+
+    # o centro, que é a regra da casa. Desenho e informação têm escalas
+    # próprias aqui e podem se encostar; quem mede isso é a régua de
+    # sobreposição, contra o que a arte-mãe já fazia, e quem decide o que fazer
+    # é quem desenha — no Ajustar. Remontar por conta própria seria inventar
+    # diagramação que ninguém pediu.
+    postos = pousar(W / 2, H / 2)
 
     return {
         "formato": formato["id"],

@@ -25,7 +25,11 @@ class Fila(Protocol):
 
 
 class FilaDireta:
-    """Executa na hora. Para teste e para rodar a plataforma sem Redis."""
+    """Executa na hora, dentro de quem chamou. É a fila dos testes: eles
+    precisam do resultado pronto na linha seguinte.
+
+    Para rodar a plataforma sem Redis quem serve é `FilaEmFio` — aqui o
+    trabalho acabaria antes de a tela poder mostrar que ele existiu."""
 
     def __init__(self, porque: str = ""):
         self.feitos: list[str] = []
@@ -36,6 +40,51 @@ class FilaDireta:
         nome = getattr(fn, "__name__", "trabalho")
         self.feitos.append(nome)
         return f"direto-{len(self.feitos)}"
+
+
+class FilaEmFio:
+    """Executa num fio próprio e devolve na hora. É a fila de quem roda sem
+    Redis — a máquina de quem desenvolve, e o servidor quando o Redis cai.
+
+    `FilaDireta` roda DENTRO da requisição: oito formatos, oito renders, e a
+    resposta só sai no fim. A tela pergunta o andamento depois de receber a
+    resposta, então encontrava tudo pronto e a barra de progresso nunca tinha
+    o que mostrar. Não faltava barra: faltava o trabalho ainda estar
+    acontecendo quando alguém pudesse olhar.
+
+    Um fio por fila, e não um por trabalho: a peça e o vídeo correm em
+    paralelo entre si, mas duas peças seguem uma de cada vez — é o mesmo
+    comportamento do worker lá fora, com `REPLICAI_WORKERS=1`.
+    """
+
+    def __init__(self, porque: str = ""):
+        from concurrent.futures import ThreadPoolExecutor
+        self.porque = porque
+        self.feitos: list[str] = []
+        self._fios: dict[str, ThreadPoolExecutor] = {}
+        self._fabrica = ThreadPoolExecutor
+
+    def _fio(self, fila: str):
+        if fila not in self._fios:
+            self._fios[fila] = self._fabrica(
+                max_workers=1, thread_name_prefix=f"replicai-{fila or 'peca'}")
+        return self._fios[fila]
+
+    def enfileirar(self, fn, *args, fila: str = "", **kwargs) -> str:
+        nome = getattr(fn, "__name__", "trabalho")
+        self.feitos.append(nome)
+        # o erro não pode sumir dentro do fio: cada tarefa já grava o próprio
+        # estado de erro, mas um estouro fora disso ficaria invisível
+        self._fio(fila).submit(_a_salvo, fn, *args, **kwargs)
+        return f"fio-{len(self.feitos)}"
+
+
+def _a_salvo(fn, *args, **kwargs) -> None:
+    import traceback
+    try:
+        fn(*args, **kwargs)
+    except Exception:
+        traceback.print_exc()
 
 
 # a peça sai em segundos, o vídeo leva minutos. Numa fila só, o vídeo de um
@@ -116,11 +165,11 @@ def fila_do_ambiente() -> Fila:
     """
     url = os.environ.get("REDIS_URL")
     if not url:
-        return FilaDireta("sem REDIS_URL configurado")
+        return FilaEmFio("sem REDIS_URL configurado")
     try:
         return FilaRQ(url)
     except Exception as e:
         # cair é melhor do que recusar a subir, mas cair calado é o defeito que
         # já entregou peça de régua com cara de peça do modelo. O motivo sobe
         # até /saude, onde quem opera consegue ver.
-        return FilaDireta(f"o Redis em {url} não respondeu: {type(e).__name__}")
+        return FilaEmFio(f"o Redis em {url} não respondeu: {type(e).__name__}")
