@@ -215,7 +215,10 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
                 "areas_livres": plano.get("areas_livres") or {}}
 
     caiu_para, generativo = "", 0
-    if modo == "outpaint":
+    # nada a estender, nada a pedir: sem esta conta o recorte que já enche a
+    # peça ainda gastava uma chamada do generativo — e, quando ela falhava,
+    # a peça saía com uma ressalva sobre um fundo que ninguém tinha pedido
+    if modo == "outpaint" and any(ex.values()):
         espera = max(30, int(os.environ.get("REPLICAI_FUNDO_ESPERA", ESPERA_PADRAO)))
         tela, motivo, generativo = _melhor_continuacao(base, ex, espera, plano, w, h,
                                                        insistir)
@@ -266,17 +269,22 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
     # empurrar o problema. Aqui o fundo generativo é descartado e o
     # determinístico assume, que erra para o lado da arte
     if modo == "outpaint" and any(ex.values()):
-        pior = max(distancias_de_cor(destino, plano["base_box"], img).values(),
-                   default=0.0)
-        if pior >= COR_RECUSADA:
+        medidas = medidas_de_cor(destino, plano["base_box"], img)
+        pior = max((m[0] for m in medidas.values()), default=0.0)
+        mancha = max((m[1] for m in medidas.values()), default=0.0)
+        if pior >= COR_RECUSADA or mancha >= MANCHA:
             tela = base
             for lado in ("left", "right", "top", "bottom"):
                 tela = _stretch_side(tela, lado, ex[lado])
             final = tela.resize((w, h), Image.Resampling.LANCZOS) if tela.size != (w, h) else tela
             final.save(destino)
             modo = "stretch"
-            caiu_para = (f"o fundo generativo saiu numa cor que não existe na arte "
-                         f"(distância {pior:.0f} da paleta dela) e foi descartado")
+            caiu_para = ((f"o fundo generativo saiu numa cor que não existe na arte "
+                          f"(distância {pior:.0f} da paleta dela) e foi descartado")
+                         if pior >= COR_RECUSADA else
+                         (f"{round(mancha * 100)}% da faixa continuada saiu numa cor "
+                          f"que não existe na arte e foi descartada: mancha de cor "
+                          f"estranha na peça não é continuação"))
             avisos = (inventou_estrutura(destino, plano["base_box"])
                       + cor_estranha(destino, plano["base_box"], img))
 
@@ -420,14 +428,29 @@ def _paleta(img, quantas: int = 48):
 PESO = (0.30, 0.59, 0.11)
 
 
-def _longe_da_paleta(cores, paleta) -> float:
+def _longe_da_paleta(cores, paleta) -> tuple[float, float]:
+    """Quanto a faixa se afasta da paleta: o pixel típico e quanto dela está
+    fora de vez.
+
+    Dois números porque um só mente. A mediana diz o típico — e o defeito do
+    generativo não é típico: ele devolve um CANTO inteiro noutra cor, e a
+    mediana continua baixa porque o resto da faixa está certo. Foi assim que
+    uma faixa com um quarto dela a 180 da paleta mediu 25 e passou.
+    """
     import numpy as np
     pesos = np.asarray(PESO) * 3
     d = ((cores[:, None, :] - paleta[None, :, :]) ** 2 * pesos).sum(axis=2) ** 0.5
-    return float(np.median(d.min(axis=1)))
+    perto = d.min(axis=1)
+    return float(np.median(perto)), float((perto >= COR_RECUSADA).mean())
 
 
-def distancias_de_cor(caminho, base_box, arte=None) -> dict[str, float]:
+# quanto da faixa pode estar em cor que a arte não tem antes de a faixa deixar
+# de ser continuação. Um sexto dela já se vê de longe — e o que se vê é uma
+# mancha de cor estranha na peça, não uma tolerância.
+MANCHA = 0.15
+
+
+def medidas_de_cor(caminho, base_box, arte=None) -> dict[str, tuple[float, float]]:
     """Quanto cada faixa continuada se afasta da paleta da arte.
 
     `inventou_estrutura` pergunta se apareceu desenho demais. Esta pergunta é a
@@ -461,13 +484,29 @@ def distancias_de_cor(caminho, base_box, arte=None) -> dict[str, float]:
         return achadas
 
 
+def distancias_de_cor(caminho, base_box, arte=None) -> dict[str, float]:
+    """Só o pixel típico de cada faixa. É o número que vira aviso."""
+    return {n: m[0] for n, m in medidas_de_cor(caminho, base_box, arte).items()}
+
+
 def cor_estranha(caminho, base_box, arte=None) -> list[str]:
-    """O aviso de cada faixa que saiu fora da paleta da arte."""
-    return [f"a continuação do fundo no {nome} saiu numa cor que não existe na "
-            f"arte (distância {d:.0f} da paleta dela). Isso não é continuação, "
-            f"é outra peça: vale rodar de novo"
-            for nome, d in distancias_de_cor(caminho, base_box, arte).items()
-            if d >= COR_ESTRANHA]
+    """O aviso de cada faixa que saiu fora da paleta da arte.
+
+    Os dois degraus — avisar e recusar — valem para as duas medidas. Metade da
+    régua de mancha porque avisar é constatação depois do fato, e um respingo
+    que já se vê merece ser dito mesmo quando ainda não derruba o fundo.
+    """
+    avisos = []
+    for nome, (tipico, mancha) in medidas_de_cor(caminho, base_box, arte).items():
+        if tipico >= COR_ESTRANHA:
+            avisos.append(f"a continuação do fundo no {nome} saiu numa cor que não "
+                          f"existe na arte (distância {tipico:.0f} da paleta dela). "
+                          f"Isso não é continuação, é outra peça: vale rodar de novo")
+        elif mancha >= MANCHA / 2:
+            avisos.append(f"{round(mancha * 100)}% da faixa do {nome} saiu numa cor "
+                          f"que não existe na arte: é uma mancha, e aparece. "
+                          f"Vale rodar de novo")
+    return avisos
 
 
 def _ja_feito(destino, plano: dict, modo: str) -> dict | None:

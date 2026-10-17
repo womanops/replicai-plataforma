@@ -773,3 +773,120 @@ class TestCorAbsurdaEDescartada:
         """Recusar é o segundo degrau; o primeiro, de avisar, não sai."""
         from api.fundo import COR_ESTRANHA, COR_RECUSADA
         assert COR_RECUSADA > COR_ESTRANHA
+
+
+class TestAManchaQueAMedianaEscondia:
+    """O 970x250 do Energiza saiu com faixa magenta nas laterais, e a régua de
+    cor mediu 25 — abaixo até do limite de aviso. Um quarto da faixa estava a
+    180 da paleta.
+
+    A mediana diz o pixel típico, e o defeito do generativo não é típico: ele
+    devolve um canto inteiro noutra cor. Perguntar só "como é a faixa em geral"
+    deixa passar exatamente o caso que a régua existe para pegar.
+    """
+
+    def _arte(self, tmp_path):
+        a = tmp_path / "arte.png"
+        Image.new("RGB", (1200, 1200), (0, 90, 200)).save(a)
+        return a
+
+    def _formato(self):
+        return {"id": "gdn-970x250", "w": 970, "h": 250,
+                "safe": {"top": 10, "bottom": 10, "left": 12, "right": 12}}
+
+    def _generativo(self, quanto: float):
+        """Devolve a arte com um canto da faixa em magenta — `quanto` dela."""
+        def fazer(base, ex, *a, **k):
+            tela = Image.new("RGB", (base.width + ex["left"] + ex["right"],
+                                     base.height + ex["top"] + ex["bottom"]),
+                             (0, 90, 200))
+            if ex["left"]:
+                mancha = Image.new("RGB", (max(1, round(ex["left"] * quanto)),
+                                           tela.height), (230, 0, 140))
+                tela.paste(mancha, (0, 0))
+            tela.paste(base, (ex["left"], ex["top"]))
+            return tela, "", 1
+        return fazer
+
+    def test_um_quarto_da_faixa_manchado_e_descartado(self, tmp_path, monkeypatch):
+        from api import fundo as pf
+        monkeypatch.setattr(pf, "_melhor_continuacao", self._generativo(0.30))
+        info = pf.preparar(self._arte(tmp_path), self._formato(), [0, 0, 1200, 1200],
+                           tmp_path / "f.png", modo="outpaint")
+        assert info["modo"] == "stretch", "a mancha foi entregue"
+        assert "mancha de cor estranha" in info["caiu_para"]
+
+    def test_a_mediana_sozinha_nao_pegava(self, tmp_path, monkeypatch):
+        """O buraco, medido: na mesma faixa o número antigo fica abaixo até do
+        limite de AVISO, e o novo passa do de descarte."""
+        from api import fundo as pf
+        arte = self._arte(tmp_path)
+        f = self._formato()
+        manchado = tmp_path / "manchado.png"
+        with Image.open(arte) as im:
+            base = im.convert("RGB").resize((444, 250))
+        tela = Image.new("RGB", (f["w"], f["h"]), (0, 90, 200))
+        tela.paste(Image.new("RGB", (80, f["h"]), (230, 0, 140)), (0, 0))
+        tela.paste(base, (263, 0))
+        tela.save(manchado)
+        with Image.open(arte) as im:
+            medidas = pf.medidas_de_cor(manchado, [263, 0, 707, 250], im)
+        tipico, mancha = medidas["esquerda"]
+        assert tipico < pf.COR_ESTRANHA, "a mediana teria avisado, e não avisava"
+        assert mancha >= pf.MANCHA, "a mancha não foi vista"
+
+    def test_um_respingo_nao_derruba_o_fundo(self, tmp_path, monkeypatch):
+        """A régua é alta de propósito: fundo generativo quase certo vale mais
+        do que esticar a arte. Respingo vira aviso, não descarte."""
+        from api import fundo as pf
+        monkeypatch.setattr(pf, "_melhor_continuacao", self._generativo(0.04))
+        info = pf.preparar(self._arte(tmp_path), self._formato(), [0, 0, 1200, 1200],
+                           tmp_path / "f.png", modo="outpaint")
+        assert info["modo"] == "outpaint"
+
+    def test_a_medida_do_tipico_continua_existindo(self, tmp_path, monkeypatch):
+        """Ela é o número que vira aviso, e não some por causa da mancha."""
+        from api import fundo as pf
+        monkeypatch.setattr(pf, "_melhor_continuacao", self._generativo(0.04))
+        pf.preparar(self._arte(tmp_path), self._formato(), [0, 0, 1200, 1200],
+                    tmp_path / "f.png", modo="outpaint")
+        with Image.open(self._arte(tmp_path)) as arte:
+            d = pf.distancias_de_cor(tmp_path / "f.png", [0, 0, 970, 250], arte)
+        assert all(isinstance(v, float) for v in d.values())
+
+
+class TestNaoPedirOQueNaoPrecisa:
+    """O recorte que já enche a peça não tem o que estender — e ainda assim
+    gastava uma chamada do generativo. Quando ela falhava, a peça saía com uma
+    ressalva sobre um fundo que ninguém tinha pedido."""
+
+    def test_sem_extensao_o_generativo_nao_e_chamado(self, arte, tmp_path, monkeypatch):
+        from api import fundo as pf
+
+        def explode(*a, **k):
+            raise AssertionError("pediu continuação sem ter o que continuar")
+
+        monkeypatch.setattr(pf, "_melhor_continuacao", explode)
+        info = pf.preparar(arte, formato_by_id("gdn-728x90"), None,
+                           tmp_path / "f.png", estrategia="cover", modo="outpaint")
+        assert info["generativo"] == 0
+        assert info["caiu_para"] == ""
+
+    def test_com_extensao_ele_continua_sendo_chamado(self, arte, tmp_path, monkeypatch):
+        from PIL import Image
+
+        from api import fundo as pf
+        chamou = []
+
+        def continuou(base, ex, *a, **k):
+            chamou.append(ex)
+            tela = Image.new("RGB", (base.width + ex["left"] + ex["right"],
+                                     base.height + ex["top"] + ex["bottom"]),
+                             (10, 26, 85))
+            tela.paste(base, (ex["left"], ex["top"]))
+            return tela, "", 1
+
+        monkeypatch.setattr(pf, "_melhor_continuacao", continuou)
+        pf.preparar(arte, formato_by_id("ig-feed-1x1"), (0, 0, 1920, 1080),
+                    tmp_path / "f.png", modo="outpaint")
+        assert chamou and any(chamou[0].values())
