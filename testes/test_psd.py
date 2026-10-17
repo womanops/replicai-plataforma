@@ -630,3 +630,65 @@ class TestAPreviaChegaNoEstado:
         estado = trabalhos.ler("conta", "job")
         assert estado["status"] == "escolha a prancheta"
         assert estado["pranchetas"] == [{"nome": "x"}]
+
+
+class TestAssarSoQuandoEhLegitimo:
+    """"Deve ter uma regra geral que sirva para qualquer peça."
+
+    `fundo.png` é uma imagem só, no fundo de tudo, e as camadas soltas são
+    desenhadas por cima. Isso reproduz o arquivo **enquanto toda camada assada
+    estiver abaixo de toda camada solta**. Quando uma assada fica acima, ela
+    acaba desenhada embaixo de quem deveria cobrir.
+
+    Medido na primeira arte real: três assadas acima de três soltas, e a peça
+    saiu com 22,70 de diferença do composite do Photoshop. Assar em faixas, uma
+    por bloco, deu 39,73 — camada com mesclagem composta sozinha mescla contra
+    o nada. Soltar todas, cada uma com a mesclagem dela, deu 5,56.
+
+    Por isso a escolha é por ARQUIVO e é medida, não é preferência.
+    """
+
+    def _leitura(self, **extra):
+        from api.psd import Camada, Leitura
+        base = dict(canvas={"w": 100, "h": 100}, fundo="fundo.png",
+                    camadas=[Camada("texto", "texto", "t.png",
+                                    {"x": 0, "y": 0, "w": 10, "h": 10}, ordem=5)])
+        base.update(extra)
+        return Leitura(**base)
+
+    def test_sem_camada_acima_a_peca_usa_o_fundo_assado(self):
+        """Assado é exato: mesclagem e camada de ajuste saem resolvidas pelo
+        próprio Photoshop, sem o navegador reproduzir nada."""
+        from api.psd import como_o_arquivo_pede
+        leitura = self._leitura()
+        assert como_o_arquivo_pede(leitura) is leitura
+
+    def test_com_camada_acima_a_peca_monta_com_todas_soltas(self):
+        from api.psd import Camada, como_o_arquivo_pede
+        leitura = self._leitura(
+            fundo_solto="fundo-solto.png",
+            do_fundo=[Camada("grafismo", "imagem", "g.png",
+                             {"x": 0, "y": 0, "w": 100, "h": 100}, ordem=9)])
+        montada = como_o_arquivo_pede(leitura)
+        assert montada.fundo == "fundo-solto.png"
+        assert len(montada.camadas) == 2
+
+    def test_a_pilha_do_arquivo_decide_quem_cobre_quem(self):
+        """De nada adianta trazer a camada de volta e desenhá-la no lugar
+        errado: era isso que estava acontecendo."""
+        from api.psd import Camada, como_o_arquivo_pede
+        leitura = self._leitura(
+            fundo_solto="fundo-solto.png",
+            do_fundo=[Camada("por baixo", "imagem", "b.png",
+                             {"x": 0, "y": 0, "w": 100, "h": 100}, ordem=1),
+                      Camada("por cima", "imagem", "c.png",
+                             {"x": 0, "y": 0, "w": 100, "h": 100}, ordem=9)])
+        nomes = [c.nome for c in como_o_arquivo_pede(leitura).camadas]
+        assert nomes == ["por baixo", "texto", "por cima"]
+
+    def test_sem_o_fundo_solto_a_montagem_nao_troca(self):
+        """Arquivo antigo, extraído antes desta regra, não pode quebrar."""
+        from api.psd import Camada, como_o_arquivo_pede
+        leitura = self._leitura(do_fundo=[Camada("x", "imagem", "x.png",
+                                                 {"x": 0, "y": 0, "w": 1, "h": 1})])
+        assert como_o_arquivo_pede(leitura) is leitura

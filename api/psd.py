@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import re
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 # não têm pixel próprio: modificam o que está abaixo
@@ -75,6 +75,9 @@ class Camada:
     mesclagem: str = ""            # valor de CSS, vazio quando é normal
     opacidade: float = 1.0
     plantada: tuple[str, ...] = ()     # bordas da prancheta que cortam a figura
+    # a posição na pilha do arquivo: é ela que diz quem cobre quem quando as
+    # camadas do fundo voltam para a montagem
+    ordem: int = 0
 
 
 @dataclass
@@ -87,6 +90,12 @@ class Leitura:
     camadas: list[Camada] = field(default_factory=list)
     ignoradas: list[str] = field(default_factory=list)
     plantada_em: list[str] = field(default_factory=list)   # bordas com figura cortada
+    # as camadas que o fundo assado já representa. Elas saem extraídas e
+    # guardadas, mas não entram na peça: a peça usa o fundo, que é exato. Só
+    # quando alguém quiser MOVER uma delas é que a montagem troca — ver
+    # `solta()`. Fidelidade por padrão, liberdade quando for pedida.
+    do_fundo: list[Camada] = field(default_factory=list)
+    fundo_solto: str = ""          # o fundo sem nenhuma delas
 
 
 def _abrir(caminho: Path):
@@ -325,6 +334,38 @@ def separaveis(raiz, prancheta=None) -> list:
     return sorted(soltas, key=lambda c: pilha.get(id(c), 0))
 
 
+def _guardar_camada(c, alvo, destino: Path, prefixo: str,
+                    ignoradas: list[str]) -> "Camada | None":
+    """Extrai uma camada para arquivo e devolve a `Camada` dela.
+
+    Aparada na prancheta, como as outras: o que ela corta não foi aprovado.
+    """
+    nome = _nome_limpo(c.name)
+    try:
+        im = c.composite()
+    except Exception as e:
+        ignoradas.append(f"`{nome}` não abriu: {type(e).__name__}")
+        return None
+    if im is None or not im.getbbox():
+        return None
+    x0, y0, x1, y1 = c.bbox
+    cx0, cy0 = max(x0, alvo.x), max(y0, alvo.y)
+    cx1, cy1 = min(x1, alvo.x + alvo.w), min(y1, alvo.y + alvo.h)
+    if (cx0, cy0, cx1, cy1) != (x0, y0, x1, y1):
+        if cx1 <= cx0 or cy1 <= cy0:
+            return None
+        im = im.crop((cx0 - x0, cy0 - y0, cx1 - x0, cy1 - y0))
+        x0, y0, x1, y1 = cx0, cy0, cx1, cy1
+    arq = destino / f"{prefixo}-{_apelido(nome)}.png"
+    im.save(arq)
+    return Camada(nome=nome, tipo="texto" if c.kind == "type" else "imagem",
+                  src=arq.name,
+                  box={"x": x0 - alvo.x, "y": y0 - alvo.y, "w": x1 - x0, "h": y1 - y0},
+                  texto=(c.text or "").replace("\r", " ").strip() if c.kind == "type" else "",
+                  fonte=_primeira_fonte(c) if c.kind == "type" else "",
+                  mesclagem=_mesclagem(c), opacidade=_opacidade(c))
+
+
 def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
             proporcao: float | None = None, limite: int = LIMITE_CAMADAS,
             nomes_separados: list[str] | None = None) -> Leitura:
@@ -342,6 +383,9 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
             raise ValueError(f"a prancheta `{alvo.nome}` sumiu do arquivo")
 
     todas = [c for _, c in _plano(raiz)]
+    # quem cobre quem, pela pilha do arquivo: é com isto que as camadas do
+    # fundo voltam para a montagem na altura certa
+    pilha = {id(c): i for i, c in enumerate(todas)}
     plantadas = {id(c): lados for c, lados in _figuras_plantadas(raiz, alvo)}
     if nomes_separados is None:
         soltas = separaveis(raiz, alvo)
@@ -426,6 +470,7 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
         arq = destino / f"{i:02d}-{_apelido(nome)}.png"
         im.save(arq)
         camadas.append(Camada(
+            ordem=pilha.get(id(c), i),
             nome=nome,
             tipo="texto" if c.kind == "type" else "imagem",
             src=arq.name,
@@ -442,10 +487,59 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
                            if l in ("baixo", "cima")),
         ))
 
+    # ASSAR SÓ FUNCIONA QUANDO O ASSADO ESTÁ TODO EMBAIXO.
+    #
+    # `fundo.png` é uma imagem só, no fundo de tudo, e as soltas são desenhadas
+    # por cima. Isso reproduz o arquivo enquanto TODA camada assada estiver
+    # abaixo de TODA camada solta. Quando uma assada fica acima — o que no
+    # Energiza acontece com três — ela acaba desenhada EMBAIXO de quem deveria
+    # cobrir, e a peça sai com 22,7 de diferença do que o Photoshop mostra.
+    #
+    # Assar em faixas, uma por bloco, não resolve: camada com mesclagem
+    # composta sozinha mescla contra o nada, e a faixa saiu com 39,7. Medido.
+    #
+    # O que resolve é soltar TODAS, cada uma com a mesclagem e a opacidade
+    # dela, e deixar o navegador empilhar na ordem do arquivo: 5,6. Custa um
+    # fio de fidelidade contra o assado — que é exato quando é legítimo — e por
+    # isso a escolha é por ARQUIVO, medida aqui, e não uma preferência.
+    do_fundo, fundo_solto = [], ""
+    acima = [c for c in todas
+             if getattr(c, "visible", True) and getattr(c, "kind", "") not in AJUSTES
+             and c not in soltas
+             and pilha.get(id(c), 0) > min((pilha[id(x)] for x in soltas
+                                            if id(x) in pilha), default=10 ** 9)]
+    if acima:
+        ignoradas.append(
+            f"{len(acima)} camadas ficam acima do que se move e não podem ser "
+            f"achatadas no fundo sem inverter a pilha: a peça é montada com todas "
+            f"as camadas soltas")
+        for i, c in enumerate(todas):
+            if c in soltas or not getattr(c, "visible", True) \
+                    or getattr(c, "kind", "") in AJUSTES:
+                continue
+            guardada = _guardar_camada(c, alvo, destino, f"f{i:02d}", ignoradas)
+            if guardada is not None:
+                do_fundo.append(replace(guardada, ordem=pilha.get(id(c), i)))
+        # o fundo da montagem solta: o que sobra com todas desligadas
+        esconder2 = esconder + [c for c in todas if c not in soltas]
+        antes2 = [(c, c.visible) for c in esconder2]
+        for c in esconder2:
+            c.visible = False
+        try:
+            vazio = raiz.composite()
+        finally:
+            for c, v in antes2:
+                c.visible = v
+        if vazio is not None:
+            fundo_solto = "fundo-solto.png"
+            vazio.convert("RGB").save(destino / fundo_solto)
+
     assadas = len(todas) - len(soltas)
     if assadas:
-        ignoradas.append(f"{assadas} camadas foram assadas no fundo: não animam, mas "
-                         f"saem exatas como o Photoshop as mostra")
+        ignoradas.append(f"{assadas} camadas foram assadas no fundo: a peça sai exata "
+                         f"como o Photoshop a mostra. Elas ficam guardadas — mover "
+                         f"qualquer uma delas no Ajustar remonta a peça com todas "
+                         f"soltas, e aí a arte muda um fio")
 
     # só o que ficou assado prende o quadro. Figura solta é reposicionada
     # sozinha, e prender o quadro por causa dela arrastaria o conteúdo junto
@@ -465,7 +559,23 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
 
     return Leitura(pranchetas=lista, escolhida=alvo.nome, ambigua=ambigua,
                    canvas={"w": alvo.w, "h": alvo.h}, fundo=fundo_nome,
-                   camadas=camadas, ignoradas=ignoradas, plantada_em=plantada)
+                   camadas=camadas, ignoradas=ignoradas, plantada_em=plantada,
+                   do_fundo=do_fundo, fundo_solto=fundo_solto)
+
+
+def como_o_arquivo_pede(leitura: Leitura) -> Leitura:
+    """A montagem que reproduz o arquivo.
+
+    Assar é exato e é o melhor caminho — enquanto o assado estiver todo abaixo
+    do que se move. Quando não está, assar inverte a pilha, e aí a montagem
+    certa é com todas as camadas soltas. `extrair` já mediu qual é o caso deste
+    arquivo; aqui só se aplica o que ela decidiu.
+    """
+    if not leitura.do_fundo or not leitura.fundo_solto:
+        return leitura
+    return replace(leitura, fundo=leitura.fundo_solto,
+                   camadas=sorted(leitura.camadas + leitura.do_fundo,
+                                  key=lambda c: c.ordem))
 
 
 def _mesclagem(c) -> str:

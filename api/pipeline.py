@@ -269,7 +269,8 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
     avisar = avisar or (lambda *a, **k: None)
     avisar("abrindo o PSD em camadas", 0)
     try:
-        leitura = leitor_psd.extrair(copia, pasta, nome_prancheta=prancheta)
+        leitura = leitor_psd.como_o_arquivo_pede(
+            leitor_psd.extrair(copia, pasta, nome_prancheta=prancheta))
     except Exception as e:
         for fid in formatos:
             r.falhas[fid] = f"o PSD não abriu: {e}"
