@@ -561,3 +561,95 @@ class TestOQueNaoVaiSerLidoNaoEntra:
         dentro = _caber(fora, f, 1.0)[0]["box"]
         assert dentro["y"] >= 0
         assert dentro["y"] + dentro["h"] <= f["h"]
+
+
+class TestOndeOLockupSeLe:
+    """A plataforma escolhia lugar para o texto medindo se o fundo é LISO.
+    Fundo liso e claro passa na régua, e letra branca some nele — foi o lockup
+    fantasma do 970x250 e o do stories.
+
+    Agora a escolha pergunta também se a letra se LÊ ali. E pergunta medindo
+    onde a letra está, bloco a bloco: a média mente duas vezes, uma na caixa e
+    outra no lockup inteiro.
+    """
+
+    def _camada(self, tmp_path, nome):
+        from PIL import ImageDraw
+        im = Image.new("RGBA", (300, 60), (0, 0, 0, 0))
+        ImageDraw.Draw(im).rectangle((10, 15, 290, 45), fill=(255, 255, 255, 255))
+        im.save(tmp_path / nome)
+        return {"tipo": "imagem", "papel": "headline", "src": nome,
+                "box": {"x": 0, "y": 0, "w": 300, "h": 60}}
+
+    def test_a_faixa_que_le_ganha_da_faixa_maior(self, tmp_path):
+        """A maior era o único critério, e a maior era a branca."""
+        from api.psd import _faixa_livre
+        f = {"id": "x", "w": 1000, "h": 400,
+             "safe": {"top": 10, "bottom": 10, "left": 10, "right": 10}}
+        fundo = tmp_path / "fundo.png"
+        im = Image.new("RGB", (1000, 400), (250, 250, 250))      # tudo claro
+        im.paste(Image.new("RGB", (300, 400), (8, 10, 24)), (0, 0))  # faixa escura à esquerda
+        im.save(fundo)
+        # a arte no meio deixa duas faixas: a da direita é maior, a da esquerda lê
+        base_box = [300, 0, 500, 400]
+        sem_cor = _faixa_livre(base_box, f)
+        com_cor = _faixa_livre(base_box, f, fundo, (255, 255, 255))
+        assert sem_cor[0] >= 500, "sem a cor, a escolha é a faixa maior"
+        assert com_cor[0] < 300, "com a cor, ganha a faixa em que a letra se lê"
+
+    def test_sem_a_cor_da_tinta_a_conta_antiga_vale(self, tmp_path):
+        """Arte sem camada separada não tem cor de tinta para medir, e a peça
+        não pode parar por isso."""
+        from api.psd import _faixa_livre
+        f = {"id": "x", "w": 1000, "h": 400,
+             "safe": {"top": 10, "bottom": 10, "left": 10, "right": 10}}
+        assert _faixa_livre([300, 0, 500, 400], f) is not None
+
+    def test_a_nota_da_posicao_e_a_do_pior_bloco(self, tmp_path):
+        """Dois blocos bons e um que some dão uma média boa. Quem some é a
+        palavra, não a média."""
+        from PIL import Image as Im
+
+        from api.psd import _nota_da_posicao
+        bons = [self._camada(tmp_path, f"b{i}.png") for i in range(3)]
+        for i, e in enumerate(bons):
+            e["box"] = {"x": 0, "y": i * 60, "w": 300, "h": 60}
+        fundo = Im.new("RGB", (300, 180), (8, 10, 24))
+        fundo.paste(Im.new("RGB", (300, 60), (250, 250, 250)), (0, 120))  # o terceiro cai no claro
+        caixa = (0, 0, 300, 180)
+        nota = _nota_da_posicao(fundo, bons, tmp_path, caixa, 1.0, 150, 90)
+        assert nota == 0.0, "a média dos três esconderia o bloco que some"
+
+    def test_com_tudo_no_escuro_a_nota_e_alta(self, tmp_path):
+        from PIL import Image as Im
+
+        from api.psd import _nota_da_posicao
+        bons = [self._camada(tmp_path, f"c{i}.png") for i in range(3)]
+        for i, e in enumerate(bons):
+            e["box"] = {"x": 0, "y": i * 60, "w": 300, "h": 60}
+        fundo = Im.new("RGB", (300, 180), (8, 10, 24))
+        assert _nota_da_posicao(fundo, bons, tmp_path, (0, 0, 300, 180), 1.0, 150, 90) > 10
+
+    def test_o_bloco_desce_dentro_da_faixa_ate_onde_le(self, tmp_path):
+        """Em vez de sair da composição, ele anda dentro da própria faixa."""
+        from api.psd import _onde_le_na_faixa
+        e = self._camada(tmp_path, "d.png")
+        fundo = tmp_path / "f.png"
+        im = Image.new("RGB", (400, 800), (250, 250, 250))
+        im.paste(Image.new("RGB", (400, 300), (8, 10, 24)), (0, 500))   # o escuro está embaixo
+        im.save(fundo)
+        faixa = (0, 0, 400, 800)
+        convencao = 100.0                       # a convenção manda para o alto, que é claro
+        onde = _onde_le_na_faixa(fundo, faixa, 60, (255, 255, 255), convencao,
+                                 [e], tmp_path, (0, 0, 300, 60), 1.0)
+        assert onde > 500, "ficou no claro, onde a letra some"
+
+    def test_quando_a_convencao_le_ela_e_mantida(self, tmp_path):
+        """A régua corrige o que não lê; ela não redesenha a peça por gosto."""
+        from api.psd import _onde_le_na_faixa
+        e = self._camada(tmp_path, "e.png")
+        fundo = tmp_path / "g.png"
+        Image.new("RGB", (400, 800), (8, 10, 24)).save(fundo)
+        onde = _onde_le_na_faixa(fundo, (0, 0, 400, 800), 60, (255, 255, 255), 100.0,
+                                 [e], tmp_path, (0, 0, 300, 60), 1.0)
+        assert abs(onde - 100.0) <= 50, "mexeu num lugar que já lia"

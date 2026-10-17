@@ -669,7 +669,8 @@ def _ancora_do_recompor(leitura: Leitura, formato: dict, arte: Path) -> tuple[fl
     return (0.5, 0.0)
 
 
-def _faixa_livre(base_box, formato: dict) -> tuple[int, int, int, int] | None:
+def _faixa_livre(base_box, formato: dict, fundo: Path | None = None,
+                 tinta=None) -> tuple[int, int, int, int] | None:
     """A maior faixa que sobrou ao lado da arte, dentro da área segura.
 
     Quatro candidatas, e a maior vence. Antes só se olhava embaixo: numa capa
@@ -686,14 +687,20 @@ def _faixa_livre(base_box, formato: dict) -> tuple[int, int, int, int] | None:
         "esquerda": (sx0, sy0, min(ax0, sx1), sy1),
         "direita": (max(ax1, sx0), sy0, sx1, sy1),
     }
-    melhor, area = None, 0
-    for caixa in candidatas.values():
-        x0, y0, x1, y1 = caixa
-        if x1 - x0 < FAIXA_MINIMA or y1 - y0 < FAIXA_MINIMA:
-            continue
-        if (x1 - x0) * (y1 - y0) > area:
-            melhor, area = caixa, (x1 - x0) * (y1 - y0)
-    return melhor
+    cabem = [c for c in candidatas.values()
+             if c[2] - c[0] >= FAIXA_MINIMA and c[3] - c[1] >= FAIXA_MINIMA]
+    if not cabem:
+        return None
+    # a maior faixa era o único critério, e foi assim que o lockup branco do
+    # 970x250 pousou na faixa branca: ela era a maior. Entre as que servem,
+    # ganha a que LÊ; entre as que leem, a maior. Sem fundo para medir, a
+    # conta antiga continua valendo.
+    if fundo is not None and tinta is not None:
+        from api.contraste import LOCKUP_MINIMO
+        leem = [c for c in cabem if _le_na_zona(fundo, c, tinta) >= LOCKUP_MINIMO]
+        if leem:
+            cabem = leem
+    return max(cabem, key=lambda c: (c[2] - c[0]) * (c[3] - c[1]))
 
 
 # a barriga do mascote, em fração da altura visível dele. Medida na arte-mãe
@@ -945,6 +952,10 @@ def _remontar_largo(base: list[dict], info: dict, formato: dict,
 # e a leitura corre do texto para a imagem, não o contrário.
 ZONA_DA_ASSINATURA = 0.46
 
+# as quatro zonas em que a assinatura pode pousar, na ordem em que valem quando
+# a escolhida não lê
+ZONAS_DA_PECA = ("esquerda", "direita", "rodape", "topo")
+
 # abaixo disto a zona deixou de ser lugar e virou sobra. Mesma ideia do
 # RESTO_MINIMO do sossego, aplicada à peça inteira.
 ZONA_MINIMA = 0.22
@@ -967,8 +978,40 @@ def _maior_vao(ini: int, fim: int, ocupados: list[tuple[float, float]]) -> tuple
     return round(a), round(b)
 
 
+def _tinta_do_lockup(base: list[dict], pasta: Path):
+    """A cor da letra que veio no arquivo, para medir contraste contra o fundo.
+
+    Média das camadas de assinatura, pelos pixels opacos delas. Sem isto a
+    conta de contraste não existe: a plataforma só sabia a cor do texto que ela
+    mesma escreve.
+    """
+    from api import contraste
+
+    tons = [contraste.tom_da_tinta(pasta / e["src"])
+            for e in base
+            if e.get("src") and e.get("papel") in ("headline", "apoio", "cta",
+                                                   "selo", "marca")]
+    tons = [t for t in tons if t]
+    if not tons:
+        return None
+    return tuple(round(sum(t[i] for t in tons) / len(tons)) for i in range(3))
+
+
+def _le_na_zona(fundo: Path, zona, tinta) -> float:
+    """O contraste que a tinta teria se o lockup pousasse nesta zona."""
+    from PIL import Image
+
+    from api import contraste
+
+    if tinta is None or zona is None:
+        return 0.0
+    caixa = {"x": zona[0], "y": zona[1], "w": zona[2] - zona[0], "h": zona[3] - zona[1]}
+    with Image.open(fundo) as im:
+        return contraste.le_sobre(im.convert("RGB"), caixa, tinta)
+
+
 def _zona_da_assinatura(fundo: Path, formato: dict, figuras: list[dict],
-                        zona: str) -> list[int] | None:
+                        zona: str, tinta=None) -> list[int] | None:
     """Onde a assinatura se apoia quando o fundo enche a peça.
 
     Três cortes, nesta ordem: a zona que a direção escolheu, o que as figuras
@@ -989,6 +1032,24 @@ def _zona_da_assinatura(fundo: Path, formato: dict, figuras: list[dict],
         "topo": [sx0, sy0, sx1, round(H * ZONA_DA_ASSINATURA)],
         "rodape": [sx0, round(H * (1 - ZONA_DA_ASSINATURA)), sx1, sy1],
     }
+    # a zona que a direção escolheu vem primeiro; se a letra não se ler nela, a
+    # peça prefere a zona que lê. Lugar bonito onde o texto some não é lugar —
+    # e a letra do arquivo não muda de cor para resolver depois.
+    if tinta is not None:
+        from api.contraste import LOCKUP_MINIMO
+        preferidas = [zona] + [z for z in ZONAS_DA_PECA if z != zona]
+        melhor, nota = None, 0.0
+        for cand in preferidas:
+            achada = _zona_da_assinatura(fundo, formato, figuras, cand)
+            if achada is None:
+                continue
+            r = _le_na_zona(fundo, achada, tinta)
+            if r >= LOCKUP_MINIMO:
+                return achada
+            if r > nota:
+                melhor, nota = achada, r
+        return melhor
+
     r = list(caixas.get(zona) or caixas["esquerda"])
     deitada = zona in ("esquerda", "direita")
 
@@ -1080,7 +1141,8 @@ def _sobre_a_arte(base: list[dict], tinta, info: dict, formato: dict,
     if not assinatura:
         return None
 
-    zona = _zona_da_assinatura(fundo, formato, figuras, escolhida["assinatura"])
+    zona = _zona_da_assinatura(fundo, formato, figuras, escolhida["assinatura"],
+                               _tinta_do_lockup(base, Path(fundo).parent))
     if zona is None:
         return None
     x0, y0, x1, y1 = zona
@@ -1109,6 +1171,119 @@ def _sobre_a_arte(base: list[dict], tinta, info: dict, formato: dict,
         "descartados": {p: "não cabe nesta medida" for p in sorted(sai)},
         "_fundo": {**info, "direcao": escolhida, "desvios": desvios},
     }
+
+
+def _mascara_do_lockup(assinatura: list[dict], pasta: Path, caixa, k: float):
+    """O lockup inteiro numa máscara só, no tamanho que vai ter na peça.
+
+    Serve para escolher o lugar medindo o contraste ONDE A LETRA ESTÁ. Pela
+    média do retângulo um lockup largo atravessa fundo escuro e fundo claro, a
+    média diz "ótimo" e a palavra some no meio — foi o que aconteceu no stories.
+    """
+    from PIL import Image
+
+    larg = max(1, round((caixa[2] - caixa[0]) * k))
+    alt = max(1, round((caixa[3] - caixa[1]) * k))
+    tela = Image.new("RGBA", (larg, alt), (0, 0, 0, 0))
+    for e in assinatura:
+        arq = pasta / e["src"] if e.get("src") else None
+        if arq is None or not arq.exists():
+            continue
+        b = e["box"]
+        try:
+            with Image.open(arq) as im:
+                parte = im.convert("RGBA").resize(
+                    (max(1, round(b["w"] * k)), max(1, round(b["h"] * k))),
+                    Image.Resampling.LANCZOS)
+        except Exception:
+            continue
+        tela.alpha_composite(parte, (round((b["x"] - caixa[0]) * k),
+                                     round((b["y"] - caixa[1]) * k)))
+    return tela
+
+
+def _onde_le_na_faixa(fundo: Path, faixa, alto: float, tinta, convencao: float,
+                      assinatura=None, pasta: Path | None = None,
+                      caixa=None, k: float = 1.0) -> float:
+    """Dentro da faixa, a altura em que o lockup se lê.
+
+    A convenção manda o bloco para o alto da faixa (`LOCKUP_NO_ALTO`) e ela
+    vale enquanto a letra se ler ali. Quando não se lê — faixa clara e letra
+    branca, que foi o stories — o bloco desce ou sobe dentro da própria faixa
+    até achar onde lê, em vez de sair da composição.
+    """
+    from api.contraste import LOCKUP_MINIMO
+
+    if tinta is None:
+        return convencao
+    x0, y0, x1, y1 = faixa
+    espaco = (y1 - y0) - alto
+    if espaco <= 0:
+        return convencao
+    from PIL import Image
+
+    meio_x = (x0 + x1) / 2
+    with Image.open(fundo) as im:
+        pronto = im.convert("RGB")
+        notas = []
+        for i in range(9):
+            meio = y0 + alto / 2 + espaco * i / 8
+            notas.append((meio, _nota_da_posicao(pronto, assinatura or [], pasta,
+                                                 caixa, k, meio_x, meio)))
+
+    melhor, nota = None, 0.0
+    for meio, r in notas:
+        if r >= LOCKUP_MINIMO:
+            # entre as alturas que leem, a mais perto da convenção
+            if melhor is None or abs(meio - convencao) < abs(melhor - convencao):
+                melhor, nota = meio, r
+        elif melhor is None and r > nota:
+            nota, melhor = r, meio
+    return melhor if melhor is not None else convencao
+
+
+def _razao_na_caixa(fundo: Path, caixa: dict, tinta=None, mascara=None):
+    """O contraste do lockup se ele pousasse nesta caixa — pela média do
+    retângulo. Serve para zona; para altura dentro da faixa quem vale é
+    `_nota_da_posicao`, que mede bloco a bloco."""
+    from PIL import Image
+
+    from api import contraste
+
+    if tinta is None:
+        return 1.0
+    with Image.open(fundo) as im:
+        return contraste.le_sobre(im.convert("RGB"), caixa, tinta, mascara)
+
+
+def _nota_da_posicao(pronto, assinatura: list[dict], pasta: Path, caixa,
+                     k: float, cx: float, cy: float) -> float:
+    """O contraste da posição, medido no PIOR bloco do lockup.
+
+    Pela média do lockup inteiro a conta volta a mentir num nível acima: dois
+    blocos de letra com 72% e 25% da tinta sem contraste viram poucos por cento
+    do total e a posição passa. Quem some é a PALAVRA, então a nota da posição
+    é a do pior pedaço dela.
+    """
+    from api import contraste
+
+    mx, my = (caixa[0] + caixa[2]) / 2, (caixa[1] + caixa[3]) / 2
+    pior = None
+    for e in assinatura:
+        arq = pasta / e["src"] if e.get("src") else None
+        if arq is None or not arq.exists():
+            continue
+        b = e["box"]
+        onde = {"x": round(cx + (b["x"] - mx) * k), "y": round(cy + (b["y"] - my) * k),
+                "w": max(1, round(b["w"] * k)), "h": max(1, round(b["h"] * k))}
+        tom = contraste.tom_da_tinta(arq)
+        medida = contraste.sob_a_tinta(pronto, onde, arq, tom)
+        if medida is None:
+            continue
+        tipico, no_escuro = medida
+        nota = 0.0 if no_escuro >= contraste.TINTA_NO_ESCURO else tipico
+        pior = nota if pior is None else min(pior, nota)
+    return 1.0 if pior is None else pior
 
 
 def recompor(leitura: Leitura, formato: dict, pasta: Path,
@@ -1191,7 +1366,8 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
         }
 
     W, H, s = formato["w"], formato["h"], formato["safe"]
-    faixa = _faixa_livre(info["base_box"], formato)
+    faixa = _faixa_livre(info["base_box"], formato, info["caminho"],
+                         _tinta_do_lockup(base, pasta))
     if faixa is None:
         raise ValueError("a arte não deixou faixa livre para o lockup")
     x0, y0, x1, y1 = faixa
@@ -1200,7 +1376,12 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
     k = min(((x1 - x0) * LOCKUP_NA_LARGURA) / max(1, lx1 - lx0),
             ((y1 - y0) * 0.70) / max(1, ly1 - ly0))
     cx = (x0 + x1) / 2
-    cy = y0 + (y1 - y0) * LOCKUP_NO_ALTO / 2
+    assinatura = [e for e in base
+                  if not (e.get("plantado") or e.get("papel") == "figura")]
+    cy = _onde_le_na_faixa(info["caminho"], faixa, (ly1 - ly0) * k,
+                           _tinta_do_lockup(base, pasta),
+                           y0 + (y1 - y0) * LOCKUP_NO_ALTO / 2,
+                           assinatura, pasta, tinta, k)
     meio_x, meio_y = (lx0 + lx1) / 2, (ly0 + ly1) / 2
 
     # O que é DESENHO acompanha a arte; só o que é ASSINATURA entra na faixa.

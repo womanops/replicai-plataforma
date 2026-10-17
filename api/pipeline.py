@@ -569,6 +569,10 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
         if src:
             for a in contraste.ajustar(peca, pasta / src):
                 r.avisos.setdefault(fid, []).append(a)
+            # e a letra que veio no arquivo, que `ajustar` não vê porque é
+            # imagem — e cuja cor é do cliente e não se troca
+            for a in contraste.do_lockup(peca, pasta / src, pasta):
+                r.avisos.setdefault(fid, []).append(a)
 
         for d in peca.pop("_desvios", []):
             r.avisos.setdefault(fid, []).append(

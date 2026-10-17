@@ -104,3 +104,154 @@ def ajustar(peca: dict, fundo: Path) -> list[str]:
                     f"`{e.get('papel')}` cai sobre uma parte agitada da imagem: a letra "
                     f"vai brigar com o desenho atrás, mesmo com a cor certa")
     return avisos
+
+# ---------------------------------------------------------------------------
+# a letra que veio no arquivo
+
+def tom_da_tinta(caminho) -> tuple[int, int, int] | None:
+    """A cor da tinta de uma camada: a média dos pixels opacos dela.
+
+    Pela média do PNG inteiro não dá: a camada é quase toda transparente, e o
+    fundo transparente puxaria a cor para o preto.
+    """
+    from PIL import Image
+
+    caminho = Path(caminho)
+    if not caminho.exists():
+        return None
+    try:
+        with Image.open(caminho) as im:
+            px = im.convert("RGBA")
+    except Exception:
+        return None
+    import numpy as np
+    a = np.asarray(px, dtype=float)
+    opaco = a[..., 3] > 128
+    if not opaco.any():
+        return None
+    return tuple(int(v) for v in a[..., :3][opaco].mean(axis=0))
+
+
+# o lockup é texto grande — o piso do WCAG para texto grande é 3, não 4,5.
+# Exigir 4,5 reprovaria arte legítima: muito KV põe branco sobre azul médio e
+# se lê perfeitamente no tamanho em que a peça é vista.
+LOCKUP_MINIMO = GRAFICO_MINIMO
+
+
+# quanto da letra pode ficar sem contraste antes de a linha deixar de ser lida.
+# Pela média da caixa não dá: um lockup largo atravessa fundo escuro e fundo
+# claro, a média diz "ótimo" e a palavra some no meio. É o mesmo erro da
+# mediana na régua de cor do fundo — média esconde mancha.
+TINTA_NO_ESCURO = 0.25
+
+
+def le_sobre(imagem, box: dict, tinta, camada=None) -> float:
+    """A razão de contraste entre a tinta e o que ficou atrás dela.
+
+    Com `camada` a conta é feita **onde a letra está**, pixel a pixel da máscara
+    dela, e não na média do retângulo.
+    """
+    if camada is None:
+        atras, _ = sob_a_caixa(imagem, box)
+        return razao(tinta, atras)
+    medida = sob_a_tinta(imagem, box, camada, tinta)
+    return medida[0] if medida else razao(tinta, sob_a_caixa(imagem, box)[0])
+
+
+def sob_a_tinta(imagem, box: dict, camada, tinta=None):
+    """(razão típica, quanto da letra está sem contraste) — pela máscara dela.
+
+    Devolve `None` quando a camada não abre ou não tem pixel opaco.
+    """
+    from PIL import Image
+
+    import numpy as np
+    if isinstance(camada, Image.Image):
+        arte = camada.convert("RGBA")
+        if arte.size != (max(1, int(box["w"])), max(1, int(box["h"]))):
+            arte = arte.resize((max(1, int(box["w"])), max(1, int(box["h"]))),
+                               Image.Resampling.LANCZOS)
+    else:
+        camada = Path(camada)
+        if not camada.exists():
+            return None
+        try:
+            with Image.open(camada) as im:
+                arte = im.convert("RGBA").resize(
+                    (max(1, int(box["w"])), max(1, int(box["h"]))),
+                    Image.Resampling.LANCZOS)
+        except Exception:
+            return None
+    a = np.asarray(arte, dtype=float)
+    mascara = a[..., 3] > 128
+    if not mascara.any():
+        return None
+
+    x0, y0 = max(0, int(box["x"])), max(0, int(box["y"]))
+    x1 = min(imagem.width, x0 + int(box["w"]))
+    y1 = min(imagem.height, y0 + int(box["h"]))
+    if x1 <= x0 or y1 <= y0:
+        return None
+    atras = np.asarray(imagem.crop((x0, y0, x1, y1)).convert("RGB"), dtype=float)
+    mascara = mascara[:atras.shape[0], :atras.shape[1]]
+    if not mascara.any():
+        return None
+
+    def lum(px):
+        c = px / 255
+        c = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+        return 0.2126 * c[..., 0] + 0.7152 * c[..., 1] + 0.0722 * c[..., 2]
+
+    lf = lum(atras)[mascara]
+    lt = (lum(np.asarray(_rgb(tinta) if isinstance(tinta, str) else tinta,
+                         dtype=float)[None, None, :])[0, 0]
+          if tinta is not None else lum(a[..., :3][:atras.shape[0], :atras.shape[1]])[
+              mascara])
+    claro, escuro = np.maximum(lf, lt), np.minimum(lf, lt)
+    r = (claro + 0.05) / (escuro + 0.05)
+    return float(np.median(r)), float((r < LOCKUP_MINIMO).mean())
+
+
+def do_lockup(peca: dict, fundo: Path, pasta: Path) -> list[str]:
+    """Confere a letra que veio em camada contra o fundo que ela pegou.
+
+    `ajustar` cuida do texto que a plataforma escreve, e cuida trocando a cor.
+    O lockup do arquivo é imagem: a cor dele é do cliente e não se troca. Então
+    aqui só dá para medir e dizer — e quem escolhe zona (recompor) usa a mesma
+    conta ANTES, para não cair num lugar onde a letra some.
+
+    Foi o lockup branco em cima da faixa branca do 970x250: a régua de sossego
+    aprovou, porque fundo liso ela mede; contraste ela não media.
+    """
+    from PIL import Image
+
+    caminho = Path(fundo)
+    if not caminho.exists():
+        return []
+    avisos = []
+    with Image.open(caminho) as im:
+        im = im.convert("RGB")
+        if (im.width, im.height) != (peca["canvas"]["w"], peca["canvas"]["h"]):
+            im = im.resize((peca["canvas"]["w"], peca["canvas"]["h"]))
+        for e in peca.get("elementos", []):
+            if e.get("tipo") != "imagem" or not e.get("src") or not e.get("box"):
+                continue
+            if e.get("papel") not in ("headline", "apoio", "cta", "selo", "marca"):
+                continue
+            tinta = tom_da_tinta(Path(pasta) / e["src"])
+            if tinta is None:
+                continue
+            medida = sob_a_tinta(im, e["box"], Path(pasta) / e["src"], tinta)
+            if medida is None:
+                continue
+            tipico, no_escuro = medida
+            if tipico < LOCKUP_MINIMO or no_escuro >= TINTA_NO_ESCURO:
+                quanto = (f"contraste {tipico:.1f}, e o mínimo para se ler é "
+                          f"{LOCKUP_MINIMO:.0f}" if tipico < LOCKUP_MINIMO else
+                          f"{round(no_escuro * 100)}% da letra sem contraste contra o "
+                          f"que ficou atrás")
+                avisos.append(
+                    f"`{e.get('papel')}` da arte ficou com {quanto}. A letra é do "
+                    f"arquivo e não dá para trocar a cor dela: o que resolve é mover "
+                    f"o bloco ou escurecer a área atrás")
+    return avisos
