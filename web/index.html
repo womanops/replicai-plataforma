@@ -935,6 +935,9 @@ let catalogo = [], peca = null, job = null, pulso = null;
 // o trabalho que já tem arte e ainda não tem formatos. Enquanto ele existe, o
 // botão "replicar" manda rodar em vez de subir de novo
 let rascunho = null;
+// o rascunho que ficou de lado quando ela foi olhar outra campanha: a arte
+// continua no servidor e a próxima subida é que vai apagá-la
+let rascunhoDeLado = null;
 
 // "tem trabalho" deixou de significar "está rodando" no dia em que a arte
 // passou a subir antes dos formatos: durante o rascunho o trabalho existe e a
@@ -1081,8 +1084,10 @@ async function subirArte(){
   pintarFormatos();
   // trocar de arte antes de rodar não pode deixar o PSD anterior no disco:
   // são 200 MB por tentativa, e três tentativas já são meio giga parado
-  if (rascunho){ try { await fetch(`/jobs/${rascunho}`, { method:'DELETE' }); } catch(e){} }
-  job = null; rascunho = null;
+  for (const velho of [rascunho, rascunhoDeLado]){
+    if (velho){ try { await fetch(`/jobs/${velho}`, { method:'DELETE' }); } catch(e){} }
+  }
+  job = null; rascunho = null; rascunhoDeLado = null;
   const fd = new FormData();
   fd.append('arte', peca.arquivo);
   fd.set('titulo', $('#titulo').value.trim());
@@ -2167,6 +2172,9 @@ async function abrirCampanhas(){
   let lista = [];
   try { lista = (await (await fetch('/jobs')).json()).trabalhos || []; }
   catch(e){ caixa.innerHTML = '<div class="vazio">não consegui falar com o servidor.</div>'; return; }
+  // rascunho não é campanha: arte subida e nunca rodada não tem peça para
+  // mostrar, e abrir uma delas levava a uma tela vazia
+  lista = lista.filter(t => (t.formatos || []).length);
   if (!lista.length){
     caixa.innerHTML = '<div class="vazio">Nenhuma campanha ainda. A primeira aparece aqui '
       + 'assim que você replicar uma peça.</div>';
@@ -2188,12 +2196,24 @@ async function abrirCampanhas(){
    acabou de ser gerada — só que começando pelo estado que está no disco. */
 async function reabrir(ident){
   $('#minhaConta').classList.add('hidden');
-  let d;
-  try { d = await (await fetch(`/jobs/${ident}`)).json(); }
+  let r, d;
+  try { r = await fetch(`/jobs/${ident}`); d = await r.json(); }
   catch(e){ aviso('Não consegui abrir essa campanha.'); return; }
+  if (r.status === 404){
+    // a lista da janela é uma foto: subir outra arte apaga o rascunho que
+    // estava nela, e clicar nele depois dava "trabalho não existe"
+    aviso('Essa campanha não está mais aqui.');
+    $('#minhaConta').classList.remove('hidden'); abrirCampanhas(); return;
+  }
   if (d.detail){ aviso(d.detail); return; }
 
   limparPainel();
+  // Sem isto a grade continuava em modo ESCOLHA — `escolhendo()` é
+  // `!job || !!rascunho` — e a campanha aberta não mostrava peça nenhuma:
+  // "dá erro e não abre nada" era a tela pedindo um canal, com as peças
+  // prontas do outro lado. A arte que estava subindo não se perde: fica
+  // guardada para a próxima subida apagar do servidor.
+  if (rascunho){ rascunhoDeLado = rascunho; rascunho = null; }
   job = ident;
   escolhidos.clear();
   (d.formatos || []).forEach(f => escolhidos.add(f));

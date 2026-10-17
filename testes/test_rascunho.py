@@ -269,9 +269,13 @@ class TestRascunhoAbandonadoNaoFicaNoDisco:
         assert trabalhos.pasta_do(cliente.conta.id, job).exists()
 
     def test_a_tela_joga_fora_o_anterior_ao_trocar_de_arte(self):
+        """Inclusive o que ficou de lado quando ela foi olhar outra campanha:
+        é rascunho do mesmo jeito, e são 200 MB por tentativa."""
         from pathlib import Path
         tela = Path("web/index.html").read_text(encoding="utf-8")
-        assert "fetch(`/jobs/${rascunho}`, { method:'DELETE' })" in tela
+        corpo = tela.split("async function subirArte(){")[1].split("$('#zona').onclick")[0]
+        assert "[rascunho, rascunhoDeLado]" in corpo
+        assert "fetch(`/jobs/${velho}`, { method:'DELETE' })" in corpo
 
 
 class TestOModoQueAArteComporta:

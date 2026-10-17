@@ -492,7 +492,9 @@ class TestAsCampanhasDeAntes:
     def test_a_medida_livre_da_campanha_volta_com_ela(self, tela):
         """Formato fora do catálogo não tem cartão na grade: sem recriá-lo, a
         peça daquela campanha não teria onde aparecer."""
-        trecho = tela.split("async function reabrir(ident)")[1][:900]
+        # a função inteira, e não os primeiros N caracteres dela: fatiar por
+        # tamanho faz o teste quebrar quando um comentário cresce
+        trecho = tela.split("async function reabrir(ident)")[1].split("$('#btnConta')")[0]
         assert "livre-" in trecho and "canal: CANAL_MEU" in trecho
 
     def test_lista_vazia_explica_em_vez_de_ficar_em_branco(self, tela):
@@ -1276,4 +1278,40 @@ class TestArteNovaComecaDoZero:
     def test_janela_aberta_sobre_a_peca_de_ontem_fecha(self, tela):
         corpo = tela.split("function limparPainel(){")[1].split("async function acompanhar")[0]
         assert "'ressalvas', 'lupa', 'editor'" in corpo
+
+
+class TestAbrirUmaCampanhaDoHistorico:
+    """"Quando clico no histórico para ver minhas peças dá erro e não abre
+    nada." Duas portas para o mesmo sintoma."""
+
+    def test_a_grade_vira_resultado_ao_abrir_campanha(self, tela):
+        """`escolhendo()` é `!job || !!rascunho`. Com uma arte subida e não
+        rodada, `rascunho` continuava preenchido ao abrir outra campanha: a
+        grade seguia em modo ESCOLHA e pedia um canal, com as peças prontas
+        do outro lado da tela."""
+        corpo = tela.split("async function reabrir(ident){")[1].split("$('#btnConta')")[0]
+        assert "rascunho = null" in corpo
+
+    def test_a_arte_que_estava_subindo_nao_se_perde(self, tela):
+        """Ela pode ter subido um PSD de 200 MB antes de ir olhar o
+        histórico. Abrir a campanha não pode jogar isso fora em silêncio —
+        mas o rascunho também não pode ficar no disco para sempre."""
+        corpo = tela.split("async function reabrir(ident){")[1].split("$('#btnConta')")[0]
+        assert "rascunhoDeLado = rascunho" in corpo
+        subida = tela.split("async function subirArte(){")[1].split("$('#zona').onclick")[0]
+        assert "[rascunho, rascunhoDeLado]" in subida, "o de lado também tem que ser apagado"
+
+    def test_campanha_que_sumiu_diz_que_sumiu(self, tela):
+        """A lista da janela é uma foto: subir outra arte apaga o rascunho
+        que estava nela, e clicar nele depois dava "trabalho não existe"."""
+        corpo = tela.split("async function reabrir(ident){")[1].split("$('#btnConta')")[0]
+        assert "r.status === 404" in corpo
+        assert "não está mais aqui" in corpo
+        assert "abrirCampanhas()" in corpo, "a lista tem que ser refeita"
+
+    def test_rascunho_nao_entra_na_lista_de_campanhas(self, tela):
+        """Arte subida e nunca rodada não tem peça para mostrar: abrir uma
+        delas levava a uma tela vazia."""
+        corpo = tela.split("async function abrirCampanhas(){")[1].split("async function reabrir")[0]
+        assert "lista.filter(t => (t.formatos || []).length)" in corpo
 
