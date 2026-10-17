@@ -47,6 +47,17 @@ class Resultado:
             return "parcial"
         return "erro"
 
+    def avisar(self, fid: str, msg: str) -> None:
+        """Guarda a ressalva, uma vez.
+
+        A esteira passa por várias réguas e mais de uma chega à mesma conclusão
+        sobre a mesma peça. Repetida, a ressalva vira parede de texto e some o
+        que de fato tem que ser olhado.
+        """
+        linhas = self.avisos.setdefault(fid, [])
+        if msg not in linhas:
+            linhas.append(msg)
+
     def para_json(self) -> dict:
         return {
             "status": self.status,
@@ -79,8 +90,8 @@ def tirar_imagem_fantasma(peca: dict, pasta: Path) -> list[str]:
         if src and caminho.exists():
             ficam.append(e)
             continue
-        avisos.append(f"`{e.get('papel') or 'imagem'}` saiu da peça: não existe recorte "
-                      f"em arquivo para ela, e o motor desenharia um quadro vazio")
+        avisos.append(f"`{e.get('papel') or 'imagem'}` não veio recortada no arquivo e "
+                      f"saiu da peça, para não virar um quadro vazio")
     peca["elementos"] = ficam
     return avisos
 
@@ -305,30 +316,28 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
         info = peca.pop("_fundo", {})
         r.generativo += int(info.get("generativo") or 0)
         for a in info.get("avisos") or []:
-            r.avisos.setdefault(fid, []).append(a)
+            r.avisar(fid, a)
             if not final:
-                r.avisos.setdefault(fid, []).append(
-                    "na exportação final este fundo é refeito")
+                r.avisar(fid, "na exportação final este fundo é refeito")
         if info.get("caiu_para"):
-            r.avisos.setdefault(fid, []).append(
-                f"{info['caiu_para']} — o fundo saiu em bloco de cor")
+            r.avisar(fid, f"{info['caiu_para']} — o fundo saiu em bloco de cor")
         # a direção de arte que não veio, ou veio e não passou na régua: a peça
         # sai pela regra e diz que saiu, em vez de parecer decidida
         for d in info.get("desvios") or []:
-            r.avisos.setdefault(fid, []).append(d)
+            r.avisar(fid, d)
 
         avisar("compondo", i, fid)
         for a in _texto_novo(peca, f, pasta, leitura, brief, compositor, info):
-            r.avisos.setdefault(fid, []).append(a)
+            r.avisar(fid, a)
         # o que o modelo deixou de fora chega à tela nos dois caminhos. Aqui
         # não chegava nem ao estado do trabalho: ficava só no JSON da montagem
         if peca.get("descartados"):
             r.descartados[fid] = peca["descartados"]
         for a in ficou_de_fora(peca, compositor, brief):
-            r.avisos.setdefault(fid, []).append(a)
+            r.avisar(fid, a)
         if final:
             for a in manter_a_mao(peca, pasta, fid):
-                r.avisos.setdefault(fid, []).append(a)
+                r.avisar(fid, a)
 
         # A LETRA QUE VEIO NO ARQUIVO, contra o fundo que ela pegou. Esta
         # conferência morava só no outro caminho — e é neste que o lockup
@@ -338,14 +347,14 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
         src_fundo = (peca.get("fundo") or {}).get("src")
         if src_fundo:
             for a in contraste.do_lockup(peca, pasta / src_fundo, pasta):
-                r.avisos.setdefault(fid, []).append(a)
+                r.avisar(fid, a)
 
         # a mesma régua do outro caminho: o PSD não passa por `conferir_peca`,
         # e foi por aí que a peça com a chamada escrita em cima da foto saiu.
         # Com PSD dá para saber o que a arte-mãe já cobria, e aí a régua é a
         # da casa: não mais do que ela fazia naquele mesmo par
         for a in sobreposicao.conferir(peca, pasta, permitido=na_mae):
-            r.avisos.setdefault(fid, []).append(a)
+            r.avisar(fid, a)
 
         arq = pasta / "pecas" / f"{fid}.json"
         arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -495,8 +504,8 @@ def _terreno(copia: Path, fid: str, pasta: Path, leitura,
         s, x0, y0, x1, y1 = f["safe"], *info["protect_box"]
         if (x0 < s["left"] or y0 < s["top"]
                 or x1 > f["w"] - s["right"] or y1 > f["h"] - s["bottom"]):
-            avisos.append("o texto da arte encosta na área que o app recorta: num "
-                          "aparelho menor pode aparecer cortado")
+            avisos.append("o texto encosta na área que o app recorta e pode sair "
+                          "cortado. Mova o bloco no ajuste")
 
     return Terreno(fundo={"tipo": "imagem", "src": info["src"], "fit": "cover"},
                    livres=livres,
@@ -552,7 +561,7 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
             r.falhas[fid] = f"não consegui montar esta medida: {e}"
             continue
         for a in avisos_do_fundo:
-            r.avisos.setdefault(fid, []).append(a)
+            r.avisar(fid, a)
         try:
             # caminho completo, não o nome: o compositor do modelo precisa
             # abrir o arquivo para mandar a arte junto. Com o nome curto ele
@@ -569,31 +578,30 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
         if peca.get("descartados"):
             r.descartados[fid] = peca["descartados"]
         for a in ficou_de_fora(peca, compositor, brief):
-            r.avisos.setdefault(fid, []).append(a)
+            r.avisar(fid, a)
 
         for a in tirar_imagem_fantasma(peca, pasta):
-            r.avisos.setdefault(fid, []).append(a)
+            r.avisar(fid, a)
 
         # a cor do texto se decide contra o fundo que a peça vai usar, não
         # contra o que alguém supôs: branco some no brilho da gota de vidro
         src = (peca.get("fundo") or {}).get("src")
         if src:
             for a in contraste.ajustar(peca, pasta / src):
-                r.avisos.setdefault(fid, []).append(a)
+                r.avisar(fid, a)
             # e a letra que veio no arquivo, que `ajustar` não vê porque é
             # imagem — e cuja cor é do cliente e não se troca
             for a in contraste.do_lockup(peca, pasta / src, pasta):
-                r.avisos.setdefault(fid, []).append(a)
+                r.avisar(fid, a)
 
         for d in peca.pop("_desvios", []):
-            r.avisos.setdefault(fid, []).append(
-                f"composto pela régua, não pelo modelo — {d}")
+            r.avisar(fid, f"composto pela régua, não pelo modelo — {d}")
 
         for a in conferir_peca(peca, pasta, copia):
-            r.avisos.setdefault(fid, []).append(a)
+            r.avisar(fid, a)
         if final:
             for a in manter_a_mao(peca, pasta, fid):
-                r.avisos.setdefault(fid, []).append(a)
+                r.avisar(fid, a)
 
         arq = pasta / "pecas" / f"{fid}.json"
         arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")

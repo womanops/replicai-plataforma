@@ -389,11 +389,9 @@ def inventou_estrutura(caminho, base_box) -> list[str]:
             continue
         razao = ext.max() / viz.max()
         if razao >= INVENTOU:
-            linha = ea + int(ext.argmax())
             avisos.append(
-                f"a continuação do fundo no {nome} inventou um traço forte que a arte "
-                f"não tem (linha {linha}, {razao:.1f}x mais marcado que a arte ao lado). "
-                f"Vale rodar de novo ou escolher outro enquadramento")
+                f"o fundo esticado no {nome} criou um traço que a arte não tem. "
+                f"Refaça o fundo desta peça")
     return avisos
 
 
@@ -499,13 +497,11 @@ def cor_estranha(caminho, base_box, arte=None) -> list[str]:
     avisos = []
     for nome, (tipico, mancha) in medidas_de_cor(caminho, base_box, arte).items():
         if tipico >= COR_ESTRANHA:
-            avisos.append(f"a continuação do fundo no {nome} saiu numa cor que não "
-                          f"existe na arte (distância {tipico:.0f} da paleta dela). "
-                          f"Isso não é continuação, é outra peça: vale rodar de novo")
+            avisos.append(f"o fundo esticado no {nome} saiu numa cor que não existe "
+                          f"na arte. Refaça o fundo desta peça")
         elif mancha >= MANCHA / 2:
-            avisos.append(f"{round(mancha * 100)}% da faixa do {nome} saiu numa cor "
-                          f"que não existe na arte: é uma mancha, e aparece. "
-                          f"Vale rodar de novo")
+            avisos.append(f"{round(mancha * 100)}% do fundo esticado no {nome} saiu "
+                          f"numa cor que não existe na arte. Refaça o fundo desta peça")
     return avisos
 
 

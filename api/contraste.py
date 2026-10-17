@@ -212,8 +212,57 @@ def sob_a_tinta(imagem, box: dict, camada, tinta=None):
     return float(np.median(r)), float((r < LOCKUP_MINIMO).mean())
 
 
+# como se chama, na tela, o que cada papel é. Nome de camada do Photoshop é
+# lixo de arquivo ("04-energia-que-impulsiona-o-futuro-copiar") e não ajuda
+# ninguém a achar o bloco na peça.
+NA_PECA = {"headline": "o título", "apoio": "a linha de apoio", "selo": "o selo",
+           "marca": "a marca", "cta": "a chamada"}
+
+
+def _atras_da_tinta(peca: dict, fundo: Path, pasta: Path):
+    """Vai empilhando a peça e, antes de cada bloco de texto, entrega o que
+    ficou ATRÁS dele: a prancheta mais todas as camadas de baixo.
+
+    Medir contra o arquivo de fundo sozinho foi o erro que encheu a peça de
+    ressalva falsa: num PSD a prancheta costuma ser branca e a arte vem em
+    camada por cima. A letra branca era medida contra o branco da prancheta,
+    dava contraste 1.0, e a régua acusava treze vezes uma peça impecável.
+    """
+    from PIL import Image
+
+    larg, alt = peca["canvas"]["w"], peca["canvas"]["h"]
+    with Image.open(fundo) as im:
+        tela = im.convert("RGBA")
+    if tela.size != (larg, alt):
+        tela = tela.resize((larg, alt), Image.Resampling.LANCZOS)
+
+    for e in peca.get("elementos", []):
+        if e.get("tipo") != "imagem" or not e.get("src") or not e.get("box"):
+            continue
+        if e.get("papel") in NA_PECA:
+            yield e, tela.convert("RGB")
+        b = e["box"]
+        arq = Path(pasta) / e["src"]
+        if not arq.exists():
+            continue
+        try:
+            with Image.open(arq) as im:
+                parte = im.convert("RGBA").resize(
+                    (max(1, int(b["w"])), max(1, int(b["h"]))),
+                    Image.Resampling.LANCZOS)
+        except Exception:
+            continue
+        # mistura de camada a régua não refaz: o que ela precisa saber é se a
+        # área atrás é clara ou escura, e para isso a opacidade já basta
+        op = float(e.get("opacidade") or 1)
+        if op < 1:
+            canal = parte.getchannel("A").point(lambda v: int(v * op))
+            parte.putalpha(canal)
+        tela.alpha_composite(parte, (int(b["x"]), int(b["y"])))
+
+
 def do_lockup(peca: dict, fundo: Path, pasta: Path) -> list[str]:
-    """Confere a letra que veio em camada contra o fundo que ela pegou.
+    """Confere a letra que veio em camada contra o que ficou atrás dela.
 
     `ajustar` cuida do texto que a plataforma escreve, e cuida trocando a cor.
     O lockup do arquivo é imagem: a cor dele é do cliente e não se troca. Então
@@ -222,36 +271,37 @@ def do_lockup(peca: dict, fundo: Path, pasta: Path) -> list[str]:
 
     Foi o lockup branco em cima da faixa branca do 970x250: a régua de sossego
     aprovou, porque fundo liso ela mede; contraste ela não media.
-    """
-    from PIL import Image
 
+    Uma linha por BLOCO, não por letra. O texto do PSD é fatiado em letras para
+    o lettering animar uma a uma, e a régua rodava em cada pedaço: treze linhas
+    idênticas na mesma peça, dizendo a mesma coisa.
+    """
     caminho = Path(fundo)
     if not caminho.exists():
         return []
+
+    pior: dict[str, tuple] = {}
+    for e, atras in _atras_da_tinta(peca, caminho, pasta):
+        tinta = tom_da_tinta(Path(pasta) / e["src"])
+        if tinta is None:
+            continue
+        medida = sob_a_tinta(atras, e["box"], Path(pasta) / e["src"], tinta)
+        if medida is None:
+            continue
+        tipico, no_escuro = medida
+        if tipico >= LOCKUP_MINIMO and no_escuro < TINTA_NO_ESCURO:
+            continue
+        bloco = e.get("de") or e.get("camada") or e.get("papel") or ""
+        # a nota do bloco é a do pior pedaço dele: é a letra que some que
+        # estraga a palavra, não a média das letras
+        if bloco not in pior or tipico < pior[bloco][1]:
+            pior[bloco] = (e.get("papel"), tipico, no_escuro)
+
     avisos = []
-    with Image.open(caminho) as im:
-        im = im.convert("RGB")
-        if (im.width, im.height) != (peca["canvas"]["w"], peca["canvas"]["h"]):
-            im = im.resize((peca["canvas"]["w"], peca["canvas"]["h"]))
-        for e in peca.get("elementos", []):
-            if e.get("tipo") != "imagem" or not e.get("src") or not e.get("box"):
-                continue
-            if e.get("papel") not in ("headline", "apoio", "cta", "selo", "marca"):
-                continue
-            tinta = tom_da_tinta(Path(pasta) / e["src"])
-            if tinta is None:
-                continue
-            medida = sob_a_tinta(im, e["box"], Path(pasta) / e["src"], tinta)
-            if medida is None:
-                continue
-            tipico, no_escuro = medida
-            if tipico < LOCKUP_MINIMO or no_escuro >= TINTA_NO_ESCURO:
-                quanto = (f"contraste {tipico:.1f}, e o mínimo para se ler é "
-                          f"{LOCKUP_MINIMO:.0f}" if tipico < LOCKUP_MINIMO else
-                          f"{round(no_escuro * 100)}% da letra sem contraste contra o "
-                          f"que ficou atrás")
-                avisos.append(
-                    f"`{e.get('papel')}` da arte ficou com {quanto}. A letra é do "
-                    f"arquivo e não dá para trocar a cor dela: o que resolve é mover "
-                    f"o bloco ou escurecer a área atrás")
+    for papel, tipico, no_escuro in pior.values():
+        quanto = (f"contraste {tipico:.1f}, o mínimo é {LOCKUP_MINIMO:.0f}"
+                  if tipico < LOCKUP_MINIMO else
+                  f"{round(no_escuro * 100)}% da letra sem contraste")
+        avisos.append(f"{NA_PECA.get(papel, papel)} não se lê sobre o fundo "
+                      f"({quanto}). Mova o bloco no ajuste")
     return avisos

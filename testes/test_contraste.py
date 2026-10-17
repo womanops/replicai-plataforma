@@ -204,8 +204,9 @@ class TestALetraQueVeioNoArquivo:
         assert tipico > 10 and no_escuro == 0.0
 
     def test_a_peca_avisa_e_diz_o_que_resolve(self, tmp_path):
-        """Avisar é o que sobra quando a cor não resolve — e o aviso precisa
-        dizer o que resolve, que é mover ou escurecer."""
+        """Avisar é o que sobra quando a cor não resolve — e o aviso só pode
+        pedir o que dá para fazer na plataforma. "Escureça a área atrás" é
+        trabalho de Photoshop: na tela de ajuste o que existe é mover."""
         from PIL import Image
 
         from api.contraste import do_lockup
@@ -216,7 +217,8 @@ class TestALetraQueVeioNoArquivo:
                                "src": "letra.png",
                                "box": {"x": 0, "y": 0, "w": 200, "h": 60}}]}
         avisos = do_lockup(peca, tmp_path / "fundo.png", tmp_path)
-        assert avisos and "mover o bloco ou escurecer" in avisos[0]
+        assert len(avisos) == 1 and "Mova o bloco no ajuste" in avisos[0]
+        assert "o título" in avisos[0], "papel cru não diz nada a quem lê"
 
     def test_nao_avisa_quando_a_letra_se_le(self, tmp_path):
         from PIL import Image
@@ -229,6 +231,81 @@ class TestALetraQueVeioNoArquivo:
                                "src": "letra.png",
                                "box": {"x": 0, "y": 0, "w": 200, "h": 60}}]}
         assert do_lockup(peca, tmp_path / "fundo.png", tmp_path) == []
+
+    def test_mede_contra_a_arte_e_nao_contra_a_prancheta(self, tmp_path):
+        """O erro que encheu a peça de ressalva falsa.
+
+        Num PSD a prancheta costuma ser branca e a arte vem em camada por
+        cima. Medindo a letra branca contra o arquivo de fundo, a régua
+        comparava branco com branco, dava contraste 1.0 e acusava uma peça
+        impecável — treze vezes, uma por letra.
+        """
+        from PIL import Image
+
+        from api.contraste import do_lockup
+        self._camada(tmp_path)
+        Image.new("RGB", (200, 60), (255, 255, 255)).save(tmp_path / "prancheta.png")
+        Image.new("RGBA", (200, 60), (8, 10, 24, 255)).save(tmp_path / "arte.png")
+        peca = {"canvas": {"w": 200, "h": 60},
+                "elementos": [
+                    {"tipo": "imagem", "papel": "figura", "src": "arte.png",
+                     "box": {"x": 0, "y": 0, "w": 200, "h": 60}},
+                    {"tipo": "imagem", "papel": "headline", "src": "letra.png",
+                     "box": {"x": 0, "y": 0, "w": 200, "h": 60}},
+                ]}
+        assert do_lockup(peca, tmp_path / "prancheta.png", tmp_path) == []
+
+    def test_a_camada_de_cima_e_que_vale(self, tmp_path):
+        """E o contrário: arte clara por cima de prancheta escura esconde a
+        letra branca. Quem decide a leitura é a última camada de baixo dela."""
+        from PIL import Image
+
+        from api.contraste import do_lockup
+        self._camada(tmp_path)
+        Image.new("RGB", (200, 60), (8, 10, 24)).save(tmp_path / "prancheta.png")
+        Image.new("RGBA", (200, 60), (250, 250, 252, 255)).save(tmp_path / "arte.png")
+        peca = {"canvas": {"w": 200, "h": 60},
+                "elementos": [
+                    {"tipo": "imagem", "papel": "figura", "src": "arte.png",
+                     "box": {"x": 0, "y": 0, "w": 200, "h": 60}},
+                    {"tipo": "imagem", "papel": "headline", "src": "letra.png",
+                     "box": {"x": 0, "y": 0, "w": 200, "h": 60}},
+                ]}
+        assert len(do_lockup(peca, tmp_path / "prancheta.png", tmp_path)) == 1
+
+    def test_uma_linha_por_bloco_e_nao_por_letra(self, tmp_path):
+        """O texto do PSD é fatiado em letras para o lettering animar uma a
+        uma. A régua rodava em cada pedaço e a mesma frase saía seis vezes."""
+        from PIL import Image
+
+        from api.contraste import do_lockup
+        Image.new("RGB", (200, 60), (250, 250, 250)).save(tmp_path / "fundo.png")
+        elementos = []
+        for i in range(6):
+            self._camada(tmp_path, nome=f"letra-{i}.png")
+            elementos.append({"tipo": "imagem", "papel": "headline", "de": "ENERGIZA",
+                              "letra": i, "src": f"letra-{i}.png",
+                              "box": {"x": 0, "y": 0, "w": 200, "h": 60}})
+        peca = {"canvas": {"w": 200, "h": 60}, "elementos": elementos}
+        assert len(do_lockup(peca, tmp_path / "fundo.png", tmp_path)) == 1
+
+    def test_blocos_diferentes_continuam_sendo_duas_linhas(self, tmp_path):
+        """Juntar demais é o erro oposto: título e selo são dois problemas."""
+        from PIL import Image
+
+        from api.contraste import do_lockup
+        Image.new("RGB", (200, 60), (250, 250, 250)).save(tmp_path / "fundo.png")
+        self._camada(tmp_path, nome="titulo.png")
+        self._camada(tmp_path, nome="selo.png")
+        peca = {"canvas": {"w": 200, "h": 60}, "elementos": [
+            {"tipo": "imagem", "papel": "headline", "de": "ENERGIZA", "src": "titulo.png",
+             "box": {"x": 0, "y": 0, "w": 200, "h": 60}},
+            {"tipo": "imagem", "papel": "selo", "de": "2027", "src": "selo.png",
+             "box": {"x": 0, "y": 0, "w": 200, "h": 60}},
+        ]}
+        avisos = do_lockup(peca, tmp_path / "fundo.png", tmp_path)
+        assert len(avisos) == 2 and {"o título", "o selo"} == {
+            a.split(" não se lê")[0] for a in avisos}
 
     def test_o_texto_escrito_continua_com_o_outro_dono(self, tmp_path):
         """Elemento de texto é de `ajustar`, que troca a cor. Conferir duas

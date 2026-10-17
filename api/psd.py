@@ -2011,12 +2011,11 @@ def _afastar(elementos: list[dict], leitura: Leitura, pasta: Path,
             saida[i] = dict(elementos[i], box=_caixa_encolhida(elementos, indices, i, k))
         if escolhido is None:
             avisos.append(
-                f"`{camada}` encolheu {round((1-k)*100)}% e ainda encosta na figura: "
-                f"diminua mais em Ajustar ou mova a linha")
+                f"`{camada}` ainda encosta na figura mesmo {round((1-k)*100)}% menor. "
+                f"Diminua mais ou mova o bloco no ajuste")
         else:
             avisos.append(
-                f"`{camada}` saiu {round((1-k)*100)}% menor para não encostar na figura "
-                f"que ficou plantada no rodapé")
+                f"`{camada}` saiu {round((1-k)*100)}% menor para não encostar na figura")
     return saida, avisos
 
 

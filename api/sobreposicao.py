@@ -144,9 +144,9 @@ def sobre_desenho(peca: dict, pasta: Path) -> list[str]:
                 continue
             oque = (el.get("texto") or el.get("papel") or "texto")[:28]
             avisos.append(
-                f"\"{oque}\" caiu sobre o desenho do fundo em "
-                f"{agitadas * 100 // len(fatias)}% da largura: ali o texto não se lê. "
-                f"Mova em Ajustar, ou rode de novo")
+                f"\"{oque}\" caiu sobre o desenho em "
+                f"{agitadas * 100 // len(fatias)}% da largura e não se lê. "
+                f"Mova o bloco no ajuste")
     return avisos
 
 
@@ -271,6 +271,6 @@ def conferir(peca: dict, pasta: Path, permitido: dict | None = None) -> list[str
         antes = (f"na arte-mãe eram {na_mae*100:.0f}%" if na_mae
                  else "a arte-mãe não encostava")
         avisos.append(
-            f"`{quem}` {encostou} {fatia*100:.0f}% da largura de \"{oque}\"; {antes}. "
-            f"Em Ajustar dá para diminuir o corpo do texto até ele sair de perto")
+            f"`{quem}` {encostou} {fatia*100:.0f}% da largura de \"{oque}\" — {antes}. "
+            f"Diminua o texto no ajuste")
     return avisos + sobre_desenho(peca, pasta)

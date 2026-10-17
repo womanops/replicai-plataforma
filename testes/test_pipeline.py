@@ -242,3 +242,28 @@ class TestOQueFoiPedidoENaoEntrou:
         fonte = inspect.getsource(pipeline._psd_e_render)
         assert 'r.descartados[fid] = peca["descartados"]' in fonte
         assert "ficou_de_fora(peca, compositor, brief)" in fonte
+
+
+class TestARessalvaNaoSeRepete:
+    """A esteira passa por várias réguas e mais de uma chega à mesma conclusão
+    sobre a mesma peça. Repetida, a ressalva vira parede de texto e some o que
+    de fato tem que ser olhado — foi o que a Ligia viu: treze linhas idênticas
+    numa peça só."""
+
+    def test_a_mesma_linha_entra_uma_vez(self, tmp_path):
+        from api.pipeline import Resultado
+        r = Resultado(pasta=tmp_path)
+        r.avisar("gdn-728x90", "o título não se lê sobre o fundo")
+        r.avisar("gdn-728x90", "o título não se lê sobre o fundo")
+        r.avisar("gdn-728x90", "o selo não se lê sobre o fundo")
+        assert r.avisos["gdn-728x90"] == ["o título não se lê sobre o fundo",
+                                          "o selo não se lê sobre o fundo"]
+
+    def test_cada_formato_tem_a_sua(self, tmp_path):
+        """Juntar demais esconde: a mesma ressalva em dois formatos é duas
+        peças para olhar, não uma."""
+        from api.pipeline import Resultado
+        r = Resultado(pasta=tmp_path)
+        r.avisar("gdn-728x90", "o título não se lê sobre o fundo")
+        r.avisar("gdn-300x600", "o título não se lê sobre o fundo")
+        assert len(r.avisos) == 2

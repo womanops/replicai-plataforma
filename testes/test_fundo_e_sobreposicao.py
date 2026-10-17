@@ -469,20 +469,24 @@ class TestOGenerativoInventando:
         from api.fundo import inventou_estrutura
         f = self.fundo_com(tmp_path, risco_em=520)
         avisos = inventou_estrutura(f, [0, 150, 400, 450])
-        assert avisos and "rodapé" in avisos[0] and "inventou" in avisos[0]
+        assert avisos and "rodapé" in avisos[0], "não diz onde olhar"
+        assert "Refaça o fundo desta peça" in avisos[0], "não diz o que fazer"
 
     def test_extensao_calma_passa(self, tmp_path):
         from api.fundo import inventou_estrutura
         f = self.fundo_com(tmp_path)
         assert inventou_estrutura(f, [0, 150, 400, 450]) == []
 
-    def test_diz_em_que_linha_esta(self, tmp_path):
-        import re
+    def test_nao_despeja_a_medicao_na_ressalva(self, tmp_path):
+        """"Linha 520, 4.1x mais marcado que a arte ao lado" é a conta da
+        régua, não informação para quem publica: ela não abre a peça num
+        editor de pixel para ir até a linha 520. A ressalva diz onde e o que
+        fazer; o número fica no log."""
         from api.fundo import inventou_estrutura
         f = self.fundo_com(tmp_path, risco_em=520)
         aviso = inventou_estrutura(f, [0, 150, 400, 450])[0]
-        linha = int(re.search(r"linha (\d+)", aviso).group(1))
-        assert abs(linha - 520) <= 2
+        assert "linha" not in aviso and "x mais" not in aviso
+        assert len(aviso) < 110, f"ressalva de {len(aviso)} caracteres: {aviso}"
 
     def test_sem_arte_com_que_comparar_nao_acusa(self, tmp_path):
         """Faixa vizinha lisa não dá régua: acusar ali seria chute."""
