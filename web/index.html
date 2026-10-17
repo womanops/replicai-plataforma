@@ -1444,15 +1444,19 @@ $('#btnIr').onclick = async () => {
   fd.set('titulo', $('#titulo').value.trim());
   fd.set('brief', $('#brief').value.trim());
   fd.set('modo', modoPeca());
-  $('#btnIr').disabled = true; $('#conta').textContent = 'Enviando';
-  $('#detalhe').textContent = 'Montando a fila…';
+  $('#btnIr').disabled = true; $('#conta').textContent = 'Replicando';
+  // a contagem começa no clique, em 0 de N, e não na primeira resposta do
+  // servidor: entre uma coisa e outra havia segundos de tela sem número
+  // nenhum, logo depois do único clique que importa
+  $('#detalhe').textContent = `0 de ${escolhidos.size} peça${escolhidos.size>1?'s':''}`;
+  espelhar(true, 0);
   let r;
   try { r = await (await fetch(`/jobs/${rascunho}/rodar`, { method:'POST', body:fd })).json(); }
   catch(e){ r = { detail:'Não consegui falar com o servidor.' }; }
   if (!r.job){
     if (/plano ativo/.test(r.detail || '')) assinaturaParada(r.detail);
     else aviso(r.detail || 'O envio falhou.');
-    $('#btnIr').disabled=false; pintarRodape(); return;
+    $('#btnIr').disabled=false; espelhar(false); pintarRodape(); return;
   }
   job = r.job; rascunho = null;
   pintarFormatos();

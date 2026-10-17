@@ -1149,3 +1149,27 @@ class TestODesfazerDoCorte:
         corpo = tela.split("$('#edVolta').onclick")[1].split("\n};")[0]
         assert "ed.recorte = null" in corpo
         assert "ed.recorteMexido = true" in corpo
+
+
+class TestAContagemComecaNoClique:
+    """"Ao montar a fila, quero o progresso em %."
+
+    Entre o clique e a primeira resposta do servidor a tela ficava sem número
+    nenhum — logo depois do único clique que importa, que é justamente quando
+    a dúvida é se o pedido chegou.
+    """
+
+    def test_o_clique_ja_acende_a_barra(self, tela):
+        corpo = tela.split("$('#btnIr').onclick")[1].split("\n};")[0]
+        i_barra = corpo.find("espelhar(true, 0)")
+        i_pedido = corpo.find("fetch(`/jobs/${rascunho}/rodar`")
+        assert 0 <= i_barra < i_pedido, "a barra acende depois do pedido"
+
+    def test_e_ja_diz_de_quantas_pecas(self, tela):
+        corpo = tela.split("$('#btnIr').onclick")[1].split("\n};")[0]
+        assert "0 de ${escolhidos.size}" in corpo
+
+    def test_pedido_recusado_apaga_a_barra(self, tela):
+        """Senão a tela fica replicando uma peça que não foi aceita."""
+        corpo = tela.split("$('#btnIr').onclick")[1].split("\n};")[0]
+        assert "espelhar(false); pintarRodape(); return;" in corpo
