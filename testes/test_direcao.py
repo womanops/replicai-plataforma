@@ -373,3 +373,191 @@ class TestAComposicaoSobreAArte:
         a peça sai como sempre saiu."""
         peca = self._peca(tmp_path, monkeypatch, fid="ig-stories")
         assert peca["via"] == "psd-recompor"
+
+
+class TestAMaeReenquadrada:
+    """"O preview que aparece nas peças assim que o PSD é lido é exatamente o
+    que deveria ser gerado. Por que o preview fica certo e a peça cheia de
+    erros?"
+
+    O preview da tela é um corte seco — `object-fit: cover` — e para vários
+    destinos ele É a peça certa: a arte enche o formato e o que passa da borda
+    fica de fora. O sistema nunca tentava isso, porque lia "nada é cortado"
+    sobre a arte inteira. A regra protege a TINTA, e aqui ela é medida antes:
+    se o lockup sobrevive ao corte, o corte é a melhor peça possível — não
+    encolhe o desenho, não inventa fundo e não custa nada.
+
+    Onde o preview mente também está medido: no 160x600 ele corta o nome do
+    cliente no meio da palavra, e aí a peça NÃO sai por ele.
+    """
+
+    def _leitura(self, tmp_path, alto=248):
+        from api.psd import Camada, Leitura
+        Image.new("RGB", (1920, 1080), (9, 60, 180)).save(tmp_path / "fundo.png")
+        for n in ("a.png", "b.png", "c.png"):
+            Image.new("RGBA", (40, 40), (255, 255, 255, 255)).save(tmp_path / n)
+        meio = 540
+        return Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=[
+            Camada("energiza", "texto", "a.png",
+                   {"x": 429, "y": meio - alto // 2, "w": 1055, "h": alto},
+                   texto="energiza"),
+            Camada("apoio", "texto", "c.png",
+                   {"x": 600, "y": meio + alto // 2 - 30, "w": 400, "h": 30},
+                   texto="Energia que vem."),
+        ])
+
+    def test_onde_a_tinta_sobrevive_a_peca_sai_pelo_corte(self, tmp_path):
+        from api.psd import ENCOLHER_ATE, cabe_cortando, como_elementos
+        leitura = self._leitura(tmp_path)
+        base = como_elementos(leitura, tmp_path)
+        k = cabe_cortando(leitura, formato_by_id("gdn-970x250"), 1920, 1080, base)
+        assert k is not None and k >= 1 - ENCOLHER_ATE
+
+    def test_onde_ela_seria_cortada_no_meio_da_palavra_nao_sai(self, tmp_path):
+        """O 160x600 é o caso: o corte seco parte o nome do cliente ao meio, e
+        em miniatura isso passa despercebido."""
+        from api.psd import ENCOLHER_ATE, cabe_cortando, como_elementos
+        leitura = self._leitura(tmp_path)
+        base = como_elementos(leitura, tmp_path)
+        k = cabe_cortando(leitura, formato_by_id("gdn-160x600"), 1920, 1080, base)
+        assert k is not None and k < 1 - ENCOLHER_ATE
+
+    def test_o_corte_enche_a_peca(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("REPLICAI_FUNDO", "solid")
+        from api.psd import desdobrar
+        f = formato_by_id("gdn-970x250")
+        peca = desdobrar(self._leitura(tmp_path), f, tmp_path)
+        assert peca["via"] == "psd-reenquadra-cortando"
+        assert peca["_fundo"]["base_box"] == [0, 0, f["w"], f["h"]]
+
+    def test_nada_do_lockup_fica_de_fora(self, tmp_path, monkeypatch):
+        """É a regra da casa, lida onde ela vale: a tinta."""
+        monkeypatch.setenv("REPLICAI_FUNDO", "solid")
+        from api.psd import desdobrar
+        f = formato_by_id("gdn-728x90")
+        peca = desdobrar(self._leitura(tmp_path), f, tmp_path)
+        assert peca["via"] == "psd-reenquadra-cortando"
+        for e in peca["elementos"]:
+            if e.get("papel") == "figura" or e.get("plantado"):
+                continue
+            b = e["box"]
+            assert b["x"] >= 0 and b["y"] >= 0, e.get("camada")
+            assert b["x"] + b["w"] <= f["w"] and b["y"] + b["h"] <= f["h"], e.get("camada")
+
+    def test_o_lockup_encolhe_junto_e_nao_se_desmonta(self, tmp_path, monkeypatch):
+        """Encolher parte por parte espatifaria a colagem: a relação entre as
+        linhas é o desenho."""
+        monkeypatch.setenv("REPLICAI_FUNDO", "solid")
+        from api.psd import desdobrar
+        f = formato_by_id("gdn-728x90")
+        peca = desdobrar(self._leitura(tmp_path), f, tmp_path)
+        caixas = {e["camada"]: e["box"] for e in peca["elementos"] if e.get("camada")}
+        assert caixas["energiza"]["y"] < caixas["apoio"]["y"], "o apoio subiu acima do nome"
+        a = caixas["energiza"]["w"] / caixas["apoio"]["w"]
+        assert round(a, 1) == round(1055 / 400, 1), "as partes encolheram em escalas diferentes"
+
+    def test_a_marca_encostada_no_lockup_anda_com_ele(self, tmp_path):
+        """O logotipo do cliente chega com nome genérico do Photoshop e, tratado
+        como desenho de fundo, saía fora do corte — ou empurrado para cima do
+        nome da campanha."""
+        from api.psd import _da_assinatura, tinta_de, tinta_com_a_marca
+        from api.psd import Camada, Leitura
+        leitura = self._leitura(tmp_path)
+        logo = {"tipo": "imagem", "papel": "figura",
+                "box": {"x": 700, "y": 400, "w": 300, "h": 50}}
+        cenario = {"tipo": "imagem", "papel": "figura",
+                   "box": {"x": 0, "y": 0, "w": 1900, "h": 1000}}
+        t = tinta_de(leitura)
+        assert _da_assinatura(logo, t, 1920, 1080) is True
+        assert _da_assinatura(cenario, t, 1920, 1080) is False
+        ampliada = tinta_com_a_marca(leitura, [logo, cenario], 1920, 1080)
+        assert ampliada[1] <= 400, "a caixa do lockup não subiu para incluir o logotipo"
+
+    def test_sem_camadas_o_corte_nao_acontece(self, tmp_path, monkeypatch):
+        """Num arquivo achatado a tinta está dentro do fundo e o corte a
+        comeria — a regra não é afrouxada, é lida direito."""
+        monkeypatch.setenv("REPLICAI_FUNDO", "solid")
+        from api.psd import Leitura, desdobrar
+        Image.new("RGB", (1920, 1080), (9, 60, 180)).save(tmp_path / "fundo.png")
+        vazia = Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=[])
+        peca = desdobrar(vazia, formato_by_id("gdn-970x250"), tmp_path)
+        assert peca["via"] == "psd-reenquadra"
+
+
+class TestOQueNaoVaiSerLidoNaoEntra:
+    """Da skill de replicação da casa: "quando o formato é muito mais estreito
+    que a arte-mãe, reduza a mensagem a uma headline e ao logo".
+
+    O catálogo já dizia o mesmo pelo outro lado — o 728x90 e o 320x50 têm
+    `apoio_max: 0` — e a reconstrução levava a linha de apoio assim mesmo, com
+    7 px de altura: sujeira em cima da arte que ainda obrigava o resto do
+    lockup a encolher para abrir espaço para ela.
+    """
+
+    def _elementos(self):
+        return [
+            {"papel": "headline", "box": {"x": 100, "y": 20, "w": 500, "h": 60},
+             "camada": "nome"},
+            # o "20" e o "27" ficam um de cada lado do nome, na altura dele
+            {"papel": "selo", "box": {"x": 60, "y": 30, "w": 30, "h": 20},
+             "camada": "20"},
+            {"papel": "selo", "box": {"x": 610, "y": 30, "w": 30, "h": 20},
+             "camada": "27"},
+            # a linha de apoio mora numa faixa própria, abaixo
+            {"papel": "apoio", "box": {"x": 300, "y": 95, "w": 300, "h": 14},
+             "camada": "assinatura"},
+        ]
+
+    def test_a_linha_que_nao_se_le_sai(self):
+        from api.psd import _so_o_que_se_le
+        fica, fora = _so_o_que_se_le(self._elementos(), 0.5)   # 14 px * 0.5 = 7
+        assert "apoio" in fora
+        assert all(e["papel"] != "apoio" for e in fica)
+
+    def test_e_a_peca_diz_qual_saiu_e_por_que(self):
+        from api.psd import LETRA_MINIMA, _so_o_que_se_le
+        _, fora = _so_o_que_se_le(self._elementos(), 0.5)
+        assert f"{LETRA_MINIMA} px" in fora["apoio"]
+
+    def test_o_que_esta_na_linha_da_chamada_e_a_chamada(self):
+        """O "20" e o "27" são o ano da campanha, colados no nome. Tirá-los por
+        serem pequenos deixa a marca sem o ano — e eles estão na mesma linha,
+        que é quem divide lockup em toda a casa."""
+        from api.psd import _so_o_que_se_le
+        fica, fora = _so_o_que_se_le(self._elementos(), 0.5)
+        assert "selo" not in fora
+        assert sum(1 for e in fica if e["papel"] == "selo") == 2
+
+    def test_a_chamada_nunca_sai(self):
+        """Peça sem chamada não é a peça. Se ela não couber, o caminho é
+        outro — não é tirar a chamada."""
+        from api.psd import _so_o_que_se_le
+        fica, fora = _so_o_que_se_le(self._elementos(), 0.05)
+        assert "headline" not in fora
+        assert any(e["papel"] == "headline" for e in fica)
+
+    def test_o_que_se_le_fica_como_esta(self):
+        from api.psd import _so_o_que_se_le
+        fica, fora = _so_o_que_se_le(self._elementos(), 1.0)
+        assert fora == {} and len(fica) == 4
+
+    def test_sem_a_linha_o_resto_cabe_maior(self):
+        """É o motivo de tirar antes de encolher, e não depois."""
+        from api.psd import _quanto_cabe, _so_o_que_se_le
+        f = formato_by_id("gdn-728x90")
+        todos = self._elementos()
+        com = _quanto_cabe(todos, f)
+        fica, _ = _so_o_que_se_le(todos, 0.5)
+        sem = _quanto_cabe(fica, f)
+        assert sem > com
+
+    def test_o_lockup_entra_no_quadro_mesmo_quando_ja_cabe(self):
+        """O logotipo do cliente saía dois pixels acima da borda no 320x50: a
+        peça cabia, e ninguém trazia o bloco para dentro."""
+        from api.psd import _caber
+        f = formato_by_id("gdn-320x50")
+        fora = [{"papel": "headline", "assinatura": True,
+                 "box": {"x": 40, "y": -2, "w": 200, "h": 30}}]
+        dentro = _caber(fora, f, 1.0)[0]["box"]
+        assert dentro["y"] >= 0
+        assert dentro["y"] + dentro["h"] <= f["h"]

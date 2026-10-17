@@ -1311,36 +1311,235 @@ def ancora_das_bordas(bordas: set[str]) -> tuple[float, float]:
     return (eixo("esquerda", "direita"), eixo("cima", "baixo"))
 
 
+# quanto o lockup pode encolher e a peça ainda ser "a mesma peça noutro
+# tamanho". Olhado lado a lado no 728x90 do Energiza: a 39% o lockup inteiro,
+# com o logotipo em cima do nome, lê melhor do que qualquer rediagramação —
+# continua sendo a peça da marca, só menor. Acima de 40% ele vira legenda do
+# desenho, e aí vale rediagramar de propósito em vez de espremer.
+ENCOLHER_ATE = 0.40
+
+
+# uma figura PEQUENA e ENCOSTADA no lockup foi posta ali em relação a ele — o
+# logotipo do cliente em cima do nome da campanha é o caso, e no arquivo ele
+# chega com nome genérico do Photoshop, sem dizer que é marca. Separá-lo do
+# lockup no reenquadramento é o que o deixava fora do corte, ou empurrado para
+# cima do nome. Grande demais é cenário: o brilho do KV também encosta.
+MARCA_ATE = 0.02          # da área da arte
+MARCA_PERTO = 0.05        # da menor dimensão da arte
+
+
+def _da_assinatura(e: dict, tinta, W: int, H: int) -> bool:
+    """Esta parte acompanha o lockup, ou acompanha o fundo?"""
+    if e.get("plantado"):
+        return False                      # plantada na borda: é do fundo
+    if e.get("papel") != "figura":
+        return True                       # texto, marca, selo: lockup
+    b = e["box"]
+    if not tinta or b["w"] * b["h"] > W * H * MARCA_ATE:
+        return False
+    perto = min(W, H) * MARCA_PERTO
+    return not (b["x"] - perto > tinta[2] or b["x"] + b["w"] + perto < tinta[0]
+                or b["y"] - perto > tinta[3] or b["y"] + b["h"] + perto < tinta[1])
+
+
+def tinta_com_a_marca(leitura: "Leitura", base: list[dict], W: int, H: int):
+    """A caixa do lockup somada às partes que andam com ele."""
+    tinta = tinta_de(leitura)
+    if not tinta:
+        return None
+    caixas = [e["box"] for e in base if _da_assinatura(e, tinta, W, H)]
+    if not caixas:
+        return tinta
+    return (min(tinta[0], min(b["x"] for b in caixas)),
+            min(tinta[1], min(b["y"] for b in caixas)),
+            max(tinta[2], max(b["x"] + b["w"] for b in caixas)),
+            max(tinta[3], max(b["y"] + b["h"] for b in caixas)))
+
+
+def cabe_cortando(leitura: "Leitura", formato: dict, W: int, H: int,
+                  base: list[dict] | None = None) -> float | None:
+    """Quanto o lockup teria de encolher para caber inteiro no corte seco.
+
+    O corte seco é o que a prévia da tela mostra desde sempre: a arte-mãe
+    enchendo o formato, com o que passa da borda ficando de fora. Para vários
+    destinos ele é a peça certa — e é a única rota que não encolhe o desenho,
+    não inventa fundo e não custa nada.
+
+    A conta diz se a tinta sobrevive a ele. `1.0` é cabe inteira sem tocar em
+    nada; `0.95` é encolher 5%; `None` é não há tinta para conferir.
+    """
+    from api import fundo as pf
+    from motor.replica import plan_fit
+
+    tinta = (tinta_com_a_marca(leitura, base, W, H) if base is not None
+             else tinta_de(leitura))
+    if not tinta:
+        return None
+    plano = plan_fit(W, H, formato["w"], formato["h"], tinta, "cover", (0.5, 0.5), 0.0)
+    caixa = pf.mover({"x": tinta[0], "y": tinta[1],
+                      "w": tinta[2] - tinta[0], "h": tinta[3] - tinta[1]}, plano)
+    s = formato["safe"]
+    larg = max(1, formato["w"] - s["left"] - s["right"])
+    alt = max(1, formato["h"] - s["top"] - s["bottom"])
+    return min(1.0, larg / max(1, caixa["w"]), alt / max(1, caixa["h"]))
+
+
+def _caber(elementos: list[dict], formato: dict, k: float) -> list[dict]:
+    """Encolhe o lockup em `k` em torno do meio dele e o traz para dentro da
+    área segura. O que é desenho não entra: ele acompanha o fundo, e escalá-lo
+    junto desmontaria a colagem.
+    """
+    assinatura = [i for i, e in enumerate(elementos) if _e_assinatura(e)]
+    if not assinatura:
+        return elementos
+    caixa = _caixa([elementos[i] for i in assinatura])
+    cx, cy = (caixa[0] + caixa[2]) / 2, (caixa[1] + caixa[3]) / 2
+    saida = list(elementos)
+    for i in assinatura:
+        b = elementos[i]["box"]
+        saida[i] = dict(elementos[i], box={
+            "x": round(cx + (b["x"] - cx) * k), "y": round(cy + (b["y"] - cy) * k),
+            "w": max(1, round(b["w"] * k)), "h": max(1, round(b["h"] * k))})
+
+    # depois de encolher, trazer o bloco inteiro para dentro da área segura —
+    # de nada adianta caber e continuar com metade fora do quadro
+    s, W, H = formato["safe"], formato["w"], formato["h"]
+    x0, y0, x1, y1 = _caixa([saida[i] for i in assinatura])
+    dx = max(0, s["left"] - x0) - max(0, x1 - (W - s["right"]))
+    dy = max(0, s["top"] - y0) - max(0, y1 - (H - s["bottom"]))
+    if dx or dy:
+        for i in assinatura:
+            b = saida[i]["box"]
+            saida[i] = dict(saida[i], box={**b, "x": b["x"] + dx, "y": b["y"] + dy})
+    return saida
+
+
+# abaixo disto uma linha de texto deixa de ser lida na peça em tamanho real.
+# O catálogo já dizia isso em prosa, pelo outro lado: o 728x90 e o 320x50 têm
+# `apoio_max: 0` justamente porque ali não cabe linha de apoio. Levar a linha
+# assim mesmo não preserva nada — entrega 7 px de sujeira em cima da arte e
+# ainda obriga o resto do lockup a encolher para abrir espaço para ela.
+LETRA_MINIMA = 12
+
+# o que pode sair quando não é lido. A chamada e a marca nunca: peça sem elas
+# não é a peça, é outra coisa — se a chamada não couber, o caminho é outro.
+PODE_SAIR = ("apoio", "selo")
+
+
+def _na_linha(b: dict, linha) -> bool:
+    """Esta parte está deitada na mesma linha da chamada?
+
+    O "20" e o "27" do Energiza ficam um de cada lado do nome, longe dele na
+    horizontal e exatamente na altura dele. São o nome, não acessório: tirá-los
+    por serem pequenos deixa a campanha sem o ano. Quem divide o lockup é a
+    LINHA, como no resto da casa — não a distância nem o papel.
+    """
+    if not linha:
+        return False
+    alto = min(b["h"], linha[3] - linha[1]) or 1
+    junto = min(b["y"] + b["h"], linha[3]) - max(b["y"], linha[1])
+    return junto > alto * 0.5
+
+
+def _ilegivel(e: dict, escala: float, linha=None) -> bool:
+    """Esta linha vai ser lida no tamanho real da peça?"""
+    return (e.get("papel") in PODE_SAIR
+            and not _na_linha(e["box"], linha)
+            and e["box"]["h"] * escala < LETRA_MINIMA)
+
+
+def _so_o_que_se_le(elementos: list[dict], escala: float) -> tuple[list[dict], dict]:
+    """Tira da peça a linha que não vai ser lida, e diz qual saiu."""
+    chamada = [e for e in elementos if e.get("papel") == "headline"]
+    linha = _caixa(chamada) if chamada else None
+    fica = [e for e in elementos if not _ilegivel(e, escala, linha)]
+    if len(fica) == len(elementos):
+        return elementos, {}
+    papeis = sorted({e.get("papel") or "?" for e in elementos
+                     if _ilegivel(e, escala, linha)})
+    return fica, {p: (f"sairia com menos de {LETRA_MINIMA} px de altura nesta medida "
+                      f"e não seria lida") for p in papeis}
+
+
+def _e_assinatura(e: dict) -> bool:
+    return (e["assinatura"] if "assinatura" in e
+            else not (e.get("plantado") or e.get("papel") == "figura"))
+
+
+def _quanto_cabe(elementos: list[dict], formato: dict) -> float:
+    """Quanto o lockup ainda precisa encolher, já nas coordenadas da peça."""
+    assinatura = [e for e in elementos if _e_assinatura(e)]
+    if not assinatura:
+        return 1.0
+    x0, y0, x1, y1 = _caixa(assinatura)
+    s = formato["safe"]
+    larg = max(1, formato["w"] - s["left"] - s["right"])
+    alt = max(1, formato["h"] - s["top"] - s["bottom"])
+    return min(1.0, larg / max(1, x1 - x0), alt / max(1, y1 - y0))
+
+
 def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
-                elementos: list[dict] | None = None, final: bool = False) -> dict:
+                elementos: list[dict] | None = None, final: bool = False,
+                cortando: float | None = None) -> dict:
     """Desdobra mantendo o lockup colado no fundo.
 
     O lockup sofre a mesma transformação que o fundo, então a relação entre
     ele e o desenho fica igual à do arquivo. É o certo quando a proporção muda
     pouco: a peça vira a mesma peça noutro tamanho.
+
+    `cortando` é a mãe reenquadrada: em vez de caber a arte inteira e estender
+    o que falta, a arte ENCHE o formato e o que passa da borda fica de fora —
+    exatamente o corte que a prévia da tela mostra. É a melhor peça possível
+    quando a tinta sobrevive ao corte, porque não encolhe o desenho, não
+    inventa fundo e não custa nada. O valor é o quanto o lockup precisa
+    encolher para nada dele ser cortado (`1.0` é nada).
     """
     from api import fundo as pf
 
     pasta = Path(pasta)
     base = elementos if elementos is not None else como_elementos(leitura, pasta)
     arte = pasta / leitura.fundo
+    if cortando is not None:
+        # quem anda com o lockup é decidido nas coordenadas da MÃE, antes de
+        # qualquer movimento: depois de movido não dá mais para saber o que
+        # estava encostado em quê
+        from motor.replica import open_rgb
+        with open_rgb(arte) as im:
+            W0, H0 = im.size
+        tinta0 = tinta_de(leitura)
+        base = [dict(e, assinatura=_da_assinatura(e, tinta0, W0, H0)) for e in base]
     ancora = _ancora_centrada(leitura, formato, arte,
                               ancora_das_bordas(set(leitura.plantada_em)))
-    info = pf.preparar(arte, formato, tinta_de(leitura),
+    protegido = (tinta_com_a_marca(leitura, base, W0, H0) if cortando is not None
+                 else tinta_de(leitura))
+    info = pf.preparar(arte, formato, protegido,
                        pasta / f"fundo-{formato['id']}.png", ancora=ancora,
+                       estrategia="cover" if cortando is not None else "auto",
                        insistir=final, reaproveitar=final)
     movidos = _plantar([dict(e, box=pf.mover(e["box"], info["plano"])) for e in base],
                        formato)
+    descartados: dict[str, str] = {}
+    if cortando is not None:
+        # o que não vai ser lido sai ANTES de encolher: sem a linha de apoio a
+        # caixa do lockup é menor, e o que fica cabe maior
+        movidos, descartados = _so_o_que_se_le(movidos, cortando)
+        if descartados:
+            cortando = _quanto_cabe(movidos, formato)
+        # sempre, e não só quando encolhe: o lockup pode caber inteiro e ainda
+        # assim estar dois pixels fora do quadro, que foi o logotipo do cliente
+        # saindo cortado no alto do 320x50
+        movidos = _caber(movidos, formato, min(1.0, cortando))
     elementos_finais, encolheu = _afastar(movidos, leitura, pasta, formato)
     return {
         "formato": formato["id"],
         "canvas": {"w": formato["w"], "h": formato["h"]},
         "safe": formato["safe"],
         "saida": f"{formato['id']}.png",
-        "via": "psd-reenquadra",
+        "via": "psd-reenquadra-cortando" if cortando is not None else "psd-reenquadra",
         "fundo": {"tipo": "imagem", "src": info["src"], "fit": "cover"},
         "fontes": [],
         "elementos": elementos_finais,
+        **({"descartados": descartados} if descartados else {}),
         "_fundo": {**info, "avisos": list(info.get("avisos") or []) + encolheu},
     }
 
@@ -1596,12 +1795,24 @@ def desdobrar(leitura: Leitura, formato: dict, pasta: Path,
     from PIL import Image
 
     pasta = Path(pasta)
+    corte = None
     if modo == "auto":
         with Image.open(pasta / leitura.fundo) as im:
             W, H = im.size
         qual, _ = pf.escolher_estrategia(W, H, formato["w"], formato["h"],
                                          tinta_de(leitura))
         modo = "reenquadra" if qual == "contain" else "recompoe"
+
+        # A MÃE REENQUADRADA vem antes das duas: a arte enche o formato, o que
+        # passa da borda fica de fora e o lockup encolhe só o necessário para
+        # nada dele ser cortado. É o corte que a prévia da tela mostra desde
+        # sempre — e a Ligia estava certa ao perguntar por que a peça não sai
+        # igual a ele. Não sai porque a regra de não cortar era lida sobre a
+        # arte inteira; ela protege a TINTA, e aqui a tinta está medida e
+        # salva. Sem encolher desenho, sem inventar fundo, sem custo.
+        k = cabe_cortando(leitura, formato, W, H, como_elementos(leitura, pasta))
+        if k is not None and k >= 1 - ENCOLHER_ATE and leitura.camadas:
+            corte, modo = k, "reenquadra"
     if modo == "recompoe" and leitura.camadas:
         return recompor(leitura, formato, pasta, final=final)
-    return reenquadrar(leitura, formato, pasta, final=final)
+    return reenquadrar(leitura, formato, pasta, final=final, cortando=corte)
