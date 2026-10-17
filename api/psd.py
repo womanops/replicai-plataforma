@@ -940,6 +940,177 @@ def _remontar_largo(base: list[dict], info: dict, formato: dict,
     return saida
 
 
+# quanto da peça a zona da assinatura toma quando o fundo enche o quadro.
+# Pouco menos da metade: o assunto da imagem pede mais espaço que a assinatura,
+# e a leitura corre do texto para a imagem, não o contrário.
+ZONA_DA_ASSINATURA = 0.46
+
+# abaixo disto a zona deixou de ser lugar e virou sobra. Mesma ideia do
+# RESTO_MINIMO do sossego, aplicada à peça inteira.
+ZONA_MINIMA = 0.22
+
+
+def _maior_vao(ini: int, fim: int, ocupados: list[tuple[float, float]]) -> tuple[int, int]:
+    """O maior pedaço de [ini, fim] que nenhum ocupado cobre."""
+    livres, pos = [], ini
+    for a, b in sorted(ocupados):
+        if b <= pos:
+            continue
+        if a > pos:
+            livres.append((pos, min(a, fim)))
+        pos = max(pos, b)
+        if pos >= fim:
+            break
+    if pos < fim:
+        livres.append((pos, fim))
+    a, b = max(livres, key=lambda p: p[1] - p[0], default=(ini, ini))
+    return round(a), round(b)
+
+
+def _zona_da_assinatura(fundo: Path, formato: dict, figuras: list[dict],
+                        zona: str) -> list[int] | None:
+    """Onde a assinatura se apoia quando o fundo enche a peça.
+
+    Três cortes, nesta ordem: a zona que a direção escolheu, o que as figuras
+    que acompanham o fundo não ocupam, e o pedaço quieto do que sobrou. Texto
+    sobre o ponto agitado do desenho some, e texto em cima da figura é a
+    sobreposição que a régua recusa em toda a casa — foi exatamente assim que
+    o logo do cliente caiu em cima da chamada na primeira tentativa.
+    """
+    from PIL import Image
+
+    from api import sossego
+
+    W, H, s = formato["w"], formato["h"], formato["safe"]
+    sx0, sy0, sx1, sy1 = s["left"], s["top"], W - s["right"], H - s["bottom"]
+    caixas = {
+        "esquerda": [sx0, sy0, round(W * ZONA_DA_ASSINATURA), sy1],
+        "direita": [round(W * (1 - ZONA_DA_ASSINATURA)), sy0, sx1, sy1],
+        "topo": [sx0, sy0, sx1, round(H * ZONA_DA_ASSINATURA)],
+        "rodape": [sx0, round(H * (1 - ZONA_DA_ASSINATURA)), sx1, sy1],
+    }
+    r = list(caixas.get(zona) or caixas["esquerda"])
+    deitada = zona in ("esquerda", "direita")
+
+    # Figura que CABE na peça é coisa posta ali — um logotipo, um selo, um
+    # mascote — e assinatura por cima dela é sobreposição. Figura que não cabe
+    # é cenário: o brilho do KV atravessa a peça inteira e escrever sobre ele é
+    # o normal, quem decide se dá para ler é o sossego, logo abaixo.
+    # O maior vão, e não a primeira borda: uma coisa que entra pela lateral
+    # empurra a zona para o outro lado dela em vez de zerá-la.
+    ocupados = []
+    for f in figuras:
+        b = f["box"]
+        if b["w"] > W or b["h"] > H:
+            continue
+        fx0, fy0, fx1, fy1 = b["x"], b["y"], b["x"] + b["w"], b["y"] + b["h"]
+        if deitada and fy1 > r[1] and fy0 < r[3]:
+            ocupados.append((fx0, fx1))
+        elif not deitada and fx1 > r[0] and fx0 < r[2]:
+            ocupados.append((fy0, fy1))
+    if deitada:
+        r[0], r[2] = _maior_vao(r[0], r[2], ocupados)
+    else:
+        r[1], r[3] = _maior_vao(r[1], r[3], ocupados)
+
+    if (r[2] - r[0]) < W * ZONA_MINIMA or (r[3] - r[1]) < H * ZONA_MINIMA:
+        return None
+    with Image.open(fundo) as im:
+        calmo = sossego.trecho_calmo(im.convert("RGB"), r)
+    if calmo is None:
+        return None
+    if (calmo[2] - calmo[0]) < W * ZONA_MINIMA:
+        return None
+    return calmo
+
+
+def _inteiras(figuras: list[dict], formato: dict) -> list[dict]:
+    """Empurra para dentro do quadro a figura que a arte-mãe não cortava.
+
+    Recortar o fundo é recortar cenário, e cenário cortado pela borda é como a
+    peça já era. Uma figura que a mãe mostrava inteira é outra coisa: sair
+    cortada ali não é enquadramento, é defeito — foi o logotipo do cliente
+    saindo pela metade no alto do banner.
+    """
+    W, H = formato["w"], formato["h"]
+    saida = []
+    for f in figuras:
+        b = dict(f["box"])
+        # `plantado` é a figura que a mãe já cortava de propósito — o mascote
+        # apoiado no rodapé. Essa continua plantada; mexer nela é que a
+        # descolaria da borda
+        if not f.get("plantado") and b["w"] <= W and b["h"] <= H:
+            b["x"] = min(max(b["x"], 0), W - b["w"])
+            b["y"] = min(max(b["y"], 0), H - b["h"])
+        saida.append(dict(f, box=b))
+    return saida
+
+
+def _sobre_a_arte(base: list[dict], tinta, info: dict, formato: dict,
+                  fundo: Path, escolhida: dict, desvios: list[str]) -> dict | None:
+    """A composição quando o fundo enche a peça: o desenho acompanha o fundo e
+    a assinatura vai por cima, na zona quieta.
+
+    É a composição que faltava para a faixa extrema. Nas outras a arte cabe
+    inteira e a assinatura mora na sobra; aqui não há sobra — a imagem é a
+    peça, e o texto se apoia nela, que é como se monta um leaderboard.
+
+    Devolve `None` quando a zona não dá lugar: nenhuma composição é melhor do
+    que uma com a chamada em cima do assunto.
+    """
+    from api import fundo as pf
+
+    W, H, s = formato["w"], formato["h"], formato["safe"]
+    # a marca que a direção apontou sobe de desenho para assinatura. O arquivo
+    # não diz qual camada é o logotipo do cliente — elas vêm com nome genérico
+    # do Photoshop — e tratado como desenho ele acompanha o recorte e sai
+    # cortado pela borda, que é o que não se faz com a marca de ninguém
+    i_marca = escolhida.get("marca", -1)
+    da_marca = {id(base[i_marca])} if isinstance(i_marca, int) and 0 <= i_marca < len(base) else set()
+
+    def e_desenho(e: dict) -> bool:
+        return (id(e) not in da_marca
+                and (e.get("plantado") or e.get("papel") == "figura"))
+
+    figuras = [dict(e, box=pf.mover(e["box"], info["plano"]))
+               for e in base if e_desenho(e)]
+    assinatura = [e for e in base if not e_desenho(e)]
+    sai = set(escolhida.get("sai") or [])
+    assinatura = [e for e in assinatura if (e.get("papel") or "") not in sai]
+    if not assinatura:
+        return None
+
+    zona = _zona_da_assinatura(fundo, formato, figuras, escolhida["assinatura"])
+    if zona is None:
+        return None
+    x0, y0, x1, y1 = zona
+
+    lx0, ly0, lx1, ly1 = _caixa(assinatura) if sai else tinta
+    k = min(((x1 - x0) * LOCKUP_NA_LARGURA) / max(1, lx1 - lx0),
+            ((y1 - y0) * 0.70) / max(1, ly1 - ly0))
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    meio_x, meio_y = (lx0 + lx1) / 2, (ly0 + ly1) / 2
+
+    postos = [dict(e, box={
+        "x": round(cx + (e["box"]["x"] - meio_x) * k),
+        "y": round(cy + (e["box"]["y"] - meio_y) * k),
+        "w": round(e["box"]["w"] * k), "h": round(e["box"]["h"] * k)})
+        for e in assinatura]
+
+    return {
+        "formato": formato["id"],
+        "canvas": {"w": W, "h": H},
+        "safe": s,
+        "saida": f"{formato['id']}.png",
+        "via": "psd-sobre-a-arte",
+        "fundo": {"tipo": "imagem", "src": info["src"], "fit": "cover"},
+        "fontes": [],
+        "elementos": _plantar(_inteiras(figuras, formato), formato) + postos,
+        "descartados": {p: "não cabe nesta medida" for p in sorted(sai)},
+        "_fundo": {**info, "direcao": escolhida, "desvios": desvios},
+    }
+
+
 def recompor(leitura: Leitura, formato: dict, pasta: Path,
              elementos: list[dict] | None = None, final: bool = False) -> dict:
     """Desdobra soltando o lockup do fundo.
@@ -960,11 +1131,47 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
     if not base or not tinta:
         raise ValueError("não há lockup separado para recompor")
 
-    ancora = _ancora_do_recompor(leitura, formato, pasta / leitura.fundo)
-    info = pf.preparar(pasta / leitura.fundo, formato, None,
-                       pasta / f"fundo-{formato['id']}.png",
+    from api import direcao
+    from motor.replica import open_rgb
+
+    arte = pasta / leitura.fundo
+    destino = pasta / f"fundo-{formato['id']}.png"
+    with open_rgb(arte) as im:
+        W0, H0 = im.size
+
+    # A DIREÇÃO DE ARTE, antes de qualquer pixel: cada proporção pede
+    # composição própria. Conter a arte inteira num 728x90 a encolhe a 22% da
+    # peça — o KV vira carimbo e o logo do cliente fica com 30 px — e aí não há
+    # tratamento do "resto" que salve, porque o erro foi encolher.
+    escala, inventaria, comprido = direcao.medir(W0, H0, formato)
+    bruta, calou = direcao.decidir(arte, formato, base, True, escala, inventaria)
+    escolhida, desvios = direcao.conferir(bruta, True, base)
+    if calou:
+        desvios.append(calou)
+    if escolhida is None:
+        escolhida = direcao.na_regua(True, escala, inventaria, comprido)
+
+    if escolhida["fundo"] == "encher-recortando":
+        # recortar o fundo não corta conteúdo: a tinta veio em camada separada
+        # e é remontada por cima. A regra "nada é cortado" protege a TINTA, e
+        # ela continua inteira
+        info = pf.preparar(arte, formato, None, destino, estrategia="cover",
+                           insistir=final, reaproveitar=final)
+        peca = _sobre_a_arte(base, tinta, info, formato, destino,
+                             escolhida, desvios)
+        if peca is not None:
+            return peca
+        # a zona não deu lugar para a assinatura: volta para o caminho de
+        # sempre, e o fundo é refeito junto
+        desvios.append("não sobrou zona quieta para a assinatura por cima da "
+                       "arte: a peça voltou para o enquadramento de sempre")
+
+    ancora = _ancora_do_recompor(leitura, formato, arte)
+    info = pf.preparar(arte, formato, None, destino,
                        estrategia="contain", ancora=ancora,
+                       modo="solid" if escolhida["fundo"] == "campo" else "auto",
                        insistir=final, reaproveitar=final)
+    info = {**info, "direcao": escolhida, "desvios": desvios}
 
     # destino bem mais largo: a arte vai ao centro e os blocos de texto ocupam
     # as duas faixas. Preservar a relação da arte-mãe numa faixa larga espalha

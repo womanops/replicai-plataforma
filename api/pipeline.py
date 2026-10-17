@@ -311,6 +311,10 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
         if info.get("caiu_para"):
             r.avisos.setdefault(fid, []).append(
                 f"{info['caiu_para']} — o fundo saiu em bloco de cor")
+        # a direção de arte que não veio, ou veio e não passou na régua: a peça
+        # sai pela regra e diz que saiu, em vez de parecer decidida
+        for d in info.get("desvios") or []:
+            r.avisos.setdefault(fid, []).append(d)
 
         avisar("compondo", i, fid)
         for a in _texto_novo(peca, f, pasta, leitura, brief, compositor, info):

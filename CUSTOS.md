@@ -209,3 +209,4 @@ coisa que o cliente descobre no extrato.
 | contratar servidor e domínio | você | tira o sistema do seu computador |
 | conta no Resend e domínio verificado | você | sem isso o cliente paga e **não recebe acesso** |
 | chaves do Asaas de produção | você | sem isso ninguém assina |
+| **medir a direção de arte** | uma rodada real com chave | ela acrescenta UMA chamada por formato nas peças que são rediagramadas (as de proporção bem diferente da arte). O US$ 0,039 por peça foi medido antes dela e vai subir — provavelmente para a casa de US$ 0,05, mas número aqui só entra medido |
