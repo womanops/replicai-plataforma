@@ -1076,6 +1076,7 @@ function subirComProgresso(url, fd){
 
 async function subirArte(){
   if (!peca || !peca.arquivo) return;
+  limparPainel();
   lendoArte = true;
   pintarFormatos();
   // trocar de arte antes de rodar não pode deixar o PSD anterior no disco:
@@ -1513,6 +1514,35 @@ function falta(d, f){
   const correu = d.agora - zero;
   if (correu < 3) return '';
   return `~${emTempo(correu * (1 - f) / f)} restando`;
+}
+
+/* ---------- o painel volta ao zero ----------
+   Arte nova é trabalho novo: o que está na tela é da anterior. Sem isto, uma
+   arte recém-subida herdava o painel inteiro do trabalho de antes — "Baixar
+   tudo" aceso sem nada ter rodado, cartão com a peça velha dentro, ressalva
+   de uma peça que não existe mais. */
+function limparPainel(){
+  clearInterval(pulso);
+  avisosDoJob = {}; descartadosDoJob = {};
+  refazer.clear(); esperandoAjuste = null;
+  fontesDaArte = [];
+  // o rodapé: baixar, PDF, animar e exportação final só reaparecem quando
+  // houver peça pronta de novo
+  $('#btnZip').style.display = 'none';
+  for (const id of ['btnPdf', 'btnAnimar', 'btnFinal']) $('#' + id).hidden = true;
+  $('#mais').style.display = 'none';
+  $('#menuMais').hidden = true;
+  // e os cartões: fora a peça antiga, o vídeo antigo e o selo de ressalva
+  for (const b of document.querySelectorAll('.f')){
+    b.classList.remove('feito', 'falhou', 'ajustavel', 'pulsa');
+    b.removeAttribute('title');
+    b.querySelector('.ressalva')?.remove();
+    const cx = b.querySelector('.cx');
+    if (cx) cx.innerHTML = '';
+  }
+  // janela aberta sobre a peça de ontem fecha junto
+  for (const id of ['ressalvas', 'lupa', 'editor']) $('#' + id).classList.add('hidden');
+  ed = null;
 }
 
 async function acompanhar(){
@@ -2163,6 +2193,7 @@ async function reabrir(ident){
   catch(e){ aviso('Não consegui abrir essa campanha.'); return; }
   if (d.detail){ aviso(d.detail); return; }
 
+  limparPainel();
   job = ident;
   escolhidos.clear();
   (d.formatos || []).forEach(f => escolhidos.add(f));

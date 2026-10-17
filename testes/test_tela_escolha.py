@@ -1226,3 +1226,54 @@ class TestAContagemComecaNoClique:
         """Senão a tela fica replicando uma peça que não foi aceita."""
         corpo = tela.split("$('#btnIr').onclick")[1].split("\n};")[0]
         assert "espelhar(false); pintarRodape(); return;" in corpo
+
+
+class TestArteNovaComecaDoZero:
+    """"Quando eu faço novo upload, deveria resetar todas as coisas do painel:
+    acabei de fazer e ele está com botão Baixar tudo, sendo que nem rodei os
+    formatos."
+
+    O rodapé só sabia ACENDER. Nada nunca o apagava, então o trabalho novo
+    nascia vestido com o painel do anterior.
+    """
+
+    def test_existe_uma_limpeza_so(self, tela):
+        assert "function limparPainel(){" in tela
+
+    def test_a_arte_nova_limpa_antes_de_subir(self, tela):
+        corpo = tela.split("async function subirArte(){")[1].split("$('#zona').onclick")[0]
+        assert "limparPainel()" in corpo
+
+    def test_abrir_outra_campanha_tambem_limpa(self, tela):
+        """Mesma doença: a campanha de ontem herdava o rodapé da de hoje."""
+        corpo = tela.split("async function reabrir(ident){")[1].split("$('#btnConta')")[0]
+        assert antes(corpo, "limparPainel()", "acompanhar()"), \
+            "limpar depois de acompanhar apagaria o que acabou de ser pintado"
+
+    def test_o_rodape_apaga_o_que_so_sabia_acender(self, tela):
+        corpo = tela.split("function limparPainel(){")[1].split("async function acompanhar")[0]
+        assert "$('#btnZip').style.display = 'none'" in corpo
+        for b in ("btnPdf", "btnAnimar", "btnFinal"):
+            assert b in corpo, b
+        assert "$('#mais').style.display = 'none'" in corpo
+
+    def test_o_cartao_perde_a_peca_antiga(self, tela):
+        """Cartão com a peça de ontem dentro é pior que cartão vazio: parece
+        que a arte nova já rodou."""
+        corpo = tela.split("function limparPainel(){")[1].split("async function acompanhar")[0]
+        assert "classList.remove('feito', 'falhou', 'ajustavel', 'pulsa')" in corpo
+        assert "cx.innerHTML = ''" in corpo
+        assert ".ressalva')?.remove()" in corpo
+
+    def test_o_que_era_do_trabalho_antigo_some_da_memoria(self, tela):
+        """Ressalva e descartado ficam em variável de página: sem zerar, a
+        folha de ressalvas da peça nova abriria com o texto da antiga."""
+        corpo = tela.split("function limparPainel(){")[1].split("async function acompanhar")[0]
+        for v in ("avisosDoJob = {}", "descartadosDoJob = {}", "refazer.clear()",
+                  "esperandoAjuste = null", "clearInterval(pulso)"):
+            assert v in corpo, v
+
+    def test_janela_aberta_sobre_a_peca_de_ontem_fecha(self, tela):
+        corpo = tela.split("function limparPainel(){")[1].split("async function acompanhar")[0]
+        assert "'ressalvas', 'lupa', 'editor'" in corpo
+
