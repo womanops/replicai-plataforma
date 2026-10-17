@@ -639,10 +639,15 @@ header .saldo.apertado .fio i{background:var(--err)}
 #lona .corte .ne{right:-5px;top:-5px;cursor:nesw-resize}
 #lona .corte .sw{left:-5px;bottom:-5px;cursor:nesw-resize}
 #lona .corte .se{right:-5px;bottom:-5px;cursor:nwse-resize}
-.pe-el .puxa{position:absolute;right:-4px;bottom:-4px;width:8px;height:8px;
-  border-radius:2px;background:var(--rosa);cursor:nwse-resize;z-index:4;
-  box-shadow:0 0 0 1px var(--bg);transition:width .1s,height .1s,right .1s,bottom .1s}
-.pe-el.sel:hover .puxa,.pe-el .puxa:hover{right:-6px;bottom:-6px;width:12px;height:12px}
+/* O manípulo é o CANTO, não uma bola em cima do canto. Bola cheia tapa a
+   arte justamente onde se quer ver o alinhamento — e, pintada em toda caixa,
+   virava uma constelação de pontos vermelhos espalhados pela peça. Agora é
+   um L de duas linhas, só no elemento escolhido, com a área de pegar
+   invisível em volta. */
+.pe-el .puxa{position:absolute;right:-1px;bottom:-1px;width:13px;height:13px;
+  border-right:2px solid var(--rosa);border-bottom:2px solid var(--rosa);
+  border-bottom-right-radius:3px;cursor:nwse-resize;z-index:4}
+.pe-el .puxa::after{content:'';position:absolute;inset:-7px}
 /* a lixeira só existe no elemento escolhido: uma por caixa, em dez caixas,
    seria um campo minado em cima da peça */
 /* Os botões moram ACIMA da caixa, na linha do rótulo — nunca em cima do
@@ -2721,9 +2726,12 @@ function pintarLona(){
       const e = ed.peca.elementos[i];
       return e.tipo === 'texto' || e.tipo === 'botao' || e.de || e.texto;
     });
-    el.innerHTML = `<span class="rot">${g.rotulo}</span><span class="puxa"></span>`
+    // manípulo e botões só no escolhido: pintados em toda caixa, uma peça de
+    // PSD com dezessete camadas virava uma peneira de pontos vermelhos
+    el.innerHTML = `<span class="rot">${g.rotulo}</span>`
       + (ed.sel === g.chave
-         ? (ehTexto ? `<button class="lapis" type="button" title="Trocar o texto">✎</button>` : '')
+         ? `<span class="puxa"></span>`
+           + (ehTexto ? `<button class="lapis" type="button" title="Trocar o texto">✎</button>` : '')
            + `<button class="lixo" type="button" title="Tirar da peça">✕</button>` : '');
     const lapis = el.querySelector('.lapis');
     if (lapis) lapis.onpointerdown = ev => {
@@ -2762,6 +2770,15 @@ function pintarLona(){
   pintarPainel();
 }
 
+// a partir de quanto da peça uma camada deixa de ser elemento e vira fundo
+const COBRE_A_PECA = 0.9;
+
+function cobreAPeca(g){
+  const c = cerca(g.itens), p = ed.peca.canvas || {};
+  if (!p.w || !p.h) return false;
+  return (c.w * c.h) / (p.w * p.h) >= COBRE_A_PECA;
+}
+
 function pegar(el, g){
   const mover = (ev, escalando) => {
     ev.preventDefault();
@@ -2794,6 +2811,12 @@ function pegar(el, g){
   };
   el.onpointerdown = ev => {
     if (ev.target.classList.contains('puxa')) return mover(ev, true);
+    // Camada que cobre a peça inteira é FUNDO, e clicar no fundo é clicar no
+    // vazio: era por isso que "clicar fora solta a seleção" não funcionava
+    // dentro da lona — numa peça de PSD a arte cobre tudo, então todo clique
+    // caía nela e em vez de soltar ele SELECIONAVA a arte. Ela continua à
+    // mão na lista ao lado, e escolhida lá pode ser arrastada normalmente.
+    if (cobreAPeca(g) && ed.sel !== g.chave){ ed.sel = null; pintarLona(); return; }
     mover(ev, false);
   };
 }

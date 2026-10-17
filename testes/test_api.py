@@ -722,3 +722,24 @@ class TestAPortaFalaComQuemNaoTemConta:
         fonte = Path("api/main.py").read_text(encoding="utf-8")
         assert 'os.environ.get("REPLICAI_SITE_PLANOS"' in fonte
         assert 'os.environ.get("REPLICAI_CONTATO_DEMO"' in fonte
+
+
+class TestATelaNaoFicaNoCache:
+    """Três rodadas de "corrigi" / "continua igual" com a correção no ar.
+
+    A tela é lida do disco a cada acesso, então uma correção vale no próximo
+    F5 — só que, sem nenhum cabeçalho de cache, o navegador decide sozinho
+    guardar a página e devolve a de ontem. De fora isso é indistinguível de
+    um conserto que não foi feito.
+    """
+
+    def test_a_tela_vem_com_no_store(self, anonimo):
+        r = anonimo.get("/")
+        assert r.status_code == 200
+        assert "no-store" in r.headers.get("cache-control", "")
+
+    def test_a_pagina_de_senha_tambem(self, anonimo):
+        """Ela é o caminho do convite: servir a versão de ontem ali é mandar
+        quem acabou de ser convidado para um formulário que já mudou."""
+        r = anonimo.get("/senha")
+        assert "no-store" in r.headers.get("cache-control", "")

@@ -551,25 +551,33 @@ def arquivo_da_marca(nome: str):
     return FileResponse(alvo, media_type="image/svg+xml" if alvo.suffix == ".svg" else None)
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 def tela():
     return _pagina("index.html")
 
 
-def _pagina(nome: str) -> str:
+def _pagina(nome: str) -> HTMLResponse:
+    """A tela, SEM cache.
+
+    Ela é lida do disco a cada acesso, então uma correção vale no próximo F5 —
+    só que sem nenhum cabeçalho de cache o navegador decide sozinho guardar a
+    página, e devolve a de ontem. Custou três rodadas de "corrigi" / "continua
+    igual": a correção estava no ar e ela estava olhando a tela velha.
+    """
     alvo = WEB / nome
     if not alvo.exists():
         raise HTTPException(404, "a interface não foi instalada nesta imagem")
-    return alvo.read_text(encoding="utf-8")
+    return HTMLResponse(alvo.read_text(encoding="utf-8"),
+                        headers={"Cache-Control": "no-store, must-revalidate"})
 
 
-@app.get("/assinar", response_class=HTMLResponse)
+@app.get("/assinar")
 def pagina_de_assinar():
     """Onde a página de planos entrega quem decidiu assinar."""
     return _pagina("assinar.html")
 
 
-@app.get("/senha", response_class=HTMLResponse)
+@app.get("/senha")
 def pagina_de_senha():
     """Onde o convite do e-mail chega. O POST do mesmo endereço cria a senha."""
     return _pagina("senha.html")

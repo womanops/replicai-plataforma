@@ -1068,14 +1068,26 @@ class TestOProgressoQueFaltava:
 class TestATelaDeAjustes:
     """Três pedidos dela depois de usar o Ajustar numa peça de verdade."""
 
-    def test_o_manipulo_nao_tapa_o_canto_que_se_quer_ver(self, tela):
-        """"Precisamos diminuir o quadrado que seleciona para aumentar o
-        elemento, ele não dá visibilidade sobre onde está alinhada a peça."
-        Era 14 px com anel de 2, em cima do canto da linha de texto."""
+    def test_o_manipulo_e_o_canto_e_nao_uma_bola_em_cima_dele(self, tela):
+        """"Ainda tem uma bola vermelha grande na ponta, retirar."
+
+        Bola cheia tapa a arte justamente onde se quer ver o alinhamento.
+        Agora o manípulo É o canto: duas linhas em L, sem preenchimento."""
         regra = tela.split(".pe-el .puxa{")[1].split("}")[0]
-        assert "width:8px;height:8px" in regra
-        # e continua fácil de pegar: cresce no hover
-        assert ".pe-el.sel:hover .puxa,.pe-el .puxa:hover{" in tela
+        assert "border-right:2px solid" in regra and "border-bottom:2px solid" in regra
+        assert "background:var(--rosa)" not in regra, "voltou a ser bola"
+        # e continua fácil de pegar: a área de pegar é maior que o desenho
+        assert ".pe-el .puxa::after{content:'';position:absolute;inset:-7px}" in tela
+
+    def test_o_manipulo_so_existe_no_elemento_escolhido(self, tela):
+        """Pintado em toda caixa, uma peça de PSD com dezessete camadas virava
+        uma peneira de pontos vermelhos espalhados pela arte."""
+        corpo = tela.split("for (const g of grupos()){")[1].split("function pegar(")[0]
+        marcacao = corpo.split("el.innerHTML =")[1].split(";")[0]
+        assert "class=\"puxa\"" in marcacao
+        # o manípulo está DENTRO do ramo do escolhido, junto dos botões
+        antes_do_ramo = marcacao.split("ed.sel === g.chave")[0]
+        assert "puxa" not in antes_do_ramo, "o manípulo saiu do ramo do escolhido"
 
     def test_a_peca_tem_regua_de_alinhamento(self, tela):
         assert "#lona .reguas{" in tela
@@ -1146,6 +1158,28 @@ class TestATelaDeAjustes:
         não pode "desfazer" o nada e deixar a pessoa achando que travou."""
         corpo = tela.split("function pegar(el, g){")[1].split("function textoDoGrupo")[0]
         assert "if (!mexeu){ mexeu = true; marcarPasso(); }" in corpo
+
+    def test_a_camada_que_cobre_a_peca_e_fundo_e_nao_elemento(self, tela):
+        """"Quando eu estiver com uma selecionada e clicar fora, sai a
+        seleção."
+
+        Dentro da lona isso nunca acontecia: numa peça de PSD a arte cobre a
+        peça inteira, então todo clique no "vazio" caía nela — e em vez de
+        soltar a seleção, selecionava a arte. Ela continua na lista ao lado,
+        e escolhida lá pode ser arrastada.
+        """
+        assert "function cobreAPeca(g){" in tela
+        corpo = tela.split("function pegar(el, g){")[1].split("function textoDoGrupo")[0]
+        assert "cobreAPeca(g) && ed.sel !== g.chave" in corpo
+        assert "ed.sel = null" in corpo.split("cobreAPeca(g)")[1][:120]
+
+    def test_clicar_na_peca_escolhe_a_camada(self, tela):
+        """"Quero que ao clicar na peça ela possa ser ajustada, não apenas na
+        camada lateral." O clique na lona chega ao elemento: é `pegar` que
+        escolhe e arrasta, e a lista ao lado é o outro caminho para o mesmo."""
+        corpo = tela.split("function pegar(el, g){")[1].split("function textoDoGrupo")[0]
+        assert "ed.sel = g.chave" in corpo
+        assert "el.onpointerdown" in corpo
 
     def test_clicar_fora_da_peca_solta_a_selecao(self, tela):
         """A lona é menor que o palco: clicar no escuro ao redor não fazia
