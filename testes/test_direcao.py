@@ -355,18 +355,21 @@ class TestAComposicaoSobreAArte:
         cenario = [{"box": {"x": 0, "y": -160, "w": 387, "h": 410}}]
         assert _zona_da_assinatura(fundo, f, cenario, "esquerda") is not None
 
-    def test_a_figura_que_a_mae_mostrava_inteira_nao_sai_cortada(self, tmp_path, monkeypatch):
-        """O logotipo do cliente saía pela metade no alto do banner: ele
-        acompanha o recorte do fundo, e o recorte é de cenário."""
+    def test_o_cenario_e_cortado_como_a_mae_corta(self, tmp_path, monkeypatch):
+        """Houve uma versão que ARRASTAVA para dentro do quadro a figura que a
+        mãe mostrava inteira. Ela nasceu para salvar o logotipo do cliente — e
+        o logotipo hoje anda com a assinatura. Sobre cenário ela quebrava a
+        simetria: dos dois arcos iguais do stories, um ficava no lugar e o
+        outro era puxado, e a peça perdia o eixo."""
         peca = self._peca(tmp_path, monkeypatch)
         f = formato_by_id("gdn-728x90")
-        for e in peca["elementos"]:
-            if e.get("papel") != "figura" or e.get("plantado"):
-                continue
-            b = e["box"]
-            if b["w"] <= f["w"] and b["h"] <= f["h"]:
-                assert b["x"] >= 0 and b["x"] + b["w"] <= f["w"], e.get("camada")
-                assert b["y"] >= 0 and b["y"] + b["h"] <= f["h"], e.get("camada")
+        figuras = [e for e in peca["elementos"]
+                   if e.get("papel") == "figura" and not e.get("plantado")]
+        # o cenário pode sair do quadro: quem garante o que não pode sair é a
+        # régua da assinatura, não um empurrão
+        assert any(e["box"]["x"] < 0 or e["box"]["x"] + e["box"]["w"] > f["w"]
+                   or e["box"]["y"] < 0 or e["box"]["y"] + e["box"]["h"] > f["h"]
+                   for e in figuras), "nenhum cenário foi cortado pelo quadro"
 
     def test_a_medida_de_perto_nao_muda(self, tmp_path, monkeypatch):
         """A composição nova é para a faixa extrema. Onde a arte ainda se lê,
@@ -653,3 +656,79 @@ class TestOndeOLockupSeLe:
         onde = _onde_le_na_faixa(fundo, (0, 0, 400, 800), 60, (255, 255, 255), 100.0,
                                  [e], tmp_path, (0, 0, 300, 60), 1.0)
         assert abs(onde - 100.0) <= 50, "mexeu num lugar que já lia"
+
+
+class TestInformacaoNoCentro:
+    """Direcional da Ligia, depois de ver o stories sair com a arte em cima e
+    o lockup numa faixa: *"precisamos sempre concentrar as informações no
+    centro da peça e fazer upscale das laterais"*.
+
+    A arte-mãe do Energiza é centrada — o lockup está a 49,8% da largura e
+    52,5% da altura. Conter a arte e jogar a informação para uma borda preserva
+    cada pixel do lockup e mesmo assim desmonta a diagramação dela.
+
+    A saída separa as duas escalas: o desenho é AMPLIADO até cobrir a peça, a
+    informação é REDUZIDA até caber, no centro. É o que permite preservar as
+    duas coisas numa proporção que não comporta as duas na mesma escala.
+    """
+
+    def _leitura(self, tmp_path):
+        from api.psd import Camada, Leitura
+        Image.new("RGB", (1920, 1080), (9, 60, 180)).save(tmp_path / "fundo.png")
+        for n in ("a.png", "b.png"):
+            Image.new("RGBA", (40, 40), (255, 255, 255, 255)).save(tmp_path / n)
+        return Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=[
+            # centrado na mãe, como a arte dela é
+            Camada("energiza", "texto", "a.png",
+                   {"x": 429, "y": 479, "w": 1055, "h": 248}, texto="energiza"),
+            Camada("grafismo", "imagem", "b.png",
+                   {"x": 0, "y": 0, "w": 500, "h": 1080}),
+        ])
+
+    def _peca(self, tmp_path, monkeypatch, fid="ig-stories"):
+        monkeypatch.setenv("REPLICAI_FUNDO", "solid")
+        monkeypatch.setenv("REPLICAI_SEM_DIRECAO", "1")
+        from api.psd import desdobrar
+        return desdobrar(self._leitura(tmp_path), formato_by_id(fid), tmp_path)
+
+    def test_a_medida_que_nao_comporta_a_relacao_amplia_e_centra(self, tmp_path, monkeypatch):
+        assert self._peca(tmp_path, monkeypatch)["via"] == "psd-ampliar-e-centrar"
+
+    def test_a_arte_cobre_a_peca_inteira(self, tmp_path, monkeypatch):
+        """Upscale das laterais: sem faixa vazia, sem fundo inventado."""
+        peca = self._peca(tmp_path, monkeypatch)
+        f = formato_by_id("ig-stories")
+        x0, y0, x1, y1 = peca["_fundo"]["base_box"]
+        # um pixel de arredondamento é a conta da escala, não faixa vazia
+        assert x0 <= 1 and y0 <= 1
+        assert x1 >= f["w"] - 1 and y1 >= f["h"] - 1
+
+    def test_a_informacao_fica_no_centro(self, tmp_path, monkeypatch):
+        from api.psd import _caixa
+        peca = self._peca(tmp_path, monkeypatch)
+        f = formato_by_id("ig-stories")
+        escritos = [e for e in peca["elementos"]
+                    if e.get("papel") in ("headline", "apoio", "selo", "marca")]
+        x0, y0, x1, y1 = _caixa(escritos)
+        assert abs((x0 + x1) / 2 - f["w"] / 2) <= 2, "saiu do centro na largura"
+        assert abs((y0 + y1) / 2 - f["h"] / 2) <= 2, "saiu do centro na altura"
+
+    def test_a_informacao_cabe_na_area_segura(self, tmp_path, monkeypatch):
+        from api.psd import _caixa
+        peca = self._peca(tmp_path, monkeypatch)
+        f = formato_by_id("ig-stories")
+        s = f["safe"]
+        x0, y0, x1, y1 = _caixa([e for e in peca["elementos"]
+                                 if e.get("papel") in ("headline", "apoio", "selo", "marca")])
+        assert x0 >= s["left"] and x1 <= f["w"] - s["right"]
+        assert y0 >= s["top"] and y1 <= f["h"] - s["bottom"]
+
+    def test_desenho_e_informacao_tem_escalas_proprias(self, tmp_path, monkeypatch):
+        """É o que permite preservar as duas coisas: o desenho cresce, a
+        informação encolhe. Na mesma escala, uma das duas se perde."""
+        peca = self._peca(tmp_path, monkeypatch)
+        texto = next(e for e in peca["elementos"] if e.get("papel") == "headline")
+        desenho = next(e for e in peca["elementos"] if e.get("papel") == "figura")
+        k_texto = texto["box"]["w"] / 1055
+        k_desenho = desenho["box"]["w"] / 500
+        assert k_desenho > 1 > k_texto, (k_desenho, k_texto)

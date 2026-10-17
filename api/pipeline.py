@@ -329,6 +329,16 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
             for a in manter_a_mao(peca, pasta, fid):
                 r.avisos.setdefault(fid, []).append(a)
 
+        # A LETRA QUE VEIO NO ARQUIVO, contra o fundo que ela pegou. Esta
+        # conferência morava só no outro caminho — e é neste que o lockup
+        # existe, então ela nunca disparava. Ela MEDE e avisa: o que resolve é
+        # o lugar. Pôr uma sombra atrás da letra resolveria a leitura e seria
+        # inventar um elemento que a arte-mãe não tem, e isso a casa não faz.
+        src_fundo = (peca.get("fundo") or {}).get("src")
+        if src_fundo:
+            for a in contraste.do_lockup(peca, pasta / src_fundo, pasta):
+                r.avisos.setdefault(fid, []).append(a)
+
         # a mesma régua do outro caminho: o PSD não passa por `conferir_peca`,
         # e foi por aí que a peça com a chamada escrita em cima da foto saiu.
         # Com PSD dá para saber o que a arte-mãe já cobria, e aí a régua é a

@@ -954,7 +954,7 @@ ZONA_DA_ASSINATURA = 0.46
 
 # as quatro zonas em que a assinatura pode pousar, na ordem em que valem quando
 # a escolhida não lê
-ZONAS_DA_PECA = ("esquerda", "direita", "rodape", "topo")
+ZONAS_DA_PECA = ("centro", "esquerda", "direita", "rodape", "topo")
 
 # abaixo disto a zona deixou de ser lugar e virou sobra. Mesma ideia do
 # RESTO_MINIMO do sossego, aplicada à peça inteira.
@@ -1027,6 +1027,11 @@ def _zona_da_assinatura(fundo: Path, formato: dict, figuras: list[dict],
     W, H, s = formato["w"], formato["h"], formato["safe"]
     sx0, sy0, sx1, sy1 = s["left"], s["top"], W - s["right"], H - s["bottom"]
     caixas = {
+        # o centro é o padrão, e não uma das quatro bordas: a regra da casa é
+        # concentrar a informação no meio da peça e deixar a arte ampliada
+        # cuidar das laterais. Numa arte-mãe centrada — que é a maioria —
+        # jogar o lockup para uma borda já é não preservar a diagramação dela.
+        "centro": [sx0, sy0, sx1, sy1],
         "esquerda": [sx0, sy0, round(W * ZONA_DA_ASSINATURA), sy1],
         "direita": [round(W * (1 - ZONA_DA_ASSINATURA)), sy0, sx1, sy1],
         "topo": [sx0, sy0, sx1, round(H * ZONA_DA_ASSINATURA)],
@@ -1050,7 +1055,7 @@ def _zona_da_assinatura(fundo: Path, formato: dict, figuras: list[dict],
                 melhor, nota = achada, r
         return melhor
 
-    r = list(caixas.get(zona) or caixas["esquerda"])
+    r = list(caixas.get(zona) or caixas["centro"])
     deitada = zona in ("esquerda", "direita")
 
     # Figura que CABE na peça é coisa posta ali — um logotipo, um selo, um
@@ -1083,28 +1088,6 @@ def _zona_da_assinatura(fundo: Path, formato: dict, figuras: list[dict],
     if (calmo[2] - calmo[0]) < W * ZONA_MINIMA:
         return None
     return calmo
-
-
-def _inteiras(figuras: list[dict], formato: dict) -> list[dict]:
-    """Empurra para dentro do quadro a figura que a arte-mãe não cortava.
-
-    Recortar o fundo é recortar cenário, e cenário cortado pela borda é como a
-    peça já era. Uma figura que a mãe mostrava inteira é outra coisa: sair
-    cortada ali não é enquadramento, é defeito — foi o logotipo do cliente
-    saindo pela metade no alto do banner.
-    """
-    W, H = formato["w"], formato["h"]
-    saida = []
-    for f in figuras:
-        b = dict(f["box"])
-        # `plantado` é a figura que a mãe já cortava de propósito — o mascote
-        # apoiado no rodapé. Essa continua plantada; mexer nela é que a
-        # descolaria da borda
-        if not f.get("plantado") and b["w"] <= W and b["h"] <= H:
-            b["x"] = min(max(b["x"], 0), W - b["w"])
-            b["y"] = min(max(b["y"], 0), H - b["h"])
-        saida.append(dict(f, box=b))
-    return saida
 
 
 def _sobre_a_arte(base: list[dict], tinta, info: dict, formato: dict,
@@ -1167,7 +1150,7 @@ def _sobre_a_arte(base: list[dict], tinta, info: dict, formato: dict,
         "via": "psd-sobre-a-arte",
         "fundo": {"tipo": "imagem", "src": info["src"], "fit": "cover"},
         "fontes": [],
-        "elementos": _plantar(_inteiras(figuras, formato), formato) + postos,
+        "elementos": _plantar(figuras, formato) + postos,
         "descartados": {p: "não cabe nesta medida" for p in sorted(sai)},
         "_fundo": {**info, "direcao": escolhida, "desvios": desvios},
     }
@@ -1965,6 +1948,82 @@ def _plantar(elementos: list[dict], formato: dict) -> list[dict]:
     return saida
 
 
+# quanto da área segura a informação ocupa quando ela vai para o centro. O
+# resto é respiro, e respiro é o que faz um bloco centrado parecer posto ali
+# de propósito em vez de espremido.
+INFORMACAO_NA_LARGURA = 0.86
+
+
+def ampliar_e_centrar(leitura: "Leitura", formato: dict, pasta: Path,
+                      elementos: list[dict] | None = None,
+                      final: bool = False) -> dict | None:
+    """A arte ampliada cobre a peça; a informação vai para o centro dela.
+
+    É o direcional da casa para quando a medida nova não comporta a relação
+    que a arte-mãe tinha entre desenho e lockup: *concentrar as informações no
+    centro da peça e fazer upscale das laterais*. Numa arte-mãe centrada — que
+    é a maioria — conter a arte e jogar o lockup para uma faixa lateral é
+    desmontar a diagramação dela, mesmo preservando cada pixel do lockup.
+
+    O desenho e a informação passam a ter escalas próprias: o desenho é
+    ampliado até cobrir, a informação é reduzida até caber. É isso que permite
+    preservar as duas coisas ao mesmo tempo numa proporção que não comporta as
+    duas na mesma escala.
+    """
+    from api import fundo as pf
+
+    pasta = Path(pasta)
+    base = elementos if elementos is not None else como_elementos(leitura, pasta)
+    arte = pasta / leitura.fundo
+    if not base:
+        return None
+
+    from motor.replica import open_rgb
+    with open_rgb(arte) as im:
+        W0, H0 = im.size
+    tinta = tinta_com_a_marca(leitura, base, W0, H0)
+    if not tinta:
+        return None
+
+    # o fundo cobre: a arte é ampliada e o que passa da borda fica de fora,
+    # centrado na informação para não cortar o assunto dela
+    info = pf.preparar(arte, formato, tinta, pasta / f"fundo-{formato['id']}.png",
+                       estrategia="cover", insistir=final, reaproveitar=final)
+
+    W, H, s = formato["w"], formato["h"], formato["safe"]
+    so_texto = tinta_de(leitura) or tinta
+    assinatura = [dict(e, assinatura=True) for e in base
+                  if _da_assinatura(e, so_texto, W0, H0)]
+    desenho = [dict(e, box=pf.mover(e["box"], info["plano"])) for e in base
+               if not _da_assinatura(e, so_texto, W0, H0)]
+    if not assinatura:
+        return None
+
+    caixa = _caixa(assinatura)
+    larg = (W - s["left"] - s["right"]) * INFORMACAO_NA_LARGURA
+    alt = (H - s["top"] - s["bottom"]) * INFORMACAO_NA_LARGURA
+    k = min(larg / max(1, caixa[2] - caixa[0]), alt / max(1, caixa[3] - caixa[1]))
+    cx, cy = W / 2, H / 2
+    mx, my = (caixa[0] + caixa[2]) / 2, (caixa[1] + caixa[3]) / 2
+    postos = [dict(e, box={
+        "x": round(cx + (e["box"]["x"] - mx) * k),
+        "y": round(cy + (e["box"]["y"] - my) * k),
+        "w": max(1, round(e["box"]["w"] * k)),
+        "h": max(1, round(e["box"]["h"] * k))}) for e in assinatura]
+
+    return {
+        "formato": formato["id"],
+        "canvas": {"w": W, "h": H},
+        "safe": s,
+        "saida": f"{formato['id']}.png",
+        "via": "psd-ampliar-e-centrar",
+        "fundo": {"tipo": "imagem", "src": info["src"], "fit": "cover"},
+        "fontes": [],
+        "elementos": _plantar(desenho, formato) + postos,
+        "_fundo": info,
+    }
+
+
 def desdobrar(leitura: Leitura, formato: dict, pasta: Path,
               modo: str = "auto", final: bool = False) -> dict:
     """Escolhe entre manter o lockup colado no fundo ou soltá-lo.
@@ -1996,6 +2055,19 @@ def desdobrar(leitura: Leitura, formato: dict, pasta: Path,
         k = cabe_cortando(leitura, formato, W, H, como_elementos(leitura, pasta))
         if k is not None and k >= 1 - ENCOLHER_ATE and leitura.camadas:
             corte, modo = k, "reenquadra"
+        elif leitura.camadas:
+            # a arte não cabe guardando a relação que tinha com o lockup. Em
+            # vez de contê-la e jogar o lockup numa faixa lateral — que é
+            # desmontar a diagramação da mãe — a arte é AMPLIADA para cobrir a
+            # peça e a informação vai para o centro, na medida que couber. Foi
+            # o direcional: "concentrar as informações no centro da peça e
+            # fazer upscale das laterais".
+            modo = "ampliar"
+    if modo == "ampliar" and leitura.camadas:
+        peca = ampliar_e_centrar(leitura, formato, pasta, final=final)
+        if peca is not None:
+            return peca
+        modo = "recompoe"
     if modo == "recompoe" and leitura.camadas:
         return recompor(leitura, formato, pasta, final=final)
     return reenquadrar(leitura, formato, pasta, final=final, cortando=corte)

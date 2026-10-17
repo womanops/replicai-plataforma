@@ -443,13 +443,14 @@ class TestDesdobrar:
         psd.desdobrar(self._leitura(tmp_path), formato_by_id("ig-feed-1x1"), tmp_path)
         assert chamadas == ["re"]
 
-    def test_proporcao_muito_diferente_recompoe(self, tmp_path, monkeypatch):
+    def test_proporcao_muito_diferente_amplia_e_centra(self, tmp_path, monkeypatch):
         """Com o lockup largo — que é como lockup de KV é — o corte de uma
-        story partiria o nome no meio da palavra, e aí a peça é rediagramada.
+        story partiria o nome no meio da palavra. A saída não é conter a arte e
+        jogar o lockup para uma faixa: é ampliar a arte até cobrir e trazer a
+        informação para o centro, que é a diagramação que a mãe tinha.
 
-        A régua deixou de ser só a proporção: ela pergunta se a tinta sobrevive
-        ao corte. Um lockup estreito na mesma story sai pelo corte, e isso está
-        em `test_direcao.py`."""
+        Direcional da Ligia: "concentrar as informações no centro da peça e
+        fazer upscale das laterais"."""
         import api.psd as psd
         from api.psd import Camada, Leitura
         Image.new("RGB", (1920, 1080), "#0a1a55").save(tmp_path / "fundo.png")
@@ -460,6 +461,25 @@ class TestDesdobrar:
         chamadas = []
         monkeypatch.setattr(psd, "reenquadrar", lambda *a, **k: chamadas.append("re") or {})
         monkeypatch.setattr(psd, "recompor", lambda *a, **k: chamadas.append("rec") or {})
+        monkeypatch.setattr(psd, "ampliar_e_centrar",
+                            lambda *a, **k: chamadas.append("amp") or {})
+        psd.desdobrar(largo, formato_by_id("ig-stories"), tmp_path)
+        assert chamadas == ["amp"]
+
+    def test_sem_informacao_para_centrar_volta_a_rediagramar(self, tmp_path, monkeypatch):
+        """Ampliar e centrar precisa de algo para centrar. Sem isso a peça não
+        pode ficar sem caminho."""
+        import api.psd as psd
+        from api.psd import Camada, Leitura
+        Image.new("RGB", (1920, 1080), "#0a1a55").save(tmp_path / "fundo.png")
+        Image.new("RGBA", (40, 40), (255, 255, 255, 255)).save(tmp_path / "a.png")
+        largo = Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=[
+            Camada("energiza", "texto", "a.png",
+                   {"x": 429, "y": 479, "w": 1055, "h": 248}, texto="energiza")])
+        chamadas = []
+        monkeypatch.setattr(psd, "reenquadrar", lambda *a, **k: chamadas.append("re") or {})
+        monkeypatch.setattr(psd, "recompor", lambda *a, **k: chamadas.append("rec") or {})
+        monkeypatch.setattr(psd, "ampliar_e_centrar", lambda *a, **k: None)
         psd.desdobrar(largo, formato_by_id("ig-stories"), tmp_path)
         assert chamadas == ["rec"]
 
