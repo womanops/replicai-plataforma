@@ -313,7 +313,8 @@ class TestAjustarTextoEElemento:
         assert "g.itens.slice(1).forEach(i => sumiu.add(i));" in tela
 
     def test_desfazer_tudo_desfaz_a_troca_tambem(self, tela):
-        assert "ed.fora.clear(); ed.trocas = {}; ed.sel = null; pintarLona();" in tela
+        corpo = tela.split("$('#edVolta').onclick")[1].split("\n};")[0]
+        assert "ed.fora.clear()" in corpo and "ed.trocas = {}" in corpo
 
     def test_o_modo_diz_o_que_ele_faz(self, tela):
         assert "Adaptação + Ajustes" in tela
@@ -355,9 +356,12 @@ class TestOPainelDoAjuste:
     def test_a_seta_nao_rouba_a_tecla_de_quem_digita(self, tela):
         assert tela.count("e.target.tagName === 'INPUT'") >= 2
 
-    def test_o_fundo_aparece_na_lista_como_fixo(self, tela):
-        """Ele está na peça e não se move: omitir faz procurar o que não há."""
-        assert "<b>Fundo</b><small>fixo</small>" in tela
+    def test_o_fundo_aparece_na_lista_e_da_para_cortar(self, tela):
+        """Ele era "fixo" — estava na peça e não se mexia. Agora é a entrada da
+        ferramenta de corte, que é como se tira da peça a repetição que o
+        enquadramento automático criou."""
+        assert "<b>Fundo</b>" in tela
+        assert "data-chave=\"__fundo\"" in tela
 
 
 class TestAFonteQueEstaArtePede:
@@ -1095,3 +1099,53 @@ class TestATelaDeAjustes:
         corpo = tela.split("$('#palco').onpointerdown")[1].split("};")[0]
         assert "ed.sel = null" in corpo
         assert "closest('#lona')" in corpo
+
+
+class TestACortarOFundo:
+    """"O último teste fica poluído na peça horizontal; se eu pudesse cortar a
+    peça e esticar para ela não ficar com os elementos gráficos triplicados,
+    eu teria resolvido melhor a peça."
+
+    O enquadramento automático às vezes repete o desenho para preencher a
+    medida, e repetição lê como erro. A saída que ela pediu é escolher um
+    trecho limpo do fundo e esticá-lo até a peça — decisão de quem desenha,
+    não de régua.
+    """
+
+    def test_a_moldura_de_corte_existe_na_lona(self, tela):
+        assert "#lona .corte{" in tela
+        assert "m.className = 'corte'" in tela
+
+    def test_o_que_fica_fora_escurece(self, tela):
+        """O que se quer ver é o trecho escolhido: ele vai ser a peça."""
+        regra = tela.split("#lona .corte{")[1].split("}")[0]
+        assert "box-shadow:0 0 0 9999px" in regra
+
+    def test_o_recorte_vai_em_fracao_e_nao_em_pixel(self, tela):
+        """Pixel de tela não serve: o mesmo recorte tem que valer em qualquer
+        monitor e na peça em tamanho real."""
+        corpo = tela.split("function arrastarCorte(")[1].split("\n}")[0]
+        assert "(e.clientX - x0) / (W * k)" in corpo
+        assert "(e.clientY - y0) / (H * k)" in corpo
+
+    def test_o_recorte_nao_pode_sair_do_fundo(self, tela):
+        corpo = tela.split("function arrastarCorte(")[1].split("\n}")[0]
+        assert "Math.min(1, Math.max(0.08" in corpo
+
+    def test_escolhendo_o_trecho_a_lona_mostra_o_fundo_inteiro(self, tela):
+        """Não dá para escolher dentro do que já foi cortado."""
+        assert "ed.sel !== '__fundo'" in tela
+
+    def test_nao_mexer_e_diferente_de_tirar(self, tela):
+        """No servidor são coisas diferentes: ausente mantém o que está
+        gravado, `false` apaga."""
+        assert "ed.recorteMexido ? { recorte: false }" in tela
+
+
+class TestODesfazerDoCorte:
+    def test_desfazer_tudo_tira_o_corte_tambem(self, tela):
+        """"Desfazer tudo" que deixa uma coisa feita é a pior espécie de
+        desfazer."""
+        corpo = tela.split("$('#edVolta').onclick")[1].split("\n};")[0]
+        assert "ed.recorte = null" in corpo
+        assert "ed.recorteMexido = true" in corpo

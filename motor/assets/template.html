@@ -50,8 +50,21 @@ function montarFundo(c){
   const el = document.getElementById('fundo');
   if (f.tipo === 'imagem') {
     el.style.backgroundImage = 'url("' + fileUrl(f.src) + '")';
-    el.style.backgroundSize = f.fit === 'contain' ? 'contain' : (f.fit === 'stretch' ? '100% 100%' : 'cover');
-    el.style.backgroundPosition = f.posicao || 'center center';
+    if (f.recorte) {
+      // RECORTE DO FUNDO, em frações do próprio fundo: o pedaço escolhido
+      // ocupa a peça inteira. É o que permite tirar da peça a repetição que o
+      // enquadramento automático criou — escolher um trecho limpo e esticá-lo.
+      // A conta é a do CSS: a imagem cresce 1/largura e a posição percentual
+      // alinha o trecho escolhido com a borda certa.
+      var r = f.recorte, lw = Math.max(0.01, r.w), lh = Math.max(0.01, r.h);
+      el.style.backgroundSize = (100 / lw) + '% ' + (100 / lh) + '%';
+      el.style.backgroundPosition =
+        (lw >= 1 ? 50 : (r.x / (1 - lw)) * 100) + '% ' +
+        (lh >= 1 ? 50 : (r.y / (1 - lh)) * 100) + '%';
+    } else {
+      el.style.backgroundSize = f.fit === 'contain' ? 'contain' : (f.fit === 'stretch' ? '100% 100%' : 'cover');
+      el.style.backgroundPosition = f.posicao || 'center center';
+    }
     el.style.backgroundColor = f.cor || '#000';
   } else {
     el.style.background = f.cor || '#111';

@@ -619,6 +619,20 @@ header .saldo.apertado .fio i{background:var(--err)}
    linha de texto ele tapava justamente o que se quer ver, que é onde a peça
    está alinhada. Agora é pequeno, e cresce ao passar o mouse — pegar continua
    fácil, enxergar o alinhamento deixou de depender de soltar o elemento */
+/* a moldura de corte do fundo. Ela não é um elemento da peça: é régua de
+   tela, como a margem. O que fica FORA dela escurece, porque o que se quer
+   ver é o trecho escolhido — e a peça final vai ser só ele, esticado */
+#lona .corte{position:absolute;z-index:260;cursor:move;
+  border:1.5px solid var(--sinal);box-shadow:0 0 0 9999px rgba(8,5,7,.55)}
+#lona .corte .rot{position:absolute;left:0;top:-16px;white-space:nowrap;
+  font:500 9px var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--sinal);pointer-events:none}
+#lona .corte .pc{position:absolute;width:10px;height:10px;background:var(--sinal);
+  border-radius:2px;box-shadow:0 0 0 1px var(--bg)}
+#lona .corte .nw{left:-5px;top:-5px;cursor:nwse-resize}
+#lona .corte .ne{right:-5px;top:-5px;cursor:nesw-resize}
+#lona .corte .sw{left:-5px;bottom:-5px;cursor:nesw-resize}
+#lona .corte .se{right:-5px;bottom:-5px;cursor:nwse-resize}
 .pe-el .puxa{position:absolute;right:-4px;bottom:-4px;width:8px;height:8px;
   border-radius:2px;background:var(--rosa);cursor:nwse-resize;z-index:4;
   box-shadow:0 0 0 1px var(--bg);transition:width .1s,height .1s,right .1s,bottom .1s}
@@ -2376,6 +2390,11 @@ async function abrirEditor(fid){
   ed = { fid, peca: pc, k: 1, sel: null, trocas: {},
          boxes: pc.elementos.map(e => ({...e.box})),
          orig: pc.elementos.map(e => ({...e.box})),
+         // o recorte do fundo que já estava gravado, para reabrir no mesmo
+         // lugar; `recorteMexido` é o que distingue "não toquei nisso" de
+         // "tirei o recorte", que no servidor são coisas diferentes
+         recorte: ((pc.fundo || {}).recorte ? {...pc.fundo.recorte} : null),
+         recorteMexido: false,
          // a versão que esta pessoa abriu: é o que impede salvar por cima do
          // ajuste de outra pessoa da agência sem ninguém perceber
          versao: pc.versao || 0,
@@ -2393,7 +2412,12 @@ $('#edFecha').onclick = fecharEditor;
 $('#edVolta').onclick = () => {
   if (!ed) return;
   ed.boxes = ed.orig.map(b => ({...b}));
-  ed.fora.clear(); ed.trocas = {}; ed.sel = null; pintarLona();
+  ed.fora.clear(); ed.trocas = {}; ed.sel = null;
+  // o corte do fundo volta junto: "desfazer tudo" que deixa uma coisa feita
+  // é a pior espécie de desfazer. `recorteMexido` fica marcado para o
+  // servidor saber que foi TIRADO, e não que ninguém encostou nele
+  if (ed.recorte || ed.recorteMexido){ ed.recorte = null; ed.recorteMexido = true; }
+  pintarLona();
 };
 
 // o nome do papel em português, para a lista de camadas não falar em
@@ -2420,7 +2444,8 @@ function pintarPainel(){
     return `<button type="button" data-chave="${g.chave.replace(/"/g,'&quot;')}"`
       + ` aria-pressed="${g.chave === ed.sel}"><b>${nome.replace(/</g,'&lt;')}</b>`
       + `<small>${(tipo || '').replace(/</g,'&lt;')}</small></button>`;
-  }).join('') + `<button type="button" disabled><b>Fundo</b><small>fixo</small></button>`;
+  }).join('') + `<button type="button" data-chave="__fundo"${ed.sel === '__fundo' ? ' class="on"' : ''}>`
+    + `<b>Fundo</b><small>${ed.recorte ? 'recortado' : 'cortar'}</small></button>`;
   $('#edCamadas').querySelectorAll('button[data-chave]').forEach(b => b.onclick = () => {
     ed.sel = b.dataset.chave; pintarLona();
   });
@@ -2477,6 +2502,47 @@ function cerca(itens){
            h: Math.max(...bs.map(b => b.y + b.h)) - y };
 }
 
+/* ---------- arrastar e redimensionar o recorte do fundo ---------- */
+function arrastarCorte(m, W, H, k){
+  const limite = r => ({
+    w: Math.min(1, Math.max(0.08, r.w)), h: Math.min(1, Math.max(0.08, r.h)),
+    x: Math.min(Math.max(0, r.x), 1 - Math.min(1, Math.max(0.08, r.w))),
+    y: Math.min(Math.max(0, r.y), 1 - Math.min(1, Math.max(0.08, r.h))),
+  });
+  const pegar = (ev, canto) => {
+    ev.preventDefault(); ev.stopPropagation();
+    const r0 = { ...(ed.recorte || { x:0, y:0, w:1, h:1 }) };
+    const x0 = ev.clientX, y0 = ev.clientY;
+    const mover = e => {
+      const dx = (e.clientX - x0) / (W * k), dy = (e.clientY - y0) / (H * k);
+      let r;
+      if (!canto) r = { ...r0, x: r0.x + dx, y: r0.y + dy };
+      else {
+        const oeste = canto[1] === 'w', norte = canto[0] === 'n';
+        r = {
+          x: oeste ? r0.x + dx : r0.x, y: norte ? r0.y + dy : r0.y,
+          w: oeste ? r0.w - dx : r0.w + dx, h: norte ? r0.h - dy : r0.h + dy,
+        };
+      }
+      ed.recorte = limite(r); ed.recorteMexido = true;
+      m.style.left = ed.recorte.x * W * k + 'px';
+      m.style.top = ed.recorte.y * H * k + 'px';
+      m.style.width = ed.recorte.w * W * k + 'px';
+      m.style.height = ed.recorte.h * H * k + 'px';
+    };
+    const soltar = () => {
+      window.removeEventListener('pointermove', mover);
+      window.removeEventListener('pointerup', soltar);
+      pintarLona();
+    };
+    window.addEventListener('pointermove', mover);
+    window.addEventListener('pointerup', soltar);
+  };
+  m.onpointerdown = ev => { if (!ev.target.closest('.pc')) pegar(ev, null); };
+  m.querySelectorAll('.pc').forEach(p =>
+    p.onpointerdown = ev => pegar(ev, [...p.classList].find(c => c.length === 2)));
+}
+
 function pintarLona(){
   const { peca } = ed, lona = $('#lona');
   const W = peca.canvas.w, H = peca.canvas.h;
@@ -2486,7 +2552,16 @@ function pintarLona(){
   const sv = peca.safe || {left:0,right:0,top:0,bottom:0};
   $('#edMedida').textContent = `${W}×${H} · ${(peca.elementos || []).length} elementos`;
   const fundo = (peca.fundo || {}).src ? arquivoUrl(peca.fundo.src) : '';
-  lona.innerHTML = `<div class="ch" style="background-image:url('${fundo}')"></div>`
+  // fora do modo de corte a lona mostra o RESULTADO: é a peça que ela vai
+  // ser. Escolhendo o trecho, mostra o fundo inteiro — não dá para escolher
+  // dentro do que já foi cortado
+  const r0 = ed.recorte;
+  const corte = (r0 && ed.sel !== '__fundo')
+    ? `background-size:${100/Math.max(.01,r0.w)}% ${100/Math.max(.01,r0.h)}%;`
+      + `background-position:${r0.w >= 1 ? 50 : (r0.x/(1-r0.w))*100}% `
+      + `${r0.h >= 1 ? 50 : (r0.y/(1-r0.h))*100}%`
+    : 'background-size:100% 100%';
+  lona.innerHTML = `<div class="ch" style="background-image:url('${fundo}');${corte}"></div>`
     // a grade é de oitavos da PEÇA, não de pixels da tela: assim ela quer
     // dizer a mesma coisa num 320x50 e num 1080x1920
     + `<div class="reguas" style="--col:${W*k/8}px;--lin:${H*k/8}px"></div>`
@@ -2506,6 +2581,23 @@ function pintarLona(){
     if (ev.target.closest('#lona') || ed.sel === null) return;
     ed.sel = null; pintarLona();
   };
+
+  // A FERRAMENTA DE CORTE. O enquadramento automático às vezes repete o
+  // desenho para preencher a medida — e repetição lê como erro. Aqui dá para
+  // escolher um trecho limpo do fundo e esticá-lo até a peça: arrastar move,
+  // puxar os cantos muda o tamanho. O que vai para o servidor é a fração, não
+  // pixel de tela, então vale igual em qualquer monitor.
+  if (ed.sel === '__fundo'){
+    const r = ed.recorte || { x:0, y:0, w:1, h:1 };
+    const m = document.createElement('div');
+    m.className = 'corte';
+    m.style.cssText = `left:${r.x*W*k}px;top:${r.y*H*k}px;`
+      + `width:${r.w*W*k}px;height:${r.h*H*k}px`;
+    m.innerHTML = `<span class="rot">trecho que vai encher a peça</span>`
+      + ['nw','ne','sw','se'].map(p => `<span class="pc ${p}"></span>`).join('');
+    lona.appendChild(m);
+    arrastarCorte(m, W, H, k);
+  }
 
   for (const g of grupos()){
     const c = cerca(g.itens);
@@ -2774,7 +2866,9 @@ $('#edSalva').onclick = async () => {
   try {
     const r = await fetch(`/jobs/${job}/pecas/${fid}`, {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ elementos, versao: ed.versao }) });
+      // `false` apaga o recorte gravado; ausente quer dizer "não mexi nele"
+      body: JSON.stringify({ elementos, versao: ed.versao,
+        ...(ed.recorte ? { recorte: ed.recorte } : (ed.recorteMexido ? { recorte: false } : {})) }) });
     const resposta = await r.clone().json().catch(() => ({}));
     if (!r.ok && /plano ativo/.test(resposta.detail || '')) assinaturaParada(resposta.detail);
     for (const a of resposta.avisos || []) aviso(a);

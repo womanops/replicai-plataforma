@@ -1179,6 +1179,25 @@ async def ajustar_peca(job: str, formato: str, request: Request,
                                          "peso": "100 900"}
         novos.append(base)
     peca["elementos"] = novos
+
+    # O RECORTE DO FUNDO. Ele vem em frações do próprio fundo, e é a única
+    # coisa que a tela manda sobre o fundo: o arquivo continua sendo o que o
+    # servidor montou. Serve para tirar da peça a repetição que o
+    # enquadramento automático criou — escolher um trecho limpo e esticá-lo.
+    recorte = corpo.get("recorte")
+    if recorte is not None and peca.get("fundo", {}).get("tipo") == "imagem":
+        if recorte is False:
+            peca["fundo"].pop("recorte", None)
+        else:
+            try:
+                r = {k: float(recorte[k]) for k in ("x", "y", "w", "h")}
+            except (KeyError, TypeError, ValueError):
+                raise HTTPException(422, "o recorte precisa de x, y, w e h em frações")
+            if not (0 < r["w"] <= 1 and 0 < r["h"] <= 1
+                    and 0 <= r["x"] <= 1 - r["w"] + 1e-6
+                    and 0 <= r["y"] <= 1 - r["h"] + 1e-6):
+                raise HTTPException(422, "o recorte tem que caber dentro do fundo")
+            peca["fundo"]["recorte"] = {k: round(v, 5) for k, v in r.items()}
     if any(e.get("trocado") for e in novos):
         from api.pipeline import _fonte_do_trabalho
         declaradas = {f.get("familia"): f for f in (peca.get("fontes") or [])}
