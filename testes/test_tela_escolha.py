@@ -1089,8 +1089,61 @@ class TestATelaDeAjustes:
         feita. Linha de oitavo e linha de meio não podem pesar igual."""
         fino = tela.split("#lona .reguas{")[1].split("}")[0]
         meio = tela.split("#lona .reguas::before,#lona .reguas::after{")[1].split("}")[0]
-        assert "rgba(var(--fgRGB),.10)" in fino
-        assert "rgba(var(--fgRGB),.28)" in meio
+        assert "rgba(255,255,255,.22)" in fino
+        assert "rgba(255,255,255,.5)" in meio
+
+    def test_a_regua_aparece_em_cima_de_qualquer_arte(self, tela):
+        """"O grid que pedi para medir a régua não tem." Tinha: era linha
+        clara a 10% em cima de uma peça clara. Grade que some na arte não é
+        grade — e a arte vem de tudo quanto é cor."""
+        fino = tela.split("#lona .reguas{")[1].split("}")[0]
+        assert "mix-blend-mode:difference" in fino
+
+    def test_os_botoes_do_elemento_nao_ficam_em_cima_do_canto(self, tela):
+        """"Os ícones em torno do elemento não permitem ver a ponta dele para
+        esticar o tamanho." A lixeira de 22 px morava no canto de cima, em
+        cima justamente da ponta que se pega."""
+        regra = tela.split(".pe-el .lixo,.pe-el .lapis{")[1].split("}")[0]
+        assert "top:-16px" in regra, "o botão tem que ficar ACIMA da caixa"
+        assert "width:15px;height:15px" in regra, "22 px tapava o canto"
+        for canto in ("top:-9px", "right:-9px"):
+            assert canto not in regra
+
+    def test_a_lixeira_e_um_x(self, tela):
+        """"A latinha de lixo, por exemplo, é enorme; ela poderia ser um X." """
+        assert 'class="lixo" type="button" title="Tirar da peça">✕<' in tela
+
+    def test_da_para_desfazer_um_passo(self, tela):
+        """"Deveríamos ter um botão com uma seta para desfazer alguma ação
+        feita; nem ⌘Z dá para apertar caso erre algo." Só havia "Desfazer
+        tudo": errar um arrasto custava recomeçar a peça inteira."""
+        assert 'id="edDesfaz"' in tela
+        assert antes(tela, 'id="edDesfaz"', 'id="edVolta"'), "um passo vem antes de tudo"
+        assert "function desfazerPasso(){" in tela
+        assert "function marcarPasso(" in tela
+
+    def test_o_cmd_z_tambem_desfaz(self, tela):
+        gancho = tela.split("$('#edDesfaz').onclick")[1].split("$('#edVolta')")[0]
+        assert "e.metaKey || e.ctrlKey" in gancho and "desfazerPasso()" in gancho
+
+    def test_o_passo_guarda_tudo_o_que_a_tela_muda(self, tela):
+        """Desfazer que devolve a caixa mas não o texto trocado é pior do que
+        não desfazer: a peça fica num estado que nunca existiu."""
+        corpo = tela.split("function marcarPasso(")[1].split("function desfazerPasso")[0]
+        for campo in ("boxes", "fora", "trocas", "recorte", "recorteMexido"):
+            assert campo in corpo, campo
+
+    def test_segurar_a_seta_e_um_gesto_so(self, tela):
+        """Vinte toques de um pixel são um gesto, não vinte passos."""
+        assert "marcarPasso('setas')" in tela
+        corpo = tela.split("function marcarPasso(")[1].split("function desfazerPasso")[0]
+        assert "ed.ultimo.junto === junto" in corpo
+
+    def test_um_clique_que_nao_move_nao_vira_passo(self, tela):
+        """Escolher a camada é clique, não ação: desfazer depois de escolher
+        não pode "desfazer" o nada e deixar a pessoa achando que travou."""
+        corpo = tela.split("function pegar(el, g){")[1].split("function textoDoGrupo")[0]
+        assert "if (!mexeu){ mexeu = true; marcarPasso(); }" in corpo
 
     def test_clicar_fora_da_peca_solta_a_selecao(self, tela):
         """A lona é menor que o palco: clicar no escuro ao redor não fazia

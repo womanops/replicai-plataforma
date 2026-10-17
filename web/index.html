@@ -575,12 +575,18 @@ header .saldo.apertado .fio i{background:var(--err)}
    respondem "está centrado?" — que é a pergunta mais feita nesta arte, onde
    tudo é centrado. Clarinha de propósito: régua que compete com a peça faz
    julgar a régua. */
+/* `difference` porque a grade passa por cima da ARTE, e arte tem de tudo:
+   linha clara some no céu branco do KV, linha escura some no azul da noite.
+   Invertendo o que está atrás, a mesma linha aparece em qualquer fundo — foi
+   por isso que a grade "não tinha": ela estava lá, a 10% de claro em cima de
+   uma peça clara. */
 #lona .reguas{position:absolute;inset:0;pointer-events:none;z-index:0;
+  mix-blend-mode:difference;
   background-image:
-    repeating-linear-gradient(to right, rgba(var(--fgRGB),.10) 0 1px, transparent 1px var(--col)),
-    repeating-linear-gradient(to bottom, rgba(var(--fgRGB),.10) 0 1px, transparent 1px var(--lin))}
+    repeating-linear-gradient(to right, rgba(255,255,255,.22) 0 1px, transparent 1px var(--col)),
+    repeating-linear-gradient(to bottom, rgba(255,255,255,.22) 0 1px, transparent 1px var(--lin))}
 #lona .reguas::before,#lona .reguas::after{content:'';position:absolute;
-  background:rgba(var(--fgRGB),.28)}
+  background:rgba(255,255,255,.5)}
 #lona .reguas::before{left:50%;top:0;bottom:0;width:1px;transform:translateX(-.5px)}
 #lona .reguas::after{top:50%;left:0;right:0;height:1px;transform:translateY(-.5px)}
 #lona.sem-reguas .reguas{display:none}
@@ -639,15 +645,15 @@ header .saldo.apertado .fio i{background:var(--err)}
 .pe-el.sel:hover .puxa,.pe-el .puxa:hover{right:-6px;bottom:-6px;width:12px;height:12px}
 /* a lixeira só existe no elemento escolhido: uma por caixa, em dez caixas,
    seria um campo minado em cima da peça */
-.pe-el .lixo{position:absolute;right:-9px;top:-9px;width:22px;height:22px;border:0;
-  border-radius:50%;background:var(--err);color:#fff;font-size:11px;line-height:1;
-  cursor:pointer;z-index:5;display:grid;place-items:center;
-  box-shadow:0 0 0 2px var(--bg)}
-.pe-el .lixo:hover{background:#FF8A8A}
-.pe-el .lapis{position:absolute;right:17px;top:-9px;width:22px;height:22px;border:0;
-  border-radius:50%;background:var(--rosa);color:#2A0E1C;font-size:11px;line-height:1;
-  cursor:pointer;z-index:5;display:grid;place-items:center;
-  box-shadow:0 0 0 2px var(--bg)}
+/* Os botões moram ACIMA da caixa, na linha do rótulo — nunca em cima do
+   canto. Em cima do canto, a lixeira de 22 px tapava justamente a ponta que
+   se quer pegar para esticar, e a peça não dava para ser medida por ali. */
+.pe-el .lixo,.pe-el .lapis{position:absolute;top:-16px;width:15px;height:15px;border:0;
+  border-radius:4px;font:600 10px/1 var(--corpo);cursor:pointer;z-index:5;
+  display:grid;place-items:center;box-shadow:0 0 0 1px var(--bg);opacity:.85}
+.pe-el .lixo:hover,.pe-el .lapis:hover{opacity:1}
+.pe-el .lixo{right:0;background:var(--err);color:#fff}
+.pe-el .lapis{right:18px;background:var(--rosa);color:#2A0E1C}
 /* o texto trocado, como ele vai sair: a letra é a do trabalho, não a da arte */
 .pe-el .trocado{position:absolute;inset:0;display:flex;align-items:center;
   color:var(--sinal);font:600 13px var(--corpo);padding:0 2px;overflow:hidden;
@@ -878,6 +884,8 @@ header .saldo.apertado .fio i{background:var(--err)}
          da medida junto, e `pintarLona` morria tentando preenchê-lo — o
          editor abria vazio, sem lona e sem camadas -->
     <h2 id="edTitulo"><span id="edNome">Ajustar</span><small id="edMedida"></small></h2>
+    <button class="secund" id="edDesfaz" title="Desfazer o último passo (⌘Z)"
+            disabled>↩ Desfazer</button>
     <button class="secund" id="edVolta">Desfazer tudo</button>
     <button class="secund" id="edFecha">Fechar</button>
     <button class="acao" id="edSalva">Atualizar a peça</button>
@@ -2401,7 +2409,10 @@ async function abrirEditor(fid){
          // a versão que esta pessoa abriu: é o que impede salvar por cima do
          // ajuste de outra pessoa da agência sem ninguém perceber
          versao: pc.versao || 0,
-         fora: new Set() };
+         fora: new Set(),
+         // a pilha do desfazer. Mexer na peça é tentativa e erro: sem um
+         // passo atrás, errar o arrasto obrigava a desfazer TUDO e recomeçar
+         passos: [], ultimo: null };
   $('#edNome').textContent = `Ajustar · ${fid}`;
   reabrirPeca = false;
   $('#edSalva').textContent = 'Atualizar a peça';
@@ -2410,10 +2421,49 @@ async function abrirEditor(fid){
   pintarLona();
 }
 
+/* ---------- desfazer um passo ----------
+   Guarda o estado ANTES de cada mudança: as caixas, o que foi tirado, o texto
+   trocado e o recorte do fundo. É tudo o que a tela de ajuste muda. */
+function marcarPasso(junto){
+  if (!ed) return;
+  // segurar a seta são vinte passos de um pixel: isso é UM gesto, e desfazer
+  // tem que devolver o gesto inteiro, não um pixel por clique
+  const agora = Date.now();
+  if (junto && ed.ultimo && ed.ultimo.junto === junto && agora - ed.ultimo.quando < 700){
+    ed.ultimo.quando = agora; return;
+  }
+  ed.ultimo = { junto, quando: agora };
+  ed.passos.push({ boxes: ed.boxes.map(b => ({...b})), fora: new Set(ed.fora),
+                   trocas: {...ed.trocas}, recorte: ed.recorte ? {...ed.recorte} : null,
+                   recorteMexido: ed.recorteMexido });
+  if (ed.passos.length > 40) ed.passos.shift();
+  const b = $('#edDesfaz'); if (b) b.disabled = false;
+}
+
+function desfazerPasso(){
+  if (!ed || !ed.passos.length) return;
+  const p = ed.passos.pop();
+  ed.boxes = p.boxes; ed.fora = p.fora; ed.trocas = p.trocas;
+  ed.recorte = p.recorte; ed.recorteMexido = p.recorteMexido;
+  ed.ultimo = null;
+  $('#edDesfaz').disabled = !ed.passos.length;
+  pintarLona();
+}
+
 function fecharEditor(){ $('#editor').classList.add('hidden'); ed = null; }
 $('#edFecha').onclick = fecharEditor;
+$('#edDesfaz').onclick = desfazerPasso;
+// ⌘Z é o gesto de quem ajusta arte. Sem ele, errar o arrasto não tinha volta
+addEventListener('keydown', e => {
+  if (!ed || $('#editor').classList.contains('hidden')) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key.toLowerCase() !== 'z' || !(e.metaKey || e.ctrlKey)) return;
+  e.preventDefault(); desfazerPasso();
+});
+
 $('#edVolta').onclick = () => {
   if (!ed) return;
+  marcarPasso();
   ed.boxes = ed.orig.map(b => ({...b}));
   ed.fora.clear(); ed.trocas = {}; ed.sel = null;
   // o corte do fundo volta junto: "desfazer tudo" que deixa uma coisa feita
@@ -2473,6 +2523,7 @@ function pintarPainel(){
   const pede = $('#edPedeFonte');
   if (pede) pede.onclick = () => pedirFonte(fonte);
   const campo = $('#edTexto');
+  campo.onfocus = () => marcarPasso();
   campo.oninput = () => { ed.trocas[atual.chave] = campo.value; desenharTroca(atual); };
   campo.onchange = () => { if (campo.value === dito) delete ed.trocas[atual.chave]; pintarLona(); };
 }
@@ -2516,7 +2567,9 @@ function arrastarCorte(m, W, H, k){
     ev.preventDefault(); ev.stopPropagation();
     const r0 = { ...(ed.recorte || { x:0, y:0, w:1, h:1 }) };
     const x0 = ev.clientX, y0 = ev.clientY;
+    let mexeu = false;
     const mover = e => {
+      if (!mexeu){ mexeu = true; marcarPasso(); }
       const dx = (e.clientX - x0) / (W * k), dy = (e.clientY - y0) / (H * k);
       let r;
       if (!canto) r = { ...r0, x: r0.x + dx, y: r0.y + dy };
@@ -2620,7 +2673,7 @@ function pintarLona(){
     el.innerHTML = `<span class="rot">${g.rotulo}</span><span class="puxa"></span>`
       + (ed.sel === g.chave
          ? (ehTexto ? `<button class="lapis" type="button" title="Trocar o texto">✎</button>` : '')
-           + `<button class="lixo" type="button" title="Tirar da peça">🗑</button>` : '');
+           + `<button class="lixo" type="button" title="Tirar da peça">✕</button>` : '');
     const lapis = el.querySelector('.lapis');
     if (lapis) lapis.onpointerdown = ev => {
       ev.preventDefault(); ev.stopPropagation(); trocarTexto(g);
@@ -2666,7 +2719,11 @@ function pegar(el, g){
     const x0 = ev.clientX, y0 = ev.clientY;
     const antes = g.itens.map(i => ({...ed.boxes[i]}));
     const c0 = cerca(g.itens);
+    let mexeu = false;
     const anda = e2 => {
+      // só o primeiro movimento vira passo: um clique para escolher a camada
+      // não é uma ação para desfazer
+      if (!mexeu){ mexeu = true; marcarPasso(); }
       const dx = (e2.clientX - x0) / ed.k, dy = (e2.clientY - y0) / ed.k;
       g.itens.forEach((i, n) => {
         const a = antes[n];
@@ -2804,6 +2861,7 @@ document.addEventListener('pointerdown', ev => {
 });
 
 function tirarDaPeca(g){
+  marcarPasso();
   g.itens.forEach(i => ed.fora.add(i));
   ed.sel = null; pintarLona();
   aviso(`${g.rotulo} saiu da peça. "Desfazer tudo" traz de volta.`, true);
@@ -2821,6 +2879,7 @@ addEventListener('keydown', e => {
   const g = grupos().find(x => x.chave === ed.sel);
   if (!g) return;
   e.preventDefault();
+  marcarPasso('setas');
   g.itens.forEach(i => {
     ed.boxes[i] = {...ed.boxes[i], x: ed.boxes[i].x + andar[0], y: ed.boxes[i].y + andar[1]};
   });

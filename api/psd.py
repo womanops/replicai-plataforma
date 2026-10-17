@@ -1717,22 +1717,44 @@ def _na_linha(b: dict, linha) -> bool:
     return junto > alto * 0.5
 
 
-def _ilegivel(e: dict, escala: float, linha=None) -> bool:
-    """Esta linha vai ser lida no tamanho real da peça?"""
-    return (e.get("papel") in PODE_SAIR
-            and not _na_linha(e["box"], linha)
-            and e["box"]["h"] * escala < LETRA_MINIMA)
+def _bloco(e: dict):
+    """A que FRASE este pedaço pertence.
+
+    O texto do PSD é fatiado em linhas e letras para o lettering animar uma a
+    uma. Isso é recurso de movimento, não decisão de conteúdo: para tudo o que
+    é conteúdo, a frase é uma coisa só.
+    """
+    return e.get("de") or e.get("camada") or id(e)
+
+
+def _ilegivel(bloco: list[dict], escala: float, linha=None) -> bool:
+    """Esta FRASE vai ser lida no tamanho real da peça?
+
+    Pela linha mais alta dela: se nem a maior é lida, nenhuma é.
+    """
+    return (bloco[0].get("papel") in PODE_SAIR
+            and not any(_na_linha(e["box"], linha) for e in bloco)
+            and max(e["box"]["h"] for e in bloco) * escala < LETRA_MINIMA)
 
 
 def _so_o_que_se_le(elementos: list[dict], escala: float) -> tuple[list[dict], dict]:
-    """Tira da peça a linha que não vai ser lida, e diz qual saiu."""
+    """Tira da peça a FRASE que não vai ser lida, e diz qual saiu.
+
+    Inteira, nunca pela metade. Decidindo linha a linha, o 300x250 saiu com
+    "Energia que" e mais nada: a primeira linha da tagline deitava na mesma
+    altura da chamada e ficou, as outras duas sumiram. Meia frase não é peça
+    preservada — é erro de revisão impresso na arte.
+    """
     chamada = [e for e in elementos if e.get("papel") == "headline"]
     linha = _caixa(chamada) if chamada else None
-    fica = [e for e in elementos if not _ilegivel(e, escala, linha)]
-    if len(fica) == len(elementos):
+    blocos: dict = {}
+    for e in elementos:
+        blocos.setdefault(_bloco(e), []).append(e)
+    saem = {b for b, pedacos in blocos.items() if _ilegivel(pedacos, escala, linha)}
+    if not saem:
         return elementos, {}
-    papeis = sorted({e.get("papel") or "?" for e in elementos
-                     if _ilegivel(e, escala, linha)})
+    fica = [e for e in elementos if _bloco(e) not in saem]
+    papeis = sorted({blocos[b][0].get("papel") or "?" for b in saem})
     return fica, {p: (f"sairia com menos de {LETRA_MINIMA} px de altura nesta medida "
                       f"e não seria lida") for p in papeis}
 

@@ -544,6 +544,38 @@ class TestOQueNaoVaiSerLidoNaoEntra:
         fica, fora = _so_o_que_se_le(self._elementos(), 1.0)
         assert fora == {} and len(fica) == 4
 
+    def test_a_frase_sai_inteira_ou_nao_sai(self):
+        """O 300x250 saiu com "Energia que" e mais nada.
+
+        A tagline é fatiada em linhas para o lettering animar uma a uma, e a
+        régua decidia linha a linha: a primeira deitava na mesma altura da
+        chamada e ficou, as outras duas sumiram. Meia frase na arte não é peça
+        preservada, é erro de revisão impresso.
+        """
+        from api.psd import _so_o_que_se_le
+        els = self._elementos()[:3] + [
+            {"papel": "apoio", "de": "tagline", "letra": 0,
+             "box": {"x": 300, "y": 60, "w": 300, "h": 14}},   # na linha da chamada
+            {"papel": "apoio", "de": "tagline", "letra": 1,
+             "box": {"x": 300, "y": 95, "w": 280, "h": 14}},
+            {"papel": "apoio", "de": "tagline", "letra": 2,
+             "box": {"x": 300, "y": 115, "w": 240, "h": 14}},
+        ]
+        fica, fora = _so_o_que_se_le(els, 0.5)
+        linhas = [e for e in fica if e["papel"] == "apoio"]
+        assert len(linhas) in (0, 3), f"saiu pela metade: {len(linhas)} de 3 linhas"
+        assert len(linhas) == 3 and not fora, "um pedaço na linha da chamada segura a frase"
+
+    def test_a_frase_que_nao_se_le_sai_com_todas_as_linhas(self):
+        from api.psd import _so_o_que_se_le
+        els = self._elementos()[:3] + [
+            {"papel": "apoio", "de": "tagline", "letra": i,
+             "box": {"x": 300, "y": 95 + i * 20, "w": 300, "h": 14}}
+            for i in range(3)]
+        fica, fora = _so_o_que_se_le(els, 0.5)
+        assert "apoio" in fora
+        assert not [e for e in fica if e["papel"] == "apoio"]
+
     def test_sem_a_linha_o_resto_cabe_maior(self):
         """É o motivo de tirar antes de encolher, e não depois."""
         from api.psd import _quanto_cabe, _so_o_que_se_le
