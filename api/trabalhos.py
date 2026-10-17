@@ -15,8 +15,14 @@ import json
 import os
 import re
 import unicodedata
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+
+try:                                  # POSIX: a tranca vale entre processos
+    import fcntl
+except ImportError:                   # pragma: no cover - a plataforma roda em Linux
+    fcntl = None
 
 
 def pasta_base() -> Path:
@@ -55,33 +61,76 @@ def pasta_do(conta: str, job: str) -> Path:
     return p
 
 
+QUEBRADO = "o estado do trabalho está corrompido"
+
+
+@contextmanager
+def _tranca(p: Path):
+    """Uma escrita de cada vez neste trabalho, entre threads E entre processos.
+
+    `gravar` é ler-mudar-escrever. Duas delas ao mesmo tempo — a esteira
+    gravando o passo do vídeo e a API gravando outra coisa — e uma escreve por
+    cima do que a outra acabou de ler.
+    """
+    p.mkdir(parents=True, exist_ok=True)
+    f = open(p / "trabalho.json.tranca", "w")
+    try:
+        if fcntl is not None:
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        f.close()
+
+
+def _do_disco(f: Path) -> dict | None:
+    """O estado como está no arquivo. `None` se não existe; levanta se não dá
+    para ler. Quem GRAVA usa esta, e não `ler`: `ler` devolve um estado de
+    mentira quando o arquivo está ilegível, e gravar por cima dele apaga o
+    trabalho de verdade."""
+    if not f.exists():
+        return None
+    return json.loads(f.read_text(encoding="utf-8"))
+
+
 def gravar(conta: str, job: str, dados: dict) -> None:
     p = pasta_do(conta, job)
-    p.mkdir(parents=True, exist_ok=True)
-    atual = ler(conta, job) or {}
-    atual.update(dados, atualizado=datetime.now(timezone.utc).isoformat(timespec="seconds"))
-    (p / "trabalho.json").write_text(json.dumps(atual, ensure_ascii=False, indent=1),
-                                     encoding="utf-8")
+    f = p / "trabalho.json"
+    with _tranca(p):
+        try:
+            atual = _do_disco(f) or {}
+        except json.JSONDecodeError:
+            # não se escreve estado por cima de lixo: o arquivo ilegível fica
+            # guardado para quem for olhar, e o que chega agora começa limpo
+            f.replace(p / "trabalho.quebrado.json")
+            atual = {}
+        atual.update(dados, atualizado=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        # troca atômica: quem estiver lendo pega o arquivo inteiro, velho ou
+        # novo, nunca a metade de um. Era daí que vinha o "corrompido" —
+        # `write_text` zera o arquivo antes de escrever, e qualquer leitura
+        # naquele instante via um JSON pela metade
+        tmp = p / f"trabalho.{os.getpid()}.parcial"
+        tmp.write_text(json.dumps(atual, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, f)
 
 
 def ler(conta: str, job: str) -> dict | None:
     f = pasta_do(conta, job) / "trabalho.json"
-    if not f.exists():
-        return None
     try:
-        return json.loads(f.read_text(encoding="utf-8"))
+        return _do_disco(f)
     except json.JSONDecodeError:
-        return {"status": "erro", "erro": "o estado do trabalho está corrompido"}
+        return {"status": "erro", "erro": QUEBRADO}
 
 
 def entregas(conta: str, job: str) -> list[dict]:
     p = pasta_do(conta, job)
     if not p.exists():
         return []
-    fora = {"trabalho.json", "resultado.json"}
+    fora = {"trabalho.json", "resultado.json", "trabalho.json.tranca",
+            "trabalho.quebrado.json"}
     itens = []
     for f in sorted(p.rglob("*")):
-        if f.is_file() and f.name not in fora and "pecas" not in f.parts:
+        if (f.is_file() and f.name not in fora and "pecas" not in f.parts
+                and not f.name.endswith(".parcial")):
             itens.append({"nome": str(f.relative_to(p)), "kb": f.stat().st_size // 1024})
     return itens
 
