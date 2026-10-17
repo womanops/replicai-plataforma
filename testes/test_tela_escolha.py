@@ -960,3 +960,33 @@ class TestORodapeEnquantoOArquivoAbre:
         corrido = " ".join(tela.split())
         assert "num PSD grande isto leva um tempo" in corrido
         assert "eu já pergunto qual é" in corrido
+
+
+class TestSemPalavraQueNinguemExplicou:
+    """"O que é lockup?"
+
+    Ela perguntou depois de eu usar a palavra o dia inteiro. Na tela ela nunca
+    aparecia — mas aparecia nas duas mensagens de FALHA, que é o pior lugar
+    para encontrar um termo que ninguém explicou: a peça não saiu e o motivo
+    está em outra língua.
+    """
+
+    def _mensagens_da_esteira(self):
+        from pathlib import Path
+        return (Path("api/psd.py").read_text(encoding="utf-8")
+                + Path("api/pipeline.py").read_text(encoding="utf-8")
+                + Path("api/fundo.py").read_text(encoding="utf-8"))
+
+    def test_nenhuma_falha_fala_em_lockup(self):
+        import re
+        for linha in self._mensagens_da_esteira().splitlines():
+            if re.search(r'raise \w*Error\(', linha) or "falhas[fid]" in linha:
+                assert "lockup" not in linha.lower(), linha.strip()
+
+    def test_a_falha_da_montagem_nao_se_diz_do_fundo(self):
+        """Faltar lugar para a marca não é o fundo não ter saído. Dizer o
+        componente errado manda a pessoa procurar no lugar errado."""
+        from pathlib import Path
+        esteira = Path("api/pipeline.py").read_text(encoding="utf-8")
+        assert "o fundo não saiu" not in esteira
+        assert "não consegui montar esta medida" in esteira

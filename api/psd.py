@@ -1304,7 +1304,8 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
     base = elementos if elementos is not None else como_elementos(leitura, pasta)
     tinta = tinta_de(leitura)
     if not base or not tinta:
-        raise ValueError("não há lockup separado para recompor")
+        raise ValueError("esta arte não traz a marca e o texto em camadas "
+                         "separadas: dá para reenquadrar, não para remontar")
 
     from api import direcao
     from motor.replica import open_rgb
@@ -1369,7 +1370,8 @@ def recompor(leitura: Leitura, formato: dict, pasta: Path,
     faixa = _faixa_livre(info["base_box"], formato, info["caminho"],
                          _tinta_do_lockup(base, pasta))
     if faixa is None:
-        raise ValueError("a arte não deixou faixa livre para o lockup")
+        raise ValueError("a arte ocupou o formato inteiro e não sobrou lugar "
+                         "para a marca e o texto")
     x0, y0, x1, y1 = faixa
 
     lx0, ly0, lx1, ly1 = tinta

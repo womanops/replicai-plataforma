@@ -474,11 +474,11 @@ class TestDesdobrar:
         psd.desdobrar(vazia, formato_by_id("ig-stories"), tmp_path)
         assert chamadas == ["re"]
 
-    def test_recompor_sem_lockup_recusa(self, tmp_path):
+    def test_recompor_sem_as_camadas_recusa(self, tmp_path):
         from api.psd import recompor
         Image.new("RGB", (1920, 1080), "#0a1a55").save(tmp_path / "fundo.png")
         vazia = Leitura(canvas={"w": 1920, "h": 1080}, fundo="fundo.png", camadas=[])
-        with pytest.raises(ValueError, match="não há lockup"):
+        with pytest.raises(ValueError, match="camadas"):
             recompor(vazia, formato_by_id("ig-stories"), tmp_path)
 
     def test_o_lockup_recomposto_cabe_na_area_segura(self, tmp_path, monkeypatch):

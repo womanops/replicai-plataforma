@@ -299,7 +299,7 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
         try:
             peca = leitor_psd.desdobrar(leitura, f, pasta, final=final)
         except Exception as e:
-            r.falhas[fid] = f"o fundo não saiu: {e}"
+            r.falhas[fid] = f"não consegui montar esta medida: {e}"
             continue
         info = peca.pop("_fundo", {})
         r.generativo += int(info.get("generativo") or 0)
@@ -538,7 +538,7 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
             r.generativo += gastou
         except Exception as e:
             # fundo que não sai é falha do formato, não do trabalho inteiro
-            r.falhas[fid] = f"o fundo não saiu: {e}"
+            r.falhas[fid] = f"não consegui montar esta medida: {e}"
             continue
         for a in avisos_do_fundo:
             r.avisos.setdefault(fid, []).append(a)
