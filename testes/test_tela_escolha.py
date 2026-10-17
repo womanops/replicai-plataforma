@@ -935,3 +935,28 @@ class TestOModoQueAArteComporta:
     def test_o_modo_desligado_continua_na_tela(self, tela):
         """Sumir faria parecer que a plataforma não faz — ela faz, com PSD."""
         assert "label.modo.fora{opacity:" in tela
+
+
+class TestORodapeEnquantoOArquivoAbre:
+    """"O texto do rodapé não deveria apresentar essa info de ir escolhendo a
+    arte enquanto está lendo o PSD."
+
+    O rodapé dizia "já pode ir escolhendo" ao mesmo tempo que o meio da tela
+    dizia "se ele tiver mais de uma arte dentro, eu já pergunto qual é" — duas
+    ordens opostas na mesma tela. E a errada era a do rodapé: a prancheta
+    decide o que cada formato recorta, então escolher antes dela é escolher na
+    ordem errada.
+    """
+
+    def test_o_rodape_nao_manda_escolher_enquanto_le(self, tela):
+        assert "já pode ir escolhendo" not in tela
+
+    def test_ele_diz_a_ordem(self, tela):
+        """Não basta tirar o convite: sem dizer o que vem depois, a espera
+        parece travamento."""
+        assert "A escolha vem depois que ele abrir." in tela
+
+    def test_e_o_meio_da_tela_continua_dizendo_o_que_vai_acontecer(self, tela):
+        corrido = " ".join(tela.split())
+        assert "num PSD grande isto leva um tempo" in corrido
+        assert "eu já pergunto qual é" in corrido

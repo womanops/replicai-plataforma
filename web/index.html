@@ -1331,7 +1331,11 @@ function pintarRodape(){
     : falta ? 'Falta a chamada'
     : !n ? 'Escolha os formatos' : `${n} peça${n>1?'s':''} para replicar`;
   $('#detalhe').textContent = !temPeca ? 'Arraste a arte aprovada em qualquer lugar da tela.'
-    : !rascunho ? 'O arquivo está subindo — já pode ir escolhendo.'
+    // convidar a escolher enquanto o arquivo abre é mandar fazer na ordem
+    // errada: a prancheta decide o que cada formato recorta, e ela só aparece
+    // depois da leitura. O rodapé convidava a escolher ao mesmo tempo que o
+    // meio da tela dizia "eu já pergunto qual é" — duas ordens opostas
+    : !rascunho ? 'A escolha vem depois que ele abrir.'
     : esperaPrancheta ? 'O arquivo tem mais de uma arte dentro.'
     : falta ? 'A chamada é o texto principal da peça.'
     : !n ? 'Cada retângulo está na proporção real do destino.'
