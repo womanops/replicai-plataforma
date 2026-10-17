@@ -34,10 +34,12 @@ class TestOQueFicaNoAlto:
     def test_os_canais_vem_antes_da_grade(self, tela):
         assert antes(tela, 'id="canais"', 'id="formatos"')
 
-    def test_o_andamento_vem_antes_do_conteudo(self, tela):
-        """No rodapé ele é uma tira de 3 px embaixo de tudo, e quem está
-        olhando os formatos não vê o pé da tela."""
-        assert antes(tela, 'id="andamento"', "<main>")
+    def test_o_andamento_esta_sempre_a_vista(self, tela):
+        """Houve um painel gêmeo no alto porque "quem olha os formatos não vê
+        o pé da tela". O rodapé é `position:fixed` — ele está sempre à vista,
+        e o painel era duplicação."""
+        regra = tela.split("footer{")[1].split("}")[0]
+        assert "position:fixed" in regra and "bottom:0" in regra
 
 
 class TestEscolherPorCanal:
@@ -163,8 +165,22 @@ class TestAMargemNaPrancha:
 
 
 class TestOAndamento:
-    def test_o_alto_repete_o_que_o_rodape_diz(self, tela):
-        assert "$('#andEtapa').textContent = $('#conta').textContent;" in tela
+    """"Vi que colocou no topo, mas vai ficar redundante com dois lugares
+    tendo a mesma coisa."
+
+    Havia um painel no alto que COPIAVA o rodapé, linha por linha. O motivo
+    alegado era que quem olha a grade de formatos não vê o pé da tela — e o
+    rodapé é `position:fixed`, sempre à vista. A mesma informação em dois
+    lugares faz quem lê comparar os dois em vez de olhar a peça.
+    """
+
+    def test_o_andamento_mora_num_lugar_so(self, tela):
+        assert "andEtapa" not in tela and "andPct" not in tela
+        assert 'id="andamento"' not in tela
+
+    def test_e_esse_lugar_e_o_rodape(self, tela):
+        assert 'id="pct"' in tela
+        assert antes(tela, 'id="trilha"', "</footer>")
 
     def test_acende_e_apaga_junto_com_o_trabalho(self, tela):
         assert "espelhar(andandoAlgo, f)" in tela
@@ -173,8 +189,13 @@ class TestOAndamento:
     def test_sem_fracao_a_barra_nao_inventa_porcentagem(self, tela):
         """Na fila, ou abrindo o PSD, não há fração medida: a barra vai e vem
         em vez de mostrar um número que ninguém calculou."""
-        assert "a.classList.toggle('sem', !tem)" in tela
-        assert "#andamento.sem .trilha i{" in tela
+        assert "trilha.classList.toggle('sem', !tem)" in tela
+        assert "footer .trilha.sem i{" in tela
+
+    def test_uma_mao_so_pinta_a_trilha(self, tela):
+        """Duas mãos no mesmo elemento foi o que deixou a barra do vídeo
+        parada em zero: uma escrevia e a outra apagava."""
+        assert tela.count("trilha.classList.toggle('hidden'") == 1
 
 
 class TestOSaldoNoTopo:
@@ -884,14 +905,13 @@ class TestABarraDoVideo:
     def test_a_trilha_mostra_que_esta_viva(self, tela):
         """Fração verdadeira e parada minutos a fio volta a parecer travamento."""
         assert ".trilha.trabalhando::after" in tela
-        assert "trilha.classList.toggle('trabalhando', andandoAlgo)" in tela
-        assert "$('#andTrilha').classList.toggle('trabalhando', tem)" in tela
+        assert "trilha.classList.toggle('trabalhando', ligado)" in tela
 
     def test_quem_desliga_animacao_ve_a_barra_parada(self, tela):
         """Acessibilidade: o brilho que atravessa é decoração, não informação."""
         i = tela.find(".trilha.trabalhando::after")
         assert i > 0
-        regra = tela[i:i + 600]
+        regra = tela[i:i + 700]
         assert "prefers-reduced-motion" in regra
         assert "animation:none" in regra.split("prefers-reduced-motion")[1]
 
@@ -1037,3 +1057,41 @@ class TestOProgressoQueFaltava:
         """Senão a tela fica dizendo "Animando" para sempre."""
         corpo = tela.split("$('#btnAnimarOk').onclick")[1].split("\n};")[0]
         assert corpo.count("espelhar(false); pintarRodape(); return;") == 2
+
+
+class TestATelaDeAjustes:
+    """Três pedidos dela depois de usar o Ajustar numa peça de verdade."""
+
+    def test_o_manipulo_nao_tapa_o_canto_que_se_quer_ver(self, tela):
+        """"Precisamos diminuir o quadrado que seleciona para aumentar o
+        elemento, ele não dá visibilidade sobre onde está alinhada a peça."
+        Era 14 px com anel de 2, em cima do canto da linha de texto."""
+        regra = tela.split(".pe-el .puxa{")[1].split("}")[0]
+        assert "width:8px;height:8px" in regra
+        # e continua fácil de pegar: cresce no hover
+        assert ".pe-el.sel:hover .puxa,.pe-el .puxa:hover{" in tela
+
+    def test_a_peca_tem_regua_de_alinhamento(self, tela):
+        assert "#lona .reguas{" in tela
+        assert 'class="reguas"' in tela
+
+    def test_a_regua_e_da_peca_e_nao_da_tela(self, tela):
+        """Oitavos da peça, não pixels do monitor: assim ela quer dizer a
+        mesma coisa num 320x50 e num 1080x1920."""
+        assert "--col:${W*k/8}px;--lin:${H*k/8}px" in tela
+
+    def test_o_meio_e_mais_forte_que_o_resto(self, tela):
+        """Nesta arte tudo é centrado, e "está no centro?" é a pergunta mais
+        feita. Linha de oitavo e linha de meio não podem pesar igual."""
+        fino = tela.split("#lona .reguas{")[1].split("}")[0]
+        meio = tela.split("#lona .reguas::before,#lona .reguas::after{")[1].split("}")[0]
+        assert "rgba(var(--fgRGB),.10)" in fino
+        assert "rgba(var(--fgRGB),.28)" in meio
+
+    def test_clicar_fora_da_peca_solta_a_selecao(self, tela):
+        """A lona é menor que o palco: clicar no escuro ao redor não fazia
+        nada, e o elemento seguia escolhido com o manípulo em cima da arte."""
+        assert "$('#palco').onpointerdown" in tela
+        corpo = tela.split("$('#palco').onpointerdown")[1].split("};")[0]
+        assert "ed.sel = null" in corpo
+        assert "closest('#lona')" in corpo

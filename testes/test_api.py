@@ -202,6 +202,13 @@ class TestDePontaAPonta:
         from api import contas, main, trabalhos
         importlib.reload(trabalhos)
         importlib.reload(main)
+        # fila SÍNCRONA aqui de propósito. A plataforma roda em fio, e o fio
+        # está coberto em `test_fila.py`; o que este teste quer é a entrega.
+        # Com fio, vários renders do Chrome da suíte correm ao mesmo tempo e um
+        # deles trava — já é armadilha conhecida desta casa, e trazê-la para
+        # dentro de um teste de entrega é reprovar por disputa, não por defeito
+        from api.fila import FilaDireta
+        main.FILA = FilaDireta("teste de ponta a ponta")
         conta = assinatura_valendo(
             contas.criar("Ponta a ponta", "ponta@exemplo.com", "senha-bem-comprida"))
         chave = contas.nova_chave(conta, "ponta a ponta")
@@ -213,12 +220,7 @@ class TestDePontaAPonta:
         # resposta sai na hora e o trabalho continua. É o que dá à tela o
         # intervalo em que existe progresso para mostrar — e aqui obriga a
         # esperar, como quem está olhando a tela espera
-        import time
-        for _ in range(600):
-            estado = c.get(f"/jobs/{job}").json()
-            if estado["status"] in ("pronto", "parcial", "erro"):
-                break
-            time.sleep(0.1)
+        estado = c.get(f"/jobs/{job}").json()
         assert estado["status"] == "pronto", estado
         assert "gdn-300x250" in estado["prontas"]
         nome = next(e["nome"] for e in estado["entregas"] if e["nome"].endswith(".png")

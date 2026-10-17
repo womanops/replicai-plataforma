@@ -126,6 +126,13 @@ footer{position:fixed;left:0;right:0;bottom:0;display:flex;align-items:center;ga
 footer .estado{flex:1;min-width:0}
 footer .estado b{display:block;font:400 19px/1 var(--disp);letter-spacing:.05em}
 footer .estado span{font-size:12.5px;color:var(--mut)}
+/* a porcentagem mora no rodapé, e só nele. Ela já esteve também num painel no
+   alto da tela — duas vezes a mesma informação, e quem lê acaba conferindo se
+   as duas batem em vez de olhar a peça. O rodapé é fixo: está sempre à vista,
+   que era o motivo alegado para o painel existir */
+footer .pct{font:500 22px var(--mono);color:var(--sinal);letter-spacing:-.02em;
+  min-width:56px;text-align:right}
+footer .pct:empty{display:none}
 button.acao{background:var(--vinho);color:#FFF1F7;border:0;border-radius:9px;padding:11px 20px;
   font:600 14px var(--corpo);cursor:pointer;letter-spacing:.01em}
 button.acao:hover:not(:disabled){background:#A32C68}
@@ -444,41 +451,9 @@ label.modo.fora small{display:block}
 label.modo.fora input{pointer-events:none}
 
 /* ---------- progresso ----------
-   Ele morava só no rodapé, numa tira de 3 px embaixo de tudo: quem está
-   olhando a grade de formatos não vê o pé da tela, e a sensação é de que
-   nada acontece. Agora ele abre no alto, grudado abaixo do cabeçalho, e o
-   rodapé segue dizendo o mesmo para quem está lá embaixo. */
-#andamento{position:sticky;top:0;z-index:70;margin:14px 26px 0;padding:13px 16px 15px;
-  background:var(--painel);border:1px solid var(--linha);border-left:3px solid var(--sinal);
-  border-radius:11px;display:grid;grid-template-columns:1fr auto;gap:2px 16px;
-  align-items:baseline}
-#andamento[hidden]{display:none}
-#andamento b{font:400 22px/1.1 var(--disp);letter-spacing:.05em}
-#andamento .det{grid-column:1;font-size:12.5px;color:var(--mut)}
-#andamento .pct{grid-column:2;grid-row:1/3;align-self:center;
-  font:500 24px var(--mono);color:var(--sinal);letter-spacing:-.02em}
-#andamento .trilha{grid-column:1/3;height:5px;border-radius:3px;background:var(--painel2);
-  overflow:hidden;margin-top:10px}
-#andamento .trilha i{display:block;height:100%;width:0;background:var(--sinal);
-  transition:width .5s linear}
-/* sem fração ainda (na fila, abrindo o PSD): vai-e-vem, que diz "trabalhando"
-   sem fingir uma porcentagem que ninguém mediu */
-#andamento.sem .trilha i{width:30%;animation:vaivem 1.6s ease-in-out infinite}
-@keyframes vaivem{0%{margin-left:-30%}100%{margin-left:100%}}
-/* fração verdadeira, passo demorado: a barra fica no mesmo lugar minutos a fio
-   (um render de vídeo) e volta a parecer travamento. O brilho atravessa a
-   trilha enquanto houver trabalho — diz que está acontecendo sem mexer no
-   número, que é medido. */
-.trilha.trabalhando{position:relative}
-.trilha.trabalhando::after{content:'';position:absolute;inset:0;
-  background:linear-gradient(90deg,transparent,rgba(var(--fgRGB),.26),transparent);
-  animation:atravessa 1.9s linear infinite}
-@keyframes atravessa{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
-@media (prefers-reduced-motion:reduce){
-  .trilha.trabalhando::after{animation:none}
-  #andamento.sem .trilha i{animation:none;width:100%;opacity:.45}
-}
-
+   Ele vive no rodapé, que é fixo e está sempre à vista. Já teve um painel
+   gêmeo no alto da tela; ter a mesma informação em dois lugares faz quem lê
+   comparar os dois em vez de olhar a peça. */
 /* ---------- o "mais" do rodapé ---------- */
 footer .mais{position:relative}
 footer .menu{position:absolute;right:0;bottom:calc(100% + 10px);min-width:220px;
@@ -491,7 +466,23 @@ footer .menu button:hover{background:var(--painel2);color:var(--rosa)}
 
 /* ---------- progresso no rodapé ---------- */
 footer .trilha{height:3px;background:var(--painel2);border-radius:2px;margin-top:8px;
-  overflow:hidden;max-width:420px}
+  overflow:hidden;max-width:420px;position:relative}
+/* sem fração ainda — na fila, abrindo o PSD: vai-e-vem, que diz "trabalhando"
+   sem fingir uma porcentagem que ninguém mediu */
+footer .trilha.sem i{width:30%;animation:vaivem 1.6s ease-in-out infinite}
+@keyframes vaivem{0%{margin-left:-30%}100%{margin-left:100%}}
+/* fração verdadeira, passo demorado: a barra fica no mesmo lugar minutos a
+   fio (um render de vídeo) e volta a parecer travamento. O brilho atravessa a
+   trilha enquanto houver trabalho — diz que está acontecendo sem mexer no
+   número, que é medido. */
+.trilha.trabalhando::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(90deg,transparent,rgba(var(--fgRGB),.26),transparent);
+  animation:atravessa 1.9s linear infinite}
+@keyframes atravessa{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+@media (prefers-reduced-motion:reduce){
+  .trilha.trabalhando::after{animation:none}
+  footer .trilha.sem i{animation:none;width:100%;opacity:.45}
+}
 footer .trilha i{display:block;height:100%;width:0;background:var(--sinal);
   transition:width .5s linear}
 footer .trilha.hidden{display:none}
@@ -578,6 +569,21 @@ header .saldo.apertado .fio i{background:var(--err)}
 #lona{position:relative;background:#000;box-shadow:0 20px 70px rgba(0,0,0,.6);
   user-select:none;touch-action:none}
 #lona .ch{position:absolute;inset:0;background-size:cover;background-position:center}
+/* A GRADE DE ALINHAMENTO. Ela não entra na peça: é régua da tela, como a
+   margem de recorte. Duas forças, porque duas perguntas diferentes: as linhas
+   finas de oitavo respondem "estão todos na mesma coluna?", e as do meio
+   respondem "está centrado?" — que é a pergunta mais feita nesta arte, onde
+   tudo é centrado. Clarinha de propósito: régua que compete com a peça faz
+   julgar a régua. */
+#lona .reguas{position:absolute;inset:0;pointer-events:none;z-index:0;
+  background-image:
+    repeating-linear-gradient(to right, rgba(var(--fgRGB),.10) 0 1px, transparent 1px var(--col)),
+    repeating-linear-gradient(to bottom, rgba(var(--fgRGB),.10) 0 1px, transparent 1px var(--lin))}
+#lona .reguas::before,#lona .reguas::after{content:'';position:absolute;
+  background:rgba(var(--fgRGB),.28)}
+#lona .reguas::before{left:50%;top:0;bottom:0;width:1px;transform:translateX(-.5px)}
+#lona .reguas::after{top:50%;left:0;right:0;height:1px;transform:translateY(-.5px)}
+#lona.sem-reguas .reguas{display:none}
 /* a margem de recorte é a única linha que NÃO é um elemento: ela é o limite
    da rede. Rosa pontilhado fino, no meio de uma caixa por elemento, era mais
    uma linha entre dez. Agora ela é vermelha e o que fica FORA dela escurece —
@@ -609,9 +615,14 @@ header .saldo.apertado .fio i{background:var(--err)}
 /* a caixa escolhida sobe acima da margem; as outras ficam embaixo dela, e é
    por isso que a linha vermelha continua legível com a peça cheia */
 .pe-el.sel{z-index:8}
-.pe-el .puxa{position:absolute;right:-6px;bottom:-6px;width:14px;height:14px;
-  border-radius:3px;background:var(--rosa);cursor:nwse-resize;z-index:4;
-  box-shadow:0 0 0 2px var(--bg)}
+/* o manípulo era um quadrado de 14 px com anel de 2: em cima do canto de uma
+   linha de texto ele tapava justamente o que se quer ver, que é onde a peça
+   está alinhada. Agora é pequeno, e cresce ao passar o mouse — pegar continua
+   fácil, enxergar o alinhamento deixou de depender de soltar o elemento */
+.pe-el .puxa{position:absolute;right:-4px;bottom:-4px;width:8px;height:8px;
+  border-radius:2px;background:var(--rosa);cursor:nwse-resize;z-index:4;
+  box-shadow:0 0 0 1px var(--bg);transition:width .1s,height .1s,right .1s,bottom .1s}
+.pe-el.sel:hover .puxa,.pe-el .puxa:hover{right:-6px;bottom:-6px;width:12px;height:12px}
 /* a lixeira só existe no elemento escolhido: uma por caixa, em dez caixas,
    seria um campo minado em cima da peça */
 .pe-el .lixo{position:absolute;right:-9px;top:-9px;width:22px;height:22px;border:0;
@@ -768,12 +779,6 @@ header .saldo.apertado .fio i{background:var(--err)}
   <button class="conta-btn" id="btnConta" hidden aria-haspopup="dialog">
     <i id="contaInicial">·</i><b id="contaNome">conta</b></button></header>
 
-<div id="andamento" hidden>
-  <b id="andEtapa">Replicando</b>
-  <span class="pct" id="andPct"></span>
-  <span class="det" id="andDet"></span>
-  <span class="trilha" id="andTrilha"><i></i></span>
-</div>
 
 <main>
   <section>
@@ -884,6 +889,7 @@ header .saldo.apertado .fio i{background:var(--err)}
 <footer>
   <div class="estado"><b id="conta">Comece pela peça</b><span id="detalhe">Arraste a arte aprovada em qualquer lugar da tela.</span>
     <div class="trilha hidden" id="trilha"><i></i></div></div>
+  <span class="pct" id="pct"></span>
   <!-- depois da entrega o rodapé virava um balcão de cinco botões do mesmo
        tamanho. Baixar é o que se faz sempre; refazer fundo, animar e montar a
        apresentação são ocasionais e cabem atrás de um "mais" -->
@@ -1321,21 +1327,21 @@ function cartao(f){
     <b>${esc(f.nome)}</b><i>${f.livre && f.nome === medida ? 'guardada' : medida}</i></div>`;
 }
 
-/* ---------- o andamento, no alto ----------
-   O rodapé continua dizendo tudo para quem está lá embaixo; isto repete o
-   mesmo colado abaixo do cabeçalho, que é onde o olho está enquanto as peças
-   aparecem na grade. */
+/* ---------- o andamento ----------
+   Num lugar só: o rodapé. Ele é fixo, está sempre à vista, e a mesma
+   informação em dois lugares faz quem lê comparar os dois em vez de olhar a
+   peça. `f` é a fração medida; `null` quando está acontecendo algo sem
+   fração honesta — e aí a trilha vai-e-vem e o número não aparece, em vez de
+   inventar uma porcentagem que ninguém mediu. */
 function espelhar(ligado, f){
-  const a = $('#andamento');
-  a.hidden = !ligado;
-  if (!ligado) return;
-  $('#andEtapa').textContent = $('#conta').textContent;
-  $('#andDet').textContent = $('#detalhe').textContent;
+  const trilha = $('#trilha'), pct = $('#pct');
+  trilha.classList.toggle('hidden', !ligado);
+  trilha.classList.toggle('trabalhando', ligado);
+  if (!ligado){ pct.textContent = ''; trilha.classList.remove('sem'); return; }
   const tem = f !== null && f !== undefined;
-  a.classList.toggle('sem', !tem);
-  $('#andTrilha').classList.toggle('trabalhando', tem);
-  $('#andPct').textContent = tem ? Math.round(f * 100) + '%' : '';
-  $('#andTrilha').firstElementChild.style.width = tem ? Math.round(f * 100) + '%' : '';
+  trilha.classList.toggle('sem', !tem);
+  pct.textContent = tem ? Math.round(f * 100) + '%' : '';
+  trilha.firstElementChild.style.width = tem ? Math.round(f * 100) + '%' : '';
 }
 
 /* ---------- rodapé ---------- */
@@ -1601,11 +1607,9 @@ async function acompanhar(){
     const andandoAlgo = andando || ['rodando','na fila'].includes(v.status||'')
                         || ['rodando','na fila'].includes((d.ajuste||{}).status||'');
     const f = fracao(d);
-    const trilha = $('#trilha');
-    trilha.classList.toggle('hidden', !andandoAlgo);
-    trilha.classList.toggle('trabalhando', andandoAlgo);
+    // quem pinta a trilha e a porcentagem é `espelhar`, e só ele: duas mãos no
+    // mesmo elemento foi o que deixou a barra de vídeo em zero por um tempo
     if (andandoAlgo && f !== null){
-      trilha.querySelector('i').style.width = Math.round(f*100) + '%';
       const resta = falta(d, f);
       if (resta) $('#detalhe').textContent += ' · ' + resta;
     }
@@ -1616,8 +1620,6 @@ async function acompanhar(){
                 && !['rodando','na fila'].includes((d.ajuste||{}).status || '');
     if (parado){
       clearInterval(pulso);
-      trilha.classList.add('hidden');
-      trilha.classList.remove('trabalhando');
       espelhar(false);
       if ((d.ajuste||{}).status === 'erro') aviso(d.ajuste.erro || 'O ajuste não desenhou.');
       // só avisa de ajuste pedido agora: ao reabrir um trabalho antigo o
@@ -2485,6 +2487,9 @@ function pintarLona(){
   $('#edMedida').textContent = `${W}×${H} · ${(peca.elementos || []).length} elementos`;
   const fundo = (peca.fundo || {}).src ? arquivoUrl(peca.fundo.src) : '';
   lona.innerHTML = `<div class="ch" style="background-image:url('${fundo}')"></div>`
+    // a grade é de oitavos da PEÇA, não de pixels da tela: assim ela quer
+    // dizer a mesma coisa num 320x50 e num 1080x1920
+    + `<div class="reguas" style="--col:${W*k/8}px;--lin:${H*k/8}px"></div>`
     + `<div class="veu"><div class="margem" style="left:${sv.left*k}px;top:${sv.top*k}px;`
     + `right:${sv.right*k}px;bottom:${sv.bottom*k}px"></div></div>`;
   // clicar no vazio solta a seleção. Sem isto o elemento escolhido continua
@@ -2492,6 +2497,13 @@ function pintarLona(){
   // rouba o clique do vizinho: a sensação é de que tudo ficou selecionado
   lona.onpointerdown = ev => {
     if (ev.target.closest('.pe-el') || ed.sel === null) return;
+    ed.sel = null; pintarLona();
+  };
+  // e clicar FORA da peça também solta: a lona é menor que o palco, e clicar
+  // na área escura ao redor dela não fazia nada — o elemento continuava
+  // escolhido, com o manípulo em cima da arte
+  $('#palco').onpointerdown = ev => {
+    if (ev.target.closest('#lona') || ed.sel === null) return;
     ed.sel = null; pintarLona();
   };
 
