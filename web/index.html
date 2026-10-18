@@ -315,6 +315,22 @@ header .campanhas:hover{color:var(--fg)}
 #animar.hidden{display:none}
 /* um cartão por preset, com o exemplo rodando: a pastilha redonda só com o
    nome obrigava a escolher no escuro */
+/* QUAIS PEÇAS ANIMAR. O botão animava todas as prontas, sempre: refazer uma
+   peça custava o pacote inteiro de novo, porque cada vídeo sai do saldo. */
+.quais{margin:4px 0 16px}
+.quais .cab{display:flex;align-items:baseline;justify-content:space-between;
+  margin-bottom:7px}
+.quais .cab b{font:500 11px var(--mono);letter-spacing:.09em;text-transform:uppercase;
+  color:var(--mut)}
+.quais .cab button{background:none;border:0;cursor:pointer;color:var(--rosa);
+  font:500 12px var(--corpo);padding:0}
+#animarLista{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px 12px;
+  max-height:184px;overflow:auto}
+#animarLista label{display:flex;align-items:center;gap:8px;cursor:pointer;
+  padding:5px 2px;font:400 13px var(--corpo)}
+#animarLista input{accent-color:var(--rosa);width:15px;height:15px;cursor:pointer}
+#animarLista .ja{color:var(--mut);font:500 9.5px var(--mono);letter-spacing:.08em;
+  text-transform:uppercase}
 .presets{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
   gap:10px;margin:6px 0 18px}
 .presets button.preset{display:block;text-align:left;padding:0 0 11px;overflow:hidden;
@@ -818,8 +834,12 @@ header .saldo.apertado .fio i{background:var(--err)}
   <div class="folha">
     <h2>Animar</h2>
     <p>O movimento entra sobre a peça pronta: o layout não muda.</p>
+    <div class="quais">
+      <div class="cab"><b>Quais peças</b><button type="button" id="animarTodas">marcar todas</button></div>
+      <div id="animarLista"></div>
+    </div>
     <div class="presets" id="presets"></div>
-    <button class="acao" id="btnAnimarOk">Animar as peças prontas</button>
+    <button class="acao" id="btnAnimarOk">Animar</button>
   </div>
 </div>
 
@@ -2358,9 +2378,55 @@ $('#minhaConta').onclick = e => {
 
 /* ---------- animar ---------- */
 let presetEscolhido = 'editorial';
+/* quais formatos vão ser animados nesta rodada */
+const paraAnimar = new Set();
+
+function pintarQuaisAnimar(prontas, comVideo){
+  const lista = $('#animarLista');
+  lista.innerHTML = prontas.map(fid => {
+    const f = (catalogo.concat(livres)).find(x => x.id === fid);
+    return `<label><input type="checkbox" data-id="${esc(fid)}"`
+      + `${paraAnimar.has(fid) ? ' checked' : ''}>`
+      + `<span>${esc((f && f.nome) || fid)}</span>`
+      + (comVideo.has(fid) ? `<span class="ja">já tem</span>` : '') + `</label>`;
+  }).join('');
+  lista.querySelectorAll('input').forEach(c => c.onchange = () => {
+    c.checked ? paraAnimar.add(c.dataset.id) : paraAnimar.delete(c.dataset.id);
+    pintarQuantosAnimar(prontas);
+  });
+  pintarQuantosAnimar(prontas);
+}
+
+function pintarQuantosAnimar(prontas){
+  const n = paraAnimar.size, b = $('#btnAnimarOk');
+  b.disabled = !n;
+  // o custo dito antes do clique: cada vídeo sai do saldo, e a janela não
+  // dizia quantos ela estava pedindo
+  b.textContent = n ? `Animar ${n} peça${n > 1 ? 's' : ''}` : 'Escolha uma peça';
+  $('#animarTodas').textContent = n === prontas.length ? 'desmarcar todas' : 'marcar todas';
+}
+
 async function abrirAnimar(){
   const p = await (await fetch('/presets')).json();
   if (!p.disponivel){ aviso('A animação não está instalada neste servidor.'); return; }
+
+  // QUAIS PEÇAS. O botão animava todas as prontas, sempre: consertar uma e
+  // animar de novo custava o pacote inteiro outra vez. O padrão é o que
+  // falta — peça que já tem vídeo começa desmarcada.
+  let d = {};
+  try { d = await (await fetch(`/jobs/${job}`)).json(); } catch(e){}
+  const prontas = d.prontas || [];
+  const comVideo = new Set((d.video || {}).prontos || []);
+  paraAnimar.clear();
+  for (const fid of prontas) if (!comVideo.has(fid)) paraAnimar.add(fid);
+  if (!paraAnimar.size) for (const fid of prontas) paraAnimar.add(fid);
+  pintarQuaisAnimar(prontas, comVideo);
+  $('#animarTodas').onclick = () => {
+    if (paraAnimar.size === prontas.length) paraAnimar.clear();
+    else prontas.forEach(f => paraAnimar.add(f));
+    pintarQuaisAnimar(prontas, comVideo);
+  };
+
   const caixa = $('#presets'); caixa.innerHTML = '';
   presetEscolhido = p.padrao;
   // o exemplo rodando ao lado do nome: "seco" e "energia" não dizem o que vai
@@ -2399,11 +2465,14 @@ async function finalizar(){
 $('#btnAnimarOk').onclick = async () => {
   $('#animar').classList.add('hidden');
   const fd = new FormData(); fd.set('preset', presetEscolhido);
+  // a lista vai no pedido: o servidor sempre aceitou escolha de formatos, e
+  // era a tela que não mandava
+  fd.set('formatos', [...paraAnimar].join(','));
   // o aviso vem ANTES do pedido, não depois da resposta: entre clicar e o
   // servidor responder a tela ficava idêntica à de antes do clique, e não
   // havia como saber que a animação tinha começado
   $('#conta').textContent = 'Animando';
-  $('#detalhe').textContent = 'Montando a cena do vídeo…';
+  $('#detalhe').textContent = `0 de ${paraAnimar.size} vídeo${paraAnimar.size > 1 ? 's' : ''}…`;
   espelhar(true, null);
   try {
     const r = await fetch(`/jobs/${job}/animar`, { method:'POST', body:fd });

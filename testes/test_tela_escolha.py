@@ -1503,3 +1503,49 @@ class TestAPecaQueNaoSaiuTemSaida:
         corpo = tela.split("if (aj.oque === 'peça')")[1].split("else aviso(")[0]
         assert "aj.saiu" in corpo and "não saiu nem agora" in corpo
 
+
+class TestEscolherQuaisPecasAnimar:
+    """"Ao clicar em animar peça, quero que seja possível selecionar quais
+    peças serão animadas."
+
+    O botão mandava animar TODAS as prontas, sempre — o servidor sempre
+    aceitou uma lista de formatos e era a tela que não mandava. Como cada
+    vídeo sai do saldo, consertar uma peça e animar de novo custava o pacote
+    inteiro outra vez.
+    """
+
+    def test_a_janela_lista_as_pecas(self, tela):
+        assert 'id="animarLista"' in tela
+        assert "function pintarQuaisAnimar(" in tela
+
+    def test_o_padrao_e_o_que_falta(self, tela):
+        """Peça que já tem vídeo começa desmarcada: o caso comum é animar o
+        que ainda não foi animado."""
+        corpo = tela.split("async function abrirAnimar(){")[1].split("const caixa = $('#presets')")[0]
+        assert "for (const fid of prontas) if (!comVideo.has(fid)) paraAnimar.add(fid);" in corpo
+
+    def test_se_todas_ja_tem_video_todas_vem_marcadas(self, tela):
+        """Senão a janela abriria vazia, pedindo um clique para dizer o
+        óbvio."""
+        corpo = tela.split("async function abrirAnimar(){")[1].split("const caixa = $('#presets')")[0]
+        assert "if (!paraAnimar.size) for (const fid of prontas) paraAnimar.add(fid);" in corpo
+
+    def test_a_peca_que_ja_tem_video_e_marcada_na_lista(self, tela):
+        corpo = tela.split("function pintarQuaisAnimar(")[1].split("function pintarQuantosAnimar")[0]
+        assert 'class="ja"' in corpo and "comVideo.has(fid)" in corpo
+
+    def test_o_pedido_leva_a_lista(self, tela):
+        corpo = tela.split("$('#btnAnimarOk').onclick")[1].split("acompanhar()")[0]
+        assert "fd.set('formatos', [...paraAnimar].join(','))" in corpo
+
+    def test_o_botao_diz_quantas(self, tela):
+        """Cada vídeo sai do saldo: a janela não dizia quantos estava
+        pedindo."""
+        corpo = tela.split("function pintarQuantosAnimar(")[1].split("\n}")[0]
+        assert "Animar ${n} peça" in corpo
+
+    def test_sem_nenhuma_escolhida_o_botao_nao_vale(self, tela):
+        corpo = tela.split("function pintarQuantosAnimar(")[1].split("\n}")[0]
+        assert "b.disabled = !n" in corpo
+        assert "Escolha uma peça" in corpo
+
