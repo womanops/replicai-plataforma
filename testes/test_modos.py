@@ -658,6 +658,36 @@ class TestAChamadaTrocaADaArte:
         trocar_a_chamada(p, tmp_path, "Uma frase de duas linhas")
         assert self.trocada(p)["quebra"] is True
 
+    def test_o_alinhamento_sai_das_linhas_da_arte(self, tmp_path):
+        """A frase da arte começava as duas linhas no mesmo x — alinhada à
+        esquerda — e a troca saía centrada: o bloco inteiro mudava de lugar."""
+        from PIL import Image
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        # duas linhas começando no mesmo x, terminando em x diferentes
+        p["elementos"] = [e for e in p["elementos"] if e.get("papel") != "apoio"]
+        for i, (y, w) in enumerate(((95, 80), (107, 140))):
+            Image.new("RGBA", (w, 10), (240, 240, 255, 255)).save(tmp_path / f"e{i}.png")
+            p["elementos"].append({"tipo": "imagem", "papel": "apoio", "src": f"e{i}.png",
+                                   "camada": "Energia que impulsiona o futuro.",
+                                   "box": {"x": 35, "y": y, "w": w, "h": 10}})
+        trocar_a_chamada(p, tmp_path, "A energia do futuro próximo.")
+        assert self.trocada(p)["align"] == "left"
+
+    def test_frase_centrada_na_arte_continua_centrada(self, tmp_path):
+        from PIL import Image
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        p["elementos"] = [e for e in p["elementos"] if e.get("papel") != "apoio"]
+        # duas linhas com o mesmo centro
+        for i, (x, y, w) in enumerate(((60, 95, 80), (30, 107, 140))):
+            Image.new("RGBA", (w, 10), (240, 240, 255, 255)).save(tmp_path / f"c{i}.png")
+            p["elementos"].append({"tipo": "imagem", "papel": "apoio", "src": f"c{i}.png",
+                                   "camada": "Energia que impulsiona o futuro.",
+                                   "box": {"x": x, "y": y, "w": w, "h": 10}})
+        trocar_a_chamada(p, tmp_path, "A energia do futuro próximo.")
+        assert self.trocada(p)["align"] == "center"
+
     def test_chamada_vazia_nao_mexe_na_arte(self, tmp_path):
         from api.pipeline import trocar_a_chamada
         p = self.peca(tmp_path)

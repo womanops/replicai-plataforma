@@ -537,10 +537,29 @@ def trocar_a_chamada(peca: dict, pasta: Path, texto: str, fonte_de=None) -> list
     # Encolher a letra para caber numa linha preserva a diagramação da mãe;
     # quebrar em duas inventa uma composição que ela não tem.
     miudo = min(e["box"]["h"] for e in alvos) or 1
-    bandas: list[int] = []
-    for y in sorted(e["box"]["y"] for e in alvos):
-        if not bandas or y - bandas[-1] > miudo * 0.6:
-            bandas.append(y)
+    linhas: list[list[dict]] = []
+    for e in sorted(alvos, key=lambda e: e["box"]["y"]):
+        if linhas and e["box"]["y"] - linhas[-1][0]["box"]["y"] <= miudo * 0.6:
+            linhas[-1].append(e)
+        else:
+            linhas.append([e])
+
+    # COMO A LINHA ESTAVA ALINHADA, medido nas linhas dela: duas que começam
+    # no mesmo x são alinhadas à esquerda; que terminam no mesmo x, à
+    # direita. A frase da arte dela começava as duas linhas em x=35 e a troca
+    # saía centrada — o bloco inteiro mudava de lugar. Com uma linha só não
+    # há com que comparar, e centrar na própria caixa mantém o bloco onde ele
+    # estava.
+    if len(linhas) < 2:
+        alinha = "center"
+    else:
+        cantos = [(min(e["box"]["x"] for e in l),
+                   max(e["box"]["x"] + e["box"]["w"] for e in l),
+                   (min(e["box"]["x"] for e in l)
+                    + max(e["box"]["x"] + e["box"]["w"] for e in l)) / 2) for l in linhas]
+        espalha = lambda i: max(c[i] for c in cantos) - min(c[i] for c in cantos)
+        alinha = min((("left", 0), ("right", 1), ("center", 2)),
+                     key=lambda a: espalha(a[1]))[0]
     pedida = next((e.get("fonte_mae") for e in alvos if e.get("fonte_mae")), "")
     familia, arquivo, aviso = (fonte_de or (lambda _: (FAMILIA_PADRAO, "", "")))(pedida)
     alto = max(8, int(caixa["h"]))
@@ -552,10 +571,8 @@ def trocar_a_chamada(peca: dict, pasta: Path, texto: str, fonte_de=None) -> list
             # sem quebra quando a mãe tinha uma linha só: o motor encolhe a
             # letra até a frase caber na largura, em vez de descer para a
             # linha de baixo e cobrir o que estava lá
-            "quebra": len(bandas) > 1,
-            # centrado continua centrado: a caixa é a da tinta que saiu, e a
-            # frase nova pode ter outro comprimento
-            "align": "center", "valign": "middle", "trocado": True}
+            "quebra": len(linhas) > 1,
+            "align": alinha, "valign": "middle", "trocado": True}
     fora = {id(e) for e in alvos}
     peca["elementos"] = ([e for e in peca["elementos"][:onde] if id(e) not in fora]
                          + [novo]
