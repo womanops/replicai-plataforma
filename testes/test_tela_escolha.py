@@ -619,7 +619,8 @@ class TestOCampoOrienta:
 
     def test_os_campos_dizem_o_que_fazer(self, tela):
         for ordem in ("Insira a nova chamada", "Insira o novo call to action",
-                      "Dê um nome a esta campanha", "Diga o que esta peça precisa respeitar"):
+                      "Dê um nome a esta campanha",
+                      "Diga o que o texto novo precisa respeitar"):
             assert ordem in tela, ordem
 
 
@@ -1548,4 +1549,33 @@ class TestEscolherQuaisPecasAnimar:
         corpo = tela.split("function pintarQuantosAnimar(")[1].split("\n}")[0]
         assert "b.disabled = !n" in corpo
         assert "Escolha uma peça" in corpo
+
+
+class TestOQueAjustarSoOndeAlguemLe:
+    """"Quando opto por Adaptação + Ajustes, a opção de o que você quer
+    ajustar na peça não funciona, sugiro remover."
+
+    Certo: nos dois primeiros modos a plataforma não escreve nada — ela
+    reenquadra a arte e move o que já está lá. O campo ficava na tela pedindo
+    uma instrução que ninguém ia aplicar, e no máximo ela voltava como "o
+    ajuste que você pediu não foi aplicado". No terceiro modo ele chega ao
+    modelo e vale para o texto NOVO, que é o que o rótulo passa a dizer.
+    """
+
+    def test_o_campo_nasce_escondido(self, tela):
+        assert 'id="campoBrief" hidden' in tela
+
+    def test_so_aparece_no_modo_que_escreve(self, tela):
+        corpo = tela.split("function lerModo(){")[1].split("document.querySelectorAll('input[name=modo]')")[0]
+        assert "$('#campoBrief').hidden = v !== 'novo';" in corpo
+
+    def test_o_rotulo_promete_o_que_ele_faz(self, tela):
+        """"O que ajustar" prometia mexer na peça. Ele guia o texto novo."""
+        assert "O que o texto novo precisa respeitar" in tela
+        assert ">O que ajustar<" not in tela
+
+    def test_fora_do_modo_que_escreve_o_brief_nao_e_enviado(self, tela):
+        """Senão a instrução chega ao servidor para virar ressalva de algo
+        que nunca teve como ser feito."""
+        assert "fd.set('brief', modoPeca() === 'novo' ? $('#brief').value.trim() : '');" in tela
 

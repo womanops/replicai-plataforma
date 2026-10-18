@@ -901,8 +901,13 @@ header .saldo.apertado .fio i{background:var(--err)}
       <button class="secund" id="btnFonte" type="button">Enviar fonte</button>
     </div>
 
-    <label class="campo"><span>O que ajustar</span>
-      <textarea id="brief" placeholder="Diga o que esta peça precisa respeitar"></textarea></label>
+    <!-- O "o que ajustar" só existe onde alguém o lê. Nos dois primeiros
+         modos a plataforma não escreve nada: ela reenquadra a arte e move o
+         que já está lá. O campo ficava na tela pedindo uma instrução que
+         ninguém ia aplicar, e no máximo voltava como "o ajuste que você
+         pediu não foi aplicado". -->
+    <label class="campo" id="campoBrief" hidden><span>O que o texto novo precisa respeitar</span>
+      <textarea id="brief" placeholder="Diga o que o texto novo precisa respeitar"></textarea></label>
   </section>
 
   <section>
@@ -1487,6 +1492,7 @@ function lerModo(){
     l.classList.toggle('on', !l.classList.contains('fora') && l.querySelector('input').checked));
   $('#campoHead').hidden = v !== 'novo';
   $('#campoCta').hidden  = v !== 'novo';
+  $('#campoBrief').hidden = v !== 'novo';
   pintarRodape();
 }
 document.querySelectorAll('input[name=modo]').forEach(r => r.onchange = lerModo);
@@ -1507,7 +1513,9 @@ $('#btnIr').onclick = async () => {
   fd.set('headline', $('#headline').value.trim());
   fd.set('cta', $('#cta').value.trim());
   fd.set('titulo', $('#titulo').value.trim());
-  fd.set('brief', $('#brief').value.trim());
+  // fora do modo que escreve, o brief não vai: mandar uma instrução que
+  // ninguém aplica só produz a ressalva dizendo que ela não foi aplicada
+  fd.set('brief', modoPeca() === 'novo' ? $('#brief').value.trim() : '');
   fd.set('modo', modoPeca());
   $('#btnIr').disabled = true; $('#conta').textContent = 'Replicando';
   // a contagem começa no clique, em 0 de N, e não na primeira resposta do
