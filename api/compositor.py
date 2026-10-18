@@ -348,6 +348,25 @@ class CompositorEmCadeia:
     def __init__(self, *compositores):
         self.compositores = compositores
 
+    def __getattr__(self, nome: str):
+        """A cadeia É um compositor: quem pergunta `headline` a ela está
+        perguntando ao conjunto.
+
+        Sem isto a chamada escrita sumia sem explicação. A esteira lia
+        `getattr(compositor, "headline", "")` para trocar o texto da arte e
+        para conferir se ele entrou; com o modelo disponível o compositor é
+        esta cadeia, que não tinha o atributo — então a troca nunca
+        acontecia e a conferência achava que não havia nada a conferir. Sem
+        credencial o compositor era o simples, que tem o atributo, e por isso
+        o defeito não aparecia na minha máquina.
+        """
+        for c in self.compositores:
+            try:
+                return getattr(c, nome)
+            except AttributeError:
+                continue
+        raise AttributeError(nome)
+
     def compor(self, base, formato_id: str, brief: str = "",
                terreno: "Terreno | None" = None) -> dict:
         motivos = []

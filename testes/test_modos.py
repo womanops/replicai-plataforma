@@ -618,3 +618,91 @@ class TestOModeloOlhaAArte:
         assert "compositor.compor(olha," in fonte
         # e segue valendo o fundo assado quando a arte-mãe não saiu
         assert "if not olha.exists():" in fonte
+
+
+class TestACadeiaResponderPeloConjunto:
+    """"Coloquei a versão de inserir texto e de novo ela ignorou."
+
+    A esteira lê `getattr(compositor, "headline", "")` para trocar o texto da
+    arte e para conferir se ele entrou. COM credencial o compositor é uma
+    cadeia (modelo, e a régua atrás), que não tinha o atributo: a troca nunca
+    acontecia e a conferência achava que não havia nada a conferir. SEM
+    credencial o compositor é o simples, que tem o atributo — por isso o
+    defeito não aparecia na máquina de quem desenvolve.
+    """
+
+    def test_a_cadeia_sabe_a_chamada_dos_seus_compositores(self):
+        from api.compositor import CompositorEmCadeia, CompositorSimples
+
+        class SoCompoe:
+            def compor(self, *a, **k): return {}
+
+        c = CompositorEmCadeia(SoCompoe(), CompositorSimples(headline="Oi", cta="Vem"))
+        assert c.headline == "Oi" and c.cta == "Vem"
+
+    def test_atributo_que_ninguem_tem_continua_não_existindo(self):
+        """`getattr(compositor, "preserva", False)` precisa poder dar o
+        padrão: inventar o atributo faria a esteira escrever sem ser pedido."""
+        import pytest
+        from api.compositor import CompositorEmCadeia, CompositorSimples
+        c = CompositorEmCadeia(CompositorSimples(headline="Oi"))
+        assert getattr(c, "preserva", False) is False
+        with pytest.raises(AttributeError):
+            c.coisa_que_ninguem_tem
+
+    def test_com_o_modelo_disponivel_a_chamada_chega_a_esteira(self, monkeypatch):
+        """O caminho exato da máquina dela: credencial presente."""
+        from api import modelo, tarefas
+        monkeypatch.setattr(modelo, "disponivel", lambda: True)
+        c = tarefas.compositor("arte.psd", "Teste energia", "", "novo")
+        assert type(c).__name__ == "CompositorEmCadeia"
+        assert getattr(c, "headline", "") == "Teste energia"
+
+
+class TestRessalvaQueNaoEhNoticia:
+    """"Nada foi acrescentado à peça", logo abaixo de uma troca que deu
+    certo, lê-se como "ignorei o seu texto"."""
+
+    def _peca_trocada(self):
+        return {"canvas": {"w": 300, "h": 300}, "fundo": {"src": "f.png"},
+                "elementos": [{"tipo": "texto", "papel": "headline",
+                               "texto": "Nova", "trocado": True,
+                               "box": {"x": 0, "y": 0, "w": 100, "h": 20}}]}
+
+    def test_sem_nada_pendente_a_recusa_nao_vira_ressalva(self, tmp_path, monkeypatch):
+        from api import pipeline
+        from api.compositor import ComposicaoImpossivel
+
+        class Recusa:
+            headline, cta, preserva = "Nova", "", False
+            def compor(self, *a, **k): raise ComposicaoImpossivel("a arte já traz o texto")
+
+        monkeypatch.setattr(pipeline.prep_fundo, "espaco_livre", lambda *a, **k: [])
+        monkeypatch.setattr(pipeline.sossego, "acalmar", lambda *a, **k: ([], None))
+        from PIL import Image
+        Image.new("RGB", (300, 300), "#123").save(tmp_path / "f.png")
+
+        class Leitura:
+            camadas, fundo = [], "f.png"
+        assert pipeline._texto_novo(self._peca_trocada(), {"id": "x", "w": 300, "h": 300},
+                                    tmp_path, Leitura(), "", Recusa(), {}) == []
+
+    def test_com_botao_pedido_a_recusa_continua_sendo_dita(self, tmp_path, monkeypatch):
+        """Aí havia material pendente de verdade: o botão não entrou."""
+        from api import pipeline
+        from api.compositor import ComposicaoImpossivel
+
+        class Recusa:
+            headline, cta, preserva = "Nova", "Compre agora", False
+            def compor(self, *a, **k): raise ComposicaoImpossivel("não cabe")
+
+        monkeypatch.setattr(pipeline.prep_fundo, "espaco_livre", lambda *a, **k: [])
+        monkeypatch.setattr(pipeline.sossego, "acalmar", lambda *a, **k: ([], None))
+        from PIL import Image
+        Image.new("RGB", (300, 300), "#123").save(tmp_path / "f.png")
+
+        class Leitura:
+            camadas, fundo = [], "f.png"
+        avisos = pipeline._texto_novo(self._peca_trocada(), {"id": "x", "w": 300, "h": 300},
+                                      tmp_path, Leitura(), "", Recusa(), {})
+        assert avisos and "não cabe" in avisos[0]

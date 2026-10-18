@@ -553,7 +553,14 @@ def _texto_novo(peca: dict, formato: dict, pasta: Path, leitura, brief: str,
     try:
         extra = compositor.compor(olha, formato["id"], brief, terreno)
     except ComposicaoImpossivel as e:
-        return [f"nada foi acrescentado à peça: {e}"]
+        # Com a chamada já trocada na arte e nada mais a escrever, "nada foi
+        # acrescentado à peça" não é notícia — é o modelo concordando que não
+        # havia o que acrescentar. Dito assim, logo abaixo de uma troca que
+        # deu certo, lê-se como "ignorei o seu texto".
+        pendente = ((getattr(compositor, "cta", "") or "").strip()
+                    or (brief or "").strip()
+                    or not any(e.get("trocado") for e in peca.get("elementos", [])))
+        return [f"nada foi acrescentado à peça: {e}"] if pendente else []
 
     # queda calada já entregou peça de régua com cara de peça do modelo uma
     # vez; aqui ela voltou no caminho novo, e o CTA saiu sem botão
