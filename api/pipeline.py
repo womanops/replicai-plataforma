@@ -482,6 +482,17 @@ def trocar_a_chamada(peca: dict, pasta: Path, texto: str, fonte_de=None) -> list
                   - min(e["box"]["x"] for e in alvos),
              "h": max(e["box"]["y"] + e["box"]["h"] for e in alvos)
                   - min(e["box"]["y"] for e in alvos)}
+    # QUANTAS LINHAS A CHAMADA DA ARTE TINHA. Uma linha continua uma linha: a
+    # frase nova quebrando em duas desceu por cima da tagline, porque a caixa
+    # da chamada é a do lettering inteiro — alta o bastante para caber o
+    # descendente do "g" — e o que mora logo abaixo dela está a poucos pixels.
+    # Encolher a letra para caber numa linha preserva a diagramação da mãe;
+    # quebrar em duas inventa uma composição que ela não tem.
+    miudo = min(e["box"]["h"] for e in alvos) or 1
+    bandas: list[int] = []
+    for y in sorted(e["box"]["y"] for e in alvos):
+        if not bandas or y - bandas[-1] > miudo * 0.6:
+            bandas.append(y)
     pedida = next((e.get("fonte_mae") for e in alvos if e.get("fonte_mae")), "")
     familia, arquivo, aviso = (fonte_de or (lambda _: (FAMILIA_PADRAO, "", "")))(pedida)
     alto = max(8, int(caixa["h"]))
@@ -489,7 +500,11 @@ def trocar_a_chamada(peca: dict, pasta: Path, texto: str, fonte_de=None) -> list
             "camada": alvos[0].get("camada"), "box": caixa,
             "fonte": familia, "peso": 600,
             "cor": cor_da_linha([pasta / e["src"] for e in alvos if e.get("src")]),
-            "min": max(8, round(alto * 0.35)), "max": alto, "lineHeight": 1.05,
+            "min": 8, "max": alto, "lineHeight": 1.05,
+            # sem quebra quando a mãe tinha uma linha só: o motor encolhe a
+            # letra até a frase caber na largura, em vez de descer para a
+            # linha de baixo e cobrir o que estava lá
+            "quebra": len(bandas) > 1,
             # centrado continua centrado: a caixa é a da tinta que saiu, e a
             # frase nova pode ter outro comprimento
             "align": "center", "valign": "middle", "trocado": True}

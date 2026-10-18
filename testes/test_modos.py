@@ -582,6 +582,51 @@ class TestAChamadaTrocaADaArte:
                 "peso": "100 900"} in p["fontes"]
         assert not avisos
 
+    def test_uma_linha_na_arte_continua_uma_linha(self, tmp_path):
+        """"Veja a sobreposição feita na peça com nova chamada."
+
+        A frase nova quebrou em duas e desceu por cima da tagline. A caixa da
+        chamada é a do lettering inteiro — alta o bastante para caber o
+        descendente do "g" — e o que mora logo abaixo está a poucos pixels.
+        Encolher a letra até caber numa linha preserva a diagramação da mãe;
+        quebrar em duas inventa uma composição que ela não tem.
+        """
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        trocar_a_chamada(p, tmp_path, "A energia do futuro próximo.")
+        linha = next(e for e in p["elementos"] if e.get("papel") == "headline")
+        assert linha["quebra"] is False
+        assert linha["min"] == 8, "sem chão alto, a letra encolhe até caber"
+
+    def test_chamada_de_duas_linhas_na_arte_pode_quebrar(self, tmp_path):
+        """O contrário também: forçar uma linha onde a mãe tinha duas
+        espremeria a frase a nada."""
+        from PIL import Image
+        from api.pipeline import trocar_a_chamada
+        els = []
+        for i, (x, y) in enumerate(((10, 50), (40, 50), (10, 85), (40, 85))):
+            Image.new("RGBA", (28, 30), (255, 255, 255, 255)).save(tmp_path / f"d{i}.png")
+            els.append({"tipo": "imagem", "papel": "headline", "de": "duas",
+                        "src": f"d{i}.png", "box": {"x": x, "y": y, "w": 28, "h": 30}})
+        p = {"canvas": {"w": 300, "h": 250}, "elementos": els, "fontes": []}
+        trocar_a_chamada(p, tmp_path, "Uma frase de duas linhas")
+        assert next(e for e in p["elementos"]
+                    if e.get("papel") == "headline")["quebra"] is True
+
+    def test_a_chamada_nova_nao_desce_sobre_o_que_vem_abaixo(self, tmp_path):
+        """A régua da casa, medida: o bloco novo não pode ocupar a faixa de
+        quem está logo abaixo dele."""
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        apoio = next(e for e in p["elementos"] if e.get("papel") == "apoio")
+        trocar_a_chamada(p, tmp_path, "A energia do futuro próximo.")
+        linha = next(e for e in p["elementos"] if e.get("papel") == "headline")
+        # uma linha só, centrada na faixa: a tinta fica na metade de cima da
+        # caixa e não alcança o apoio
+        assert linha["quebra"] is False
+        assert linha["valign"] == "middle"
+        assert apoio["box"]["y"] >= linha["box"]["y"] + linha["box"]["h"] / 2
+
     def test_peca_sem_chamada_na_arte_nao_muda(self, tmp_path):
         """Nem toda arte tem camada de chamada: aí o texto novo continua
         sendo trabalho do modelo, em espaço livre."""
