@@ -1737,26 +1737,31 @@ def _ilegivel(bloco: list[dict], escala: float, linha=None) -> bool:
             and max(e["box"]["h"] for e in bloco) * escala < LETRA_MINIMA)
 
 
-def _so_o_que_se_le(elementos: list[dict], escala: float) -> tuple[list[dict], dict]:
-    """Tira da peça a FRASE que não vai ser lida, e diz qual saiu.
+def o_que_fica_pequeno(elementos: list[dict], escala: float) -> list[str]:
+    """Diz quais frases saem pequenas demais para serem lidas. NÃO tira.
 
-    Inteira, nunca pela metade. Decidindo linha a linha, o 300x250 saiu com
-    "Energia que" e mais nada: a primeira linha da tagline deitava na mesma
-    altura da chamada e ficou, as outras duas sumiram. Meia frase não é peça
-    preservada — é erro de revisão impresso na arte.
+    Isto tirava da peça. "Na peça pequena tiraram o ano, mas eu não pedi isso
+    — não se deve tomar decisão sem solicitação." A régua estava certa sobre
+    o fato (7 px não se lê) e errada sobre o que fazer com ele: tirar o ano
+    de uma campanha chamada 2027 é decidir a peça por quem assina.
+
+    Medir e dizer é o papel dela, como na régua de contraste. Quem decide se
+    a linha fica, encolhe ou sai é quem publica, e a tela de ajuste tem as
+    três saídas.
     """
     chamada = [e for e in elementos if e.get("papel") == "headline"]
     linha = _caixa(chamada) if chamada else None
     blocos: dict = {}
     for e in elementos:
         blocos.setdefault(_bloco(e), []).append(e)
-    saem = {b for b, pedacos in blocos.items() if _ilegivel(pedacos, escala, linha)}
-    if not saem:
-        return elementos, {}
-    fica = [e for e in elementos if _bloco(e) not in saem]
-    papeis = sorted({blocos[b][0].get("papel") or "?" for b in saem})
-    return fica, {p: (f"sairia com menos de {LETRA_MINIMA} px de altura nesta medida "
-                      f"e não seria lida") for p in papeis}
+    nomes = sorted({blocos[b][0].get("papel") or "?"
+                    for b, pedacos in blocos.items() if _ilegivel(pedacos, escala, linha)})
+    # o nome que a peça usa, não o do arquivo: "apoio" e "selo" são palavras
+    # de dentro do PSD. Mesmo vocabulário da régua de contraste.
+    from api.contraste import NA_PECA
+    return [f"{NA_PECA.get(n, n)} sai com menos de {LETRA_MINIMA} px nesta medida, e "
+            f"abaixo disso a letra não se lê. No ajuste dá para aumentar ou tirar"
+            for n in nomes]
 
 
 def _e_assinatura(e: dict) -> bool:
@@ -1816,13 +1821,11 @@ def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
                        insistir=final, reaproveitar=final)
     movidos = _plantar([dict(e, box=pf.mover(e["box"], info["plano"])) for e in base],
                        formato)
-    descartados: dict[str, str] = {}
+    miudas: list[str] = []
     if cortando is not None:
-        # o que não vai ser lido sai ANTES de encolher: sem a linha de apoio a
-        # caixa do lockup é menor, e o que fica cabe maior
-        movidos, descartados = _so_o_que_se_le(movidos, cortando)
-        if descartados:
-            cortando = _quanto_cabe(movidos, formato)
+        # a régua MEDE e diz; não tira. Tirar o que ficou pequeno deixava a
+        # peça sem o ano da campanha sem ninguém ter pedido
+        miudas = o_que_fica_pequeno(movidos, cortando)
         # sempre, e não só quando encolhe: o lockup pode caber inteiro e ainda
         # assim estar dois pixels fora do quadro, que foi o logotipo do cliente
         # saindo cortado no alto do 320x50
@@ -1837,8 +1840,8 @@ def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
         "fundo": {"tipo": "imagem", "src": info["src"], "fit": "cover"},
         "fontes": [],
         "elementos": elementos_finais,
-        **({"descartados": descartados} if descartados else {}),
-        "_fundo": {**info, "avisos": list(info.get("avisos") or []) + encolheu},
+        "_fundo": {**info,
+                   "avisos": list(info.get("avisos") or []) + encolheu + miudas},
     }
 
 

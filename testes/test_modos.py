@@ -802,3 +802,49 @@ class TestRessalvaQueNaoEhNoticia:
         avisos = pipeline._texto_novo(self._peca_trocada(), {"id": "x", "w": 300, "h": 300},
                                       tmp_path, Leitura(), "", Recusa(), {})
         assert avisos and "não cabe" in avisos[0]
+
+
+class TestAListaDoModeloNaoEhOQueFicouDeFora:
+    """"Vieram inúmeras ressalvas."
+
+    No caminho do PSD o modelo não compõe a peça: ele só acrescenta o que
+    falta por cima da arte. Tudo o que ele "descartou" é coisa que JÁ ESTÁ na
+    peça — o nome da campanha, o ano, a frase. Mostrar isso como "ficou de
+    fora" eram cinco linhas dizendo que o que está lá não está.
+    """
+
+    def test_a_prosa_do_modelo_nao_vira_ficou_de_fora(self):
+        import inspect
+        from api import pipeline
+        fonte = inspect.getsource(pipeline._psd_e_render)
+        assert "r.descartados[fid] = peca[\"descartados\"]" not in fonte
+
+    def test_mas_continua_servindo_de_motivo_do_que_ela_pediu(self):
+        """A prosa dele é a explicação de por que a chamada dela não entrou."""
+        from api.pipeline import ficou_de_fora
+
+        class Pediu:
+            headline, cta = "Chegamos a Porto Belo", ""
+
+        peca = {"elementos": [], "descartados": {
+            "Headline 'Chegamos a Porto Belo'": "não há zona livre na arte"}}
+        avisos = ficou_de_fora(peca, Pediu(), "")
+        assert avisos and "não há zona livre" in avisos[0]
+
+    def test_o_mesmo_fato_nao_e_dito_duas_vezes(self):
+        """A troca da linha já explicou, e com mais precisão."""
+        from api.pipeline import ficou_de_fora
+
+        class Pediu:
+            headline, cta = "Uma chamada nova", ""
+
+        peca = {"elementos": [], "_chamada_explicada": True}
+        assert ficou_de_fora(peca, Pediu(), "") == []
+
+    def test_a_marca_de_dentro_nao_vai_para_o_arquivo_da_peca(self):
+        """`_chamada_explicada` é conversa da esteira: gravada no JSON, ela
+        viraria campo de produto sem querer."""
+        import inspect
+        from api import pipeline
+        fonte = inspect.getsource(pipeline._psd_e_render)
+        assert 'peca.pop("_chamada_explicada", None)' in fonte

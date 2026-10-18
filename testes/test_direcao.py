@@ -487,14 +487,15 @@ class TestAMaeReenquadrada:
         assert peca["via"] == "psd-reenquadra"
 
 
-class TestOQueNaoVaiSerLidoNaoEntra:
-    """Da skill de replicação da casa: "quando o formato é muito mais estreito
-    que a arte-mãe, reduza a mensagem a uma headline e ao logo".
+class TestOQueFicaPequenoEDito:
+    """"Na peça pequena tiraram o ano, mas eu não pedi isso. Não se deve
+    tomar decisão sem solicitação."
 
-    O catálogo já dizia o mesmo pelo outro lado — o 728x90 e o 320x50 têm
-    `apoio_max: 0` — e a reconstrução levava a linha de apoio assim mesmo, com
-    7 px de altura: sujeira em cima da arte que ainda obrigava o resto do
-    lockup a encolher para abrir espaço para ela.
+    Esta régua TIRAVA da peça a linha que sairia com menos de 12 px. O fato
+    estava certo — 7 px não se lê — e o que ela fazia com o fato, errado:
+    tirar o ano de uma campanha chamada 2027 é decidir a peça por quem
+    assina. Agora ela mede e diz; quem decide tem a tela de ajuste, onde as
+    três saídas existem (aumentar, mover, tirar).
     """
 
     def _elementos(self):
@@ -511,80 +512,50 @@ class TestOQueNaoVaiSerLidoNaoEntra:
              "camada": "assinatura"},
         ]
 
-    def test_a_linha_que_nao_se_le_sai(self):
-        from api.psd import _so_o_que_se_le
-        fica, fora = _so_o_que_se_le(self._elementos(), 0.5)   # 14 px * 0.5 = 7
-        assert "apoio" in fora
-        assert all(e["papel"] != "apoio" for e in fica)
+    def test_nada_sai_da_peca(self):
+        """O que a esteira recebe de volta é a peça inteira: a régua não
+        devolve mais uma lista menor."""
+        from api.psd import o_que_fica_pequeno
+        assert isinstance(o_que_fica_pequeno(self._elementos(), 0.5), list)
 
-    def test_e_a_peca_diz_qual_saiu_e_por_que(self):
-        from api.psd import LETRA_MINIMA, _so_o_que_se_le
-        _, fora = _so_o_que_se_le(self._elementos(), 0.5)
-        assert f"{LETRA_MINIMA} px" in fora["apoio"]
+    def test_a_linha_pequena_e_dita(self):
+        from api.psd import LETRA_MINIMA, o_que_fica_pequeno
+        avisos = o_que_fica_pequeno(self._elementos(), 0.5)   # 14 px * 0.5 = 7
+        assert avisos and f"{LETRA_MINIMA} px" in avisos[0]
+        assert "linha de apoio" in avisos[0], "fala em `apoio`, que é palavra do arquivo"
 
-    def test_o_que_esta_na_linha_da_chamada_e_a_chamada(self):
-        """O "20" e o "27" são o ano da campanha, colados no nome. Tirá-los por
-        serem pequenos deixa a marca sem o ano — e eles estão na mesma linha,
-        que é quem divide lockup em toda a casa."""
-        from api.psd import _so_o_que_se_le
-        fica, fora = _so_o_que_se_le(self._elementos(), 0.5)
-        assert "selo" not in fora
-        assert sum(1 for e in fica if e["papel"] == "selo") == 2
+    def test_o_aviso_diz_onde_resolver(self):
+        """Medir e calar é metade: a saída existe e é a tela de ajuste."""
+        from api.psd import o_que_fica_pequeno
+        assert "ajuste" in o_que_fica_pequeno(self._elementos(), 0.5)[0]
 
-    def test_a_chamada_nunca_sai(self):
-        """Peça sem chamada não é a peça. Se ela não couber, o caminho é
-        outro — não é tirar a chamada."""
-        from api.psd import _so_o_que_se_le
-        fica, fora = _so_o_que_se_le(self._elementos(), 0.05)
-        assert "headline" not in fora
-        assert any(e["papel"] == "headline" for e in fica)
+    def test_o_que_esta_na_linha_da_chamada_nao_e_acusado(self):
+        """O "20" e o "27" são o ano da campanha, colados no nome, e saem no
+        corpo do nome — não são linha pequena."""
+        from api.psd import o_que_fica_pequeno
+        assert not [a for a in o_que_fica_pequeno(self._elementos(), 0.5)
+                    if "selo" in a]
 
-    def test_o_que_se_le_fica_como_esta(self):
-        from api.psd import _so_o_que_se_le
-        fica, fora = _so_o_que_se_le(self._elementos(), 1.0)
-        assert fora == {} and len(fica) == 4
+    def test_a_chamada_nunca_entra_na_conta(self):
+        """Peça sem chamada não é a peça: ela não é candidata a sumir, e
+        acusá-la seria sugerir que pode."""
+        from api.psd import o_que_fica_pequeno
+        assert not [a for a in o_que_fica_pequeno(self._elementos(), 0.05)
+                    if "título" in a]
 
-    def test_a_frase_sai_inteira_ou_nao_sai(self):
-        """O 300x250 saiu com "Energia que" e mais nada.
+    def test_o_que_se_le_nao_vira_ressalva(self):
+        from api.psd import o_que_fica_pequeno
+        assert o_que_fica_pequeno(self._elementos(), 1.0) == []
 
-        A tagline é fatiada em linhas para o lettering animar uma a uma, e a
-        régua decidia linha a linha: a primeira deitava na mesma altura da
-        chamada e ficou, as outras duas sumiram. Meia frase na arte não é peça
-        preservada, é erro de revisão impresso.
-        """
-        from api.psd import _so_o_que_se_le
-        els = self._elementos()[:3] + [
-            {"papel": "apoio", "de": "tagline", "letra": 0,
-             "box": {"x": 300, "y": 60, "w": 300, "h": 14}},   # na linha da chamada
-            {"papel": "apoio", "de": "tagline", "letra": 1,
-             "box": {"x": 300, "y": 95, "w": 280, "h": 14}},
-            {"papel": "apoio", "de": "tagline", "letra": 2,
-             "box": {"x": 300, "y": 115, "w": 240, "h": 14}},
-        ]
-        fica, fora = _so_o_que_se_le(els, 0.5)
-        linhas = [e for e in fica if e["papel"] == "apoio"]
-        assert len(linhas) in (0, 3), f"saiu pela metade: {len(linhas)} de 3 linhas"
-        assert len(linhas) == 3 and not fora, "um pedaço na linha da chamada segura a frase"
-
-    def test_a_frase_que_nao_se_le_sai_com_todas_as_linhas(self):
-        from api.psd import _so_o_que_se_le
+    def test_uma_linha_so_por_frase(self):
+        """A frase é fatiada em linhas para o lettering: três pedaços da
+        mesma frase são uma ressalva, não três."""
+        from api.psd import o_que_fica_pequeno
         els = self._elementos()[:3] + [
             {"papel": "apoio", "de": "tagline", "letra": i,
              "box": {"x": 300, "y": 95 + i * 20, "w": 300, "h": 14}}
             for i in range(3)]
-        fica, fora = _so_o_que_se_le(els, 0.5)
-        assert "apoio" in fora
-        assert not [e for e in fica if e["papel"] == "apoio"]
-
-    def test_sem_a_linha_o_resto_cabe_maior(self):
-        """É o motivo de tirar antes de encolher, e não depois."""
-        from api.psd import _quanto_cabe, _so_o_que_se_le
-        f = formato_by_id("gdn-728x90")
-        todos = self._elementos()
-        com = _quanto_cabe(todos, f)
-        fica, _ = _so_o_que_se_le(todos, 0.5)
-        sem = _quanto_cabe(fica, f)
-        assert sem > com
+        assert len(o_que_fica_pequeno(els, 0.5)) == 1
 
     def test_o_lockup_entra_no_quadro_mesmo_quando_ja_cabe(self):
         """O logotipo do cliente saía dois pixels acima da borda no 320x50: a

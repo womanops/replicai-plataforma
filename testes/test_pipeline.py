@@ -234,13 +234,20 @@ class TestOQueFoiPedidoENaoEntrou:
             cta = ""
         assert ficou_de_fora(self._peca(), Vazio(), "") == []
 
-    def test_o_caminho_do_psd_guarda_o_que_ficou_de_fora(self):
-        """No caminho do PSD nem ao estado do trabalho isso chegava."""
+    def test_no_caminho_do_psd_o_que_vale_e_o_que_ela_pediu(self):
+        """Isto já publicou a lista do MODELO como "ficou de fora".
+
+        Fazia sentido no caminho em que ele compõe a peça. No do PSD ele só
+        acrescenta o que falta por cima da arte, e tudo o que ele descarta é
+        coisa que JÁ ESTÁ lá — o nome da campanha, o ano, a frase. Eram cinco
+        linhas dizendo que o que está na peça não está. O que fica é a
+        conferência do que ELA pediu, medida contra a peça de verdade.
+        """
         import inspect
 
         from api import pipeline
         fonte = inspect.getsource(pipeline._psd_e_render)
-        assert 'r.descartados[fid] = peca["descartados"]' in fonte
+        assert 'r.descartados[fid] = peca["descartados"]' not in fonte
         assert "ficou_de_fora(peca, compositor, brief)" in fonte
 
 

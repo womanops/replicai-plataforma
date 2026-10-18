@@ -345,10 +345,13 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
                 r.avisar(fid, a)
         for a in _texto_novo(peca, f, pasta, leitura, brief, compositor, info):
             r.avisar(fid, a)
-        # o que o modelo deixou de fora chega à tela nos dois caminhos. Aqui
-        # não chegava nem ao estado do trabalho: ficava só no JSON da montagem
-        if peca.get("descartados"):
-            r.descartados[fid] = peca["descartados"]
+        # A LISTA DO MODELO NÃO VAI PARA A TELA NESTE CAMINHO. Aqui ele não
+        # compõe a peça: ele só acrescenta o que falta por cima da arte, e
+        # tudo o que ele "deixou de fora" é coisa que JÁ ESTÁ na peça — o
+        # nome da campanha, o ano, a frase. Mostrar isso como "ficou de fora"
+        # eram cinco linhas dizendo que o que está lá não está. A prosa dele
+        # continua servindo de MOTIVO para o que ela pediu e não entrou, que
+        # é o que `ficou_de_fora` confere contra a peça de verdade.
         for a in ficou_de_fora(peca, compositor, brief):
             r.avisar(fid, a)
         if final:
@@ -372,6 +375,7 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
         for a in sobreposicao.conferir(peca, pasta, permitido=na_mae):
             r.avisar(fid, a)
 
+        peca.pop("_chamada_explicada", None)
         arq = pasta / "pecas" / f"{fid}.json"
         arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
         destino = pasta / (peca.get("saida") or f"{fid}.png")
@@ -424,6 +428,10 @@ def ficou_de_fora(peca: dict, compositor, brief: str) -> list[str]:
                            ("O botão que você escreveu", getattr(compositor, "cta", ""))):
         pedido = (pedido or "").strip()
         if not pedido or _letras(pedido) in escrito:
+            continue
+        # a troca da linha da arte já explicou, e com mais precisão: duas
+        # frases diferentes para o mesmo fato é a folha deixando de ser lida
+        if rotulo.startswith("A chamada") and peca.get("_chamada_explicada"):
             continue
         porque = _porque(descartados, pedido)
         avisos.append(f"{rotulo} — \"{pedido}\" — não entrou na peça"
@@ -520,6 +528,7 @@ def trocar_a_chamada(peca: dict, pasta: Path, texto: str, fonte_de=None) -> list
         return []
     alvos = linha_da_mensagem(peca.get("elementos", []))
     if not alvos:
+        peca["_chamada_explicada"] = True
         return ["a chamada que você escreveu não entrou: nesta medida a arte não "
                 "tem linha de frase para trocar, só a assinatura da campanha"]
     papel = alvos[0].get("papel") or "apoio"
@@ -796,6 +805,7 @@ def _compor_e_render(r: Resultado, formatos, compositor, copia: Path, pasta: Pat
             for a in manter_a_mao(peca, pasta, fid):
                 r.avisar(fid, a)
 
+        peca.pop("_chamada_explicada", None)
         arq = pasta / "pecas" / f"{fid}.json"
         arq.write_text(json.dumps(peca, ensure_ascii=False, indent=1), encoding="utf-8")
         destino = pasta / (peca.get("saida") or f"{fid}.png")
