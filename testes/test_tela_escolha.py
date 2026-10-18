@@ -1250,7 +1250,7 @@ class TestAContagemComecaNoClique:
 
     def test_o_clique_ja_acende_a_barra(self, tela):
         corpo = tela.split("$('#btnIr').onclick")[1].split("\n};")[0]
-        i_barra = corpo.find("espelhar(true, 0)")
+        i_barra = corpo.find("espelhar(true, null)")
         i_pedido = corpo.find("fetch(`/jobs/${rascunho}/rodar`")
         assert 0 <= i_barra < i_pedido, "a barra acende depois do pedido"
 
@@ -1348,4 +1348,77 @@ class TestAbrirUmaCampanhaDoHistorico:
         delas levava a uma tela vazia."""
         corpo = tela.split("async function abrirCampanhas(){")[1].split("async function reabrir")[0]
         assert "lista.filter(t => (t.formatos || []).length)" in corpo
+
+
+class TestOProgressoDoPassoQueNaoSeMede:
+    """"No momento da geração das peças, o progresso não fica na tela ou não
+    roda. Quero dar visibilidade de que está acontecendo."
+
+    Abrir um PSD de 200 MB leva minutos e não dá sinal nenhum por dentro:
+    `feito` é zero e o peso da etapa é zero. A conta devolvia 0 — e a barra
+    ficava morta no zero no passo MAIS LONGO do trabalho, com "0%" escrito ao
+    lado, que de fora é idêntico a um travamento.
+    """
+
+    def test_passo_sem_medida_nao_finge_zero_por_cento(self, tela):
+        corpo = tela.split("function fracao(d){")[1].split("function correndoHa")[0]
+        assert "if (!p.feito && !dentro) return null;" in corpo
+
+    def test_o_vaivem_existe_para_esse_caso(self, tela):
+        """`null` é o que acende a trilha que vai e vem, em vez do número."""
+        assert "footer .trilha.sem i{width:30%;animation:vaivem" in tela
+        corpo = tela.split("function espelhar(ligado, f){")[1].split("\n}")[0]
+        assert "trilha.classList.toggle('sem', !tem)" in corpo
+
+    def test_sem_fracao_a_tela_mostra_ha_quanto_tempo(self, tela):
+        """Sem fração não há "quanto falta", mas há "há quanto tempo": é o
+        que separa um passo demorado de um travamento."""
+        assert "function correndoHa(d){" in tela
+        corpo = tela.split("if (andandoAlgo && f !== null){")[1].split("espelhar(andandoAlgo")[0]
+        assert "correndoHa(d)" in corpo and "' · há '" in corpo
+
+    def test_no_clique_a_barra_vai_e_vem_em_vez_de_marcar_zero(self, tela):
+        corpo = tela.split("$('#btnIr').onclick")[1].split("acompanhar()")[0]
+        assert "espelhar(true, null)" in corpo
+
+
+class TestApagarCampanhaDoHistorico:
+    """"No menu, todo o histórico de peças quero que tenha um x ao lado para a
+    pessoa deletar; ao clicar no x vem uma pergunta para confirmação." """
+
+    def test_cada_linha_tem_o_x(self, tela):
+        corpo = tela.split("async function abrirCampanhas(){")[1].split("function perguntarSeApaga")[0]
+        assert 'class="apaga"' in corpo
+
+    def test_o_x_fica_fora_do_botao_de_abrir(self, tela):
+        """Dentro do botão de abrir, o clique de apagar seria o clique de
+        abrir — e abriria a campanha que se queria apagar."""
+        corpo = tela.split("async function abrirCampanhas(){")[1].split("function perguntarSeApaga")[0]
+        linha = corpo.split('<div class="linha"')[1].split("`;")[0]
+        abre = linha.split('class="abre"')[1].split("</button>")[0]
+        assert "apaga" not in abre
+
+    def test_a_pergunta_vem_antes_e_diz_o_nome(self, tela):
+        """"Tem certeza?" sem nome é a pergunta que todo mundo responde no
+        automático."""
+        corpo = tela.split("function perguntarSeApaga(linha){")[1].split("\n}")[0]
+        assert "Apagar <b>${esc(nome)}</b>?" in corpo
+        assert "class=\"sim\"" in corpo and "class=\"nao\"" in corpo
+        # e o DELETE só acontece no botão de confirmar
+        antes = corpo.split("'.sim'")[0]
+        assert "method: 'DELETE'" not in antes
+
+    def test_a_pergunta_diz_o_que_nao_volta(self, tela):
+        corpo = tela.split("function perguntarSeApaga(linha){")[1].split("\n}")[0]
+        assert "não voltam" in corpo
+
+    def test_manter_devolve_a_lista(self, tela):
+        corpo = tela.split("function perguntarSeApaga(linha){")[1].split("\n}")[0]
+        assert "querySelector('.nao').onclick = () => abrirCampanhas()" in corpo
+
+    def test_apagar_a_campanha_aberta_limpa_a_tela(self, tela):
+        """O painel não pode continuar mostrando as peças de uma campanha que
+        acabou de deixar de existir."""
+        corpo = tela.split("function perguntarSeApaga(linha){")[1].split("\n}")[0]
+        assert "limparPainel()" in corpo
 

@@ -231,10 +231,27 @@ header .conta-btn b{font-weight:500;max-width:22ch;overflow:hidden;text-overflow
   white-space:nowrap}
 header .conta-btn:hover b{color:var(--rosa)}
 #listaTrabalhos{display:flex;flex-direction:column;gap:2px;margin:0 0 18px}
-#listaTrabalhos button{display:grid;grid-template-columns:1fr auto;gap:2px 14px;
-  align-items:baseline;text-align:left;background:none;border:0;border-bottom:1px solid var(--linha);
+/* a linha é a campanha; o X mora ao lado dela, fora do botão de abrir —
+   dentro, o clique de apagar seria o clique de abrir */
+#listaTrabalhos .linha{display:grid;grid-template-columns:1fr auto;align-items:center;
+  border-bottom:1px solid var(--linha)}
+#listaTrabalhos .abre{display:grid;grid-template-columns:1fr auto;gap:2px 14px;
+  align-items:baseline;text-align:left;background:none;border:0;
   padding:11px 2px;cursor:pointer;color:var(--fg);font:inherit;width:100%}
-#listaTrabalhos button:hover{background:var(--painel2)}
+#listaTrabalhos .linha:hover{background:var(--painel2)}
+#listaTrabalhos .apaga{background:none;border:0;cursor:pointer;color:var(--mut);
+  font:500 13px var(--corpo);padding:6px 8px;border-radius:7px;line-height:1}
+#listaTrabalhos .apaga:hover{color:#fff;background:var(--err)}
+/* a pergunta ocupa a própria linha: não é um alerta do navegador por cima de
+   tudo, é a linha do que vai sumir dizendo o que vai sumir */
+#listaTrabalhos .pergunta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:11px 2px;border-bottom:1px solid var(--linha);font-size:13px}
+#listaTrabalhos .pergunta span{flex:1;min-width:180px}
+#listaTrabalhos .pergunta b{font:500 13px var(--corpo)}
+#listaTrabalhos .pergunta .sim{background:var(--err);color:#fff;border:0;border-radius:8px;
+  padding:7px 12px;cursor:pointer;font:500 12.5px var(--corpo)}
+#listaTrabalhos .pergunta .nao{background:none;border:1px solid var(--linha);
+  border-radius:8px;padding:7px 12px;cursor:pointer;color:var(--fg);font:500 12.5px var(--corpo)}
 #listaTrabalhos b{font:500 14px var(--corpo)}
 #listaTrabalhos .quando{font:500 10.5px var(--mono);color:var(--mut);letter-spacing:.06em;
   text-align:right}
@@ -1467,7 +1484,8 @@ $('#btnIr').onclick = async () => {
   // servidor: entre uma coisa e outra havia segundos de tela sem número
   // nenhum, logo depois do único clique que importa
   $('#detalhe').textContent = `0 de ${escolhidos.size} peça${escolhidos.size>1?'s':''}`;
-  espelhar(true, 0);
+  // vai-e-vem, e não um zero parado: no clique ainda não há nada medido
+  espelhar(true, null);
   let r;
   try { r = await (await fetch(`/jobs/${rascunho}/rodar`, { method:'POST', body:fd })).json(); }
   catch(e){ r = { detail:'Não consegui falar com o servidor.' }; }
@@ -1502,8 +1520,26 @@ function fracao(d){
   }
   const p = d.progresso;
   if (!p || !p.total) return null;
-  const dentro = p.feito < p.total ? (PESO[p.etapa] ?? 0) : 0;
-  return Math.min(1, (p.feito + dentro) / p.total);
+  // PASSO SEM MEDIDA. Abrir um PSD de 200 MB leva minutos e não dá sinal
+  // nenhum por dentro: `feito` é zero e o peso da etapa é zero. Devolver 0
+  // ali é pior do que não devolver nada — a barra fica morta no zero
+  // justamente no passo mais longo do trabalho, que é quando mais se precisa
+  // saber que está acontecendo. `null` acende o vai-e-vem, que é honesto.
+  const dentro = PESO[p.etapa];
+  if (!p.feito && !dentro) return null;
+  return Math.min(1, (p.feito + (p.feito < p.total ? (dentro ?? 0) : 0)) / p.total);
+}
+
+/* Há quanto tempo isto está rodando. Quando não há fração para mostrar, é o
+   único sinal de vida com número: sem ele a tela diz "abrindo o PSD em
+   camadas" e fica idêntica por três minutos. */
+function correndoHa(d){
+  const v = d.video || {};
+  const zero = ['rodando','na fila'].includes(v.status||'')
+             ? v.desde : ((d.progresso || {}).desde || d.inicio);
+  if (!zero || !d.agora) return '';
+  const s = d.agora - zero;
+  return s < 8 ? '' : emTempo(s);
 }
 function emTempo(seg){
   if (seg < 50) return `${Math.max(5, Math.round(seg/5)*5)} s`;
@@ -1677,6 +1713,11 @@ async function acompanhar(){
     if (andandoAlgo && f !== null){
       const resta = falta(d, f);
       if (resta) $('#detalhe').textContent += ' · ' + resta;
+    } else if (andandoAlgo){
+      // sem fração não há "quanto falta", mas há "há quanto tempo": é o que
+      // separa um passo demorado de um travamento
+      const corrido = correndoHa(d);
+      if (corrido) $('#detalhe').textContent += ' · há ' + corrido;
     }
     espelhar(andandoAlgo, f);
 
@@ -2188,12 +2229,48 @@ async function abrirCampanhas(){
   caixa.innerHTML = lista.map(t => {
     const n = (t.formatos || []).length;
     const estado = t.status === 'pronto' ? '' : ` · ${t.status}`;
-    return `<button type="button" data-job="${t.job}">`
+    return `<div class="linha" data-job="${esc(t.job)}" data-nome="${esc(t.titulo || t.job)}">`
+      + `<button type="button" class="abre">`
       + `<b>${esc(t.titulo || t.job)}</b>`
       + `<span class="quando">${quando(t.atualizado)}</span>`
-      + `<small>${n} formato${n === 1 ? '' : 's'}${estado}</small></button>`;
+      + `<small>${n} formato${n === 1 ? '' : 's'}${estado}</small></button>`
+      + `<button type="button" class="apaga" title="Apagar esta campanha">✕</button></div>`;
   }).join('');
-  caixa.querySelectorAll('button').forEach(b => b.onclick = () => reabrir(b.dataset.job));
+  caixa.querySelectorAll('.abre').forEach(b =>
+    b.onclick = () => reabrir(b.closest('.linha').dataset.job));
+  caixa.querySelectorAll('.apaga').forEach(b =>
+    b.onclick = () => perguntarSeApaga(b.closest('.linha')));
+}
+
+/* ---------- apagar uma campanha ----------
+   Apagar é definitivo e leva as peças junto, então a pergunta vem antes e diz
+   o NOME do que vai sumir: "tem certeza?" sem nome é a pergunta que todo
+   mundo responde no automático. */
+function perguntarSeApaga(linha){
+  const job = linha.dataset.job, nome = linha.dataset.nome;
+  const pergunta = document.createElement('div');
+  pergunta.className = 'pergunta';
+  pergunta.innerHTML = `<span>Apagar <b>${esc(nome)}</b>? As peças e os vídeos`
+    + ` somem do servidor, e as peças já usadas do seu plano não voltam.</span>`
+    + `<button type="button" class="nao">Manter</button>`
+    + `<button type="button" class="sim">Apagar</button>`;
+  linha.replaceWith(pergunta);
+  pergunta.querySelector('.nao').onclick = () => abrirCampanhas();
+  pergunta.querySelector('.sim').onclick = async e => {
+    e.target.disabled = true; e.target.textContent = 'Apagando…';
+    let r;
+    try { r = await fetch(`/jobs/${job}`, { method: 'DELETE' }); }
+    catch(err){ aviso('Não consegui falar com o servidor.'); abrirCampanhas(); return; }
+    if (!r.ok){
+      aviso((await r.json().catch(() => ({}))).detail || 'Não deu para apagar.');
+      abrirCampanhas(); return;
+    }
+    // a campanha aberta na tela acabou de deixar de existir: o painel não
+    // pode continuar mostrando as peças dela
+    if (job === window.job){ limparPainel(); window.job = null; }
+    aviso(`${nome} foi apagada.`, true);
+    abrirCampanhas();
+  };
 }
 
 /* Traz a campanha de volta para a tela: os cartões dos formatos dela, as

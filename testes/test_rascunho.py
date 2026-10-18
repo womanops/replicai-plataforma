@@ -232,12 +232,35 @@ class TestRascunhoAbandonadoNaoFicaNoDisco:
         assert r.json()["liberou_mb"] >= 0
         assert not pasta.exists()
 
-    def test_trabalho_que_rodou_nao_se_apaga_por_ai(self, cliente):
-        """A peça é dela: some pela faxina quando envelhece, não num clique."""
+    def test_a_campanha_pronta_tambem_se_apaga(self, cliente):
+        """Antes só rascunho saía por aqui. O histórico é dela e enche: a tela
+        pergunta antes, com o nome do que vai sumir, e quem decide o que fica
+        é quem fez."""
+        from api import trabalhos
         job = subir(cliente).json()["job"]
         cliente.post(f"/jobs/{job}/rodar", data={"formatos": "ig-feed-1x1"})
+        trabalhos.gravar(cliente.conta.id, job,
+                         {"status": "pronto", "prontas": ["ig-feed-1x1"]})
         r = cliente.delete(f"/jobs/{job}")
-        assert r.status_code == 409
+        assert r.status_code == 200
+        assert not trabalhos.pasta_do(cliente.conta.id, job).exists()
+
+    def test_trabalho_rodando_nao_se_apaga(self, cliente):
+        """Apagar a pasta debaixo da esteira deixa o processo escrevendo num
+        lugar que não existe mais."""
+        from api import trabalhos
+        job = subir(cliente).json()["job"]
+        for andando in ("na fila", "rodando"):
+            trabalhos.gravar(cliente.conta.id, job, {"status": andando})
+            assert cliente.delete(f"/jobs/{job}").status_code == 409
+
+    def test_video_sendo_feito_tambem_segura(self, cliente):
+        from api import trabalhos
+        job = subir(cliente).json()["job"]
+        trabalhos.gravar(cliente.conta.id, job,
+                         {"status": "pronto", "video": {"status": "rodando"}})
+        r = cliente.delete(f"/jobs/{job}")
+        assert r.status_code == 409 and "vídeo" in r.json()["detail"]
 
     def test_o_rascunho_do_outro_nao_existe_para_mim(self, cliente):
         job = subir(cliente).json()["job"]

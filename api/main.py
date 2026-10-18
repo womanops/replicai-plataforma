@@ -800,11 +800,14 @@ async def criar(
 
 @app.delete("/jobs/{job}")
 def jogar_fora(job: str, c: contas.Conta = Depends(quem_e)):
-    """Apaga um rascunho — trabalho que subiu arte e nunca rodou.
+    """Apaga um trabalho desta conta: o rascunho que nunca rodou e também a
+    campanha que já produziu peça.
 
-    Só rascunho: trabalho que produziu peça é dela, e some pela faxina quando
-    envelhece, não por um clique. Serve para a arte trocada antes de rodar não
-    deixar 200 MB de PSD parados no disco por trinta dias.
+    Antes só o rascunho saía por aqui, para ninguém perder trabalho num
+    clique. Mas o histórico é dela e enche: a tela pergunta antes, com o nome
+    do que vai sumir, e quem decide o que fica é quem fez. O que não sai é
+    trabalho EM ANDAMENTO — apagar a pasta debaixo da esteira deixaria o
+    processo escrevendo num lugar que não existe mais.
     """
     import shutil
 
@@ -814,8 +817,11 @@ def jogar_fora(job: str, c: contas.Conta = Depends(quem_e)):
         raise HTTPException(400, "identificador inválido")
     if estado is None:
         raise HTTPException(404, "trabalho não existe")
-    if estado.get("status") != "rascunho" or estado.get("formatos"):
-        raise HTTPException(409, "este trabalho já rodou: ele não se apaga por aqui")
+    if estado.get("status") in ("na fila", "rodando"):
+        raise HTTPException(409, "este trabalho está rodando: espere terminar para apagar")
+    if (estado.get("video") or {}).get("status") in ("na fila", "rodando"):
+        raise HTTPException(409, "o vídeo deste trabalho está sendo feito: "
+                                 "espere terminar para apagar")
     pasta = trabalhos.pasta_do(c.id, job)
     liberou = sum(f.stat().st_size for f in pasta.rglob("*") if f.is_file())
     shutil.rmtree(pasta, ignore_errors=True)
