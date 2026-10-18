@@ -510,31 +510,52 @@ class TestAChamadaTrocaADaArte:
     ele recusava: "não há zona livre na arte para posicioná-la; além disso,
     repetiria a ideia de 'Energia que impulsiona o futuro'". Ou seja:
     recusava porque já havia ali exatamente o texto que era para ser trocado.
+
+    E qual linha é a chamada: "a logo de energiza deveria permanecer e a
+    frase energia que impulsiona o futuro sair". O nome da campanha é
+    lettering — identidade, não mensagem — e numa arte de PSD ele chega como
+    camada de texto igual às outras.
     """
 
     def peca(self, tmp_path):
-        """Uma peça de PSD com a chamada em três letras recortadas."""
+        """A arte dela, reduzida: o lettering da campanha numa linha, a
+        frase da campanha em outra."""
         from PIL import Image
-        els = []
+        els = [{"tipo": "imagem", "papel": "figura", "src": "arte.png",
+                "box": {"x": 0, "y": 0, "w": 300, "h": 250}}]
         for i, x in enumerate((10, 40, 70)):
             Image.new("RGBA", (28, 30), (255, 255, 255, 255)).save(tmp_path / f"l{i}.png")
             els.append({"tipo": "imagem", "papel": "headline", "de": "energiza",
-                        "camada": "energiza", "letra": i, "fonte_mae": "FuturaICG-Bold",
+                        "camada": "energiza", "letra": i, "fonte_mae": "Blanquotey",
                         "src": f"l{i}.png", "box": {"x": x, "y": 50, "w": 28, "h": 30}})
-        els.insert(0, {"tipo": "imagem", "papel": "figura", "src": "arte.png",
-                       "box": {"x": 0, "y": 0, "w": 300, "h": 250}})
-        els.append({"tipo": "imagem", "papel": "apoio", "src": "a.png",
-                    "box": {"x": 10, "y": 90, "w": 100, "h": 10}})
+        for i, x in enumerate((10, 60)):
+            Image.new("RGBA", (50, 10), (240, 240, 255, 255)).save(tmp_path / f"a{i}.png")
+            els.append({"tipo": "imagem", "papel": "apoio", "fonte_mae": "Blanquotey",
+                        "de": "Energia que impulsiona o futuro. copiar",
+                        "camada": "Energia que impulsiona o futuro. copiar",
+                        "src": f"a{i}.png", "box": {"x": x, "y": 95, "w": 50, "h": 10}})
         return {"canvas": {"w": 300, "h": 250}, "elementos": els, "fontes": []}
 
-    def test_a_chamada_nova_entra_no_lugar_da_antiga(self, tmp_path):
+    def trocada(self, peca):
+        return next(e for e in peca["elementos"] if e.get("tipo") == "texto")
+
+    def test_a_frase_sai_e_a_assinatura_da_campanha_fica(self, tmp_path):
         from api.pipeline import trocar_a_chamada
         p = self.peca(tmp_path)
-        trocar_a_chamada(p, tmp_path, "A sua energia para o futuro")
-        chamadas = [e for e in p["elementos"] if e.get("papel") == "headline"]
-        assert len(chamadas) == 1, "os recortes antigos continuaram na peça"
-        assert chamadas[0]["tipo"] == "texto"
-        assert chamadas[0]["texto"] == "A sua energia para o futuro"
+        trocar_a_chamada(p, tmp_path, "A energia do futuro próximo.")
+        assert len([e for e in p["elementos"] if e.get("camada") == "energiza"]) == 3, \
+            "o lettering da campanha foi derrubado"
+        assert not [e for e in p["elementos"] if e.get("papel") == "apoio"
+                    and e.get("tipo") == "imagem"], "a frase antiga continuou na peça"
+        assert self.trocada(p)["texto"] == "A energia do futuro próximo."
+
+    def test_a_linha_nova_herda_o_papel_da_que_saiu(self, tmp_path):
+        """O papel decide como ela entra no vídeo e como a régua de contraste
+        a mede: virar `headline` mudaria as duas coisas."""
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        trocar_a_chamada(p, tmp_path, "Outra")
+        assert self.trocada(p)["papel"] == "apoio"
 
     def test_ocupa_a_caixa_da_linha_inteira(self, tmp_path):
         """A frase nova mora onde a antiga morava: é o que preserva a
@@ -542,23 +563,53 @@ class TestAChamadaTrocaADaArte:
         from api.pipeline import trocar_a_chamada
         p = self.peca(tmp_path)
         trocar_a_chamada(p, tmp_path, "Outra chamada")
-        caixa = next(e for e in p["elementos"] if e.get("papel") == "headline")["box"]
-        assert caixa == {"x": 10, "y": 50, "w": 88, "h": 30}
+        assert self.trocada(p)["box"] == {"x": 10, "y": 95, "w": 100, "h": 10}
 
     def test_sai_na_cor_que_a_linha_tinha(self, tmp_path):
         from api.pipeline import trocar_a_chamada
         p = self.peca(tmp_path)
         trocar_a_chamada(p, tmp_path, "Outra")
-        assert next(e for e in p["elementos"]
-                    if e.get("papel") == "headline")["cor"] == "#FFFFFF"
+        assert self.trocada(p)["cor"] == "#F0F0FF"
 
-    def test_o_resto_da_peca_fica_onde_estava(self, tmp_path):
-        """Trocar a chamada não é refazer a peça: figura e apoio continuam."""
+    def test_so_a_linha_trocada_muda(self, tmp_path):
+        """Trocar a chamada não é refazer a peça."""
         from api.pipeline import trocar_a_chamada
         p = self.peca(tmp_path)
         trocar_a_chamada(p, tmp_path, "Outra")
         papeis = [e.get("papel") for e in p["elementos"]]
-        assert papeis == ["figura", "headline", "apoio"], papeis
+        assert papeis == ["figura", "headline", "headline", "headline", "apoio"]
+
+    def test_arte_sem_frase_nao_perde_a_assinatura(self, tmp_path):
+        """Arte que só tem o lettering da campanha não tem o que trocar —
+        e cobrir o lettering seria apagar a identidade dela."""
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        p["elementos"] = [e for e in p["elementos"] if e.get("papel") != "apoio"]
+        avisos = trocar_a_chamada(p, tmp_path, "A energia do futuro próximo.")
+        assert avisos and "assinatura da campanha" in avisos[0]
+        assert len([e for e in p["elementos"] if e.get("camada") == "energiza"]) == 3
+
+    def test_entre_duas_frases_vale_a_maior(self, tmp_path):
+        """Empate em palavras se decide pela área: a linha de mais peso na
+        peça é a que carrega a mensagem."""
+        from PIL import Image
+        from api.pipeline import linha_da_mensagem
+        Image.new("RGBA", (10, 10), (255, 255, 255, 255)).save(tmp_path / "x.png")
+        els = [
+            {"papel": "apoio", "camada": "uma frase curta", "src": "x.png",
+             "box": {"x": 0, "y": 0, "w": 40, "h": 10}},
+            {"papel": "apoio", "camada": "outra frase bem maior", "src": "x.png",
+             "box": {"x": 0, "y": 20, "w": 200, "h": 30}},
+        ]
+        assert linha_da_mensagem(els)[0]["camada"] == "outra frase bem maior"
+
+    def test_o_copiar_do_photoshop_nao_conta_como_palavra(self, tmp_path):
+        """"energiza copiar" continua sendo uma palavra: o sufixo é do
+        arquivo, não da frase."""
+        from api.pipeline import linha_da_mensagem
+        els = [{"papel": "headline", "camada": "energiza copiar",
+                "box": {"x": 0, "y": 0, "w": 200, "h": 40}}]
+        assert linha_da_mensagem(els) == []
 
     def test_sem_a_fonte_da_marca_o_aviso_vem(self, tmp_path):
         """O PSD diz o nome da fonte e não leva o arquivo. Sair noutra letra
@@ -567,81 +618,51 @@ class TestAChamadaTrocaADaArte:
         p = self.peca(tmp_path)
         avisos = trocar_a_chamada(p, tmp_path, "Outra",
                                   lambda f: ("PecaSans", "", f"a chamada da arte é {f}"))
-        assert avisos and "FuturaICG-Bold" in avisos[0]
+        assert avisos and "Blanquotey" in avisos[0]
 
     def test_com_a_fonte_da_marca_ela_vai_declarada_com_arquivo(self, tmp_path):
         """Família declarada sem arquivo faz o navegador cair numa fonte do
         sistema, calado."""
         from api.pipeline import trocar_a_chamada
         p = self.peca(tmp_path)
-        avisos = trocar_a_chamada(p, tmp_path, "Outra",
-                                  lambda f: (f, "futura.ttf", ""))
-        linha = next(e for e in p["elementos"] if e.get("papel") == "headline")
-        assert linha["fonte"] == "FuturaICG-Bold"
-        assert {"familia": "FuturaICG-Bold", "arquivo": "futura.ttf",
+        avisos = trocar_a_chamada(p, tmp_path, "Outra", lambda f: (f, "blanq.ttf", ""))
+        assert self.trocada(p)["fonte"] == "Blanquotey"
+        assert {"familia": "Blanquotey", "arquivo": "blanq.ttf",
                 "peso": "100 900"} in p["fontes"]
         assert not avisos
 
     def test_uma_linha_na_arte_continua_uma_linha(self, tmp_path):
         """"Veja a sobreposição feita na peça com nova chamada."
 
-        A frase nova quebrou em duas e desceu por cima da tagline. A caixa da
-        chamada é a do lettering inteiro — alta o bastante para caber o
-        descendente do "g" — e o que mora logo abaixo está a poucos pixels.
-        Encolher a letra até caber numa linha preserva a diagramação da mãe;
-        quebrar em duas inventa uma composição que ela não tem.
+        A frase nova quebrou em duas e desceu por cima do que vinha abaixo. A
+        caixa de uma linha é alta o bastante para caber o descendente do "g",
+        e o vizinho está a poucos pixels. Encolher a letra até caber numa
+        linha preserva a diagramação da mãe.
         """
         from api.pipeline import trocar_a_chamada
         p = self.peca(tmp_path)
         trocar_a_chamada(p, tmp_path, "A energia do futuro próximo.")
-        linha = next(e for e in p["elementos"] if e.get("papel") == "headline")
+        linha = self.trocada(p)
         assert linha["quebra"] is False
         assert linha["min"] == 8, "sem chão alto, a letra encolhe até caber"
 
-    def test_chamada_de_duas_linhas_na_arte_pode_quebrar(self, tmp_path):
-        """O contrário também: forçar uma linha onde a mãe tinha duas
-        espremeria a frase a nada."""
+    def test_frase_de_duas_linhas_na_arte_pode_quebrar(self, tmp_path):
+        """Forçar uma linha onde a mãe tinha duas espremeria a frase a nada."""
         from PIL import Image
         from api.pipeline import trocar_a_chamada
-        els = []
-        for i, (x, y) in enumerate(((10, 50), (40, 50), (10, 85), (40, 85))):
-            Image.new("RGBA", (28, 30), (255, 255, 255, 255)).save(tmp_path / f"d{i}.png")
-            els.append({"tipo": "imagem", "papel": "headline", "de": "duas",
-                        "src": f"d{i}.png", "box": {"x": x, "y": y, "w": 28, "h": 30}})
-        p = {"canvas": {"w": 300, "h": 250}, "elementos": els, "fontes": []}
-        trocar_a_chamada(p, tmp_path, "Uma frase de duas linhas")
-        assert next(e for e in p["elementos"]
-                    if e.get("papel") == "headline")["quebra"] is True
-
-    def test_a_chamada_nova_nao_desce_sobre_o_que_vem_abaixo(self, tmp_path):
-        """A régua da casa, medida: o bloco novo não pode ocupar a faixa de
-        quem está logo abaixo dele."""
-        from api.pipeline import trocar_a_chamada
         p = self.peca(tmp_path)
-        apoio = next(e for e in p["elementos"] if e.get("papel") == "apoio")
-        trocar_a_chamada(p, tmp_path, "A energia do futuro próximo.")
-        linha = next(e for e in p["elementos"] if e.get("papel") == "headline")
-        # uma linha só, centrada na faixa: a tinta fica na metade de cima da
-        # caixa e não alcança o apoio
-        assert linha["quebra"] is False
-        assert linha["valign"] == "middle"
-        assert apoio["box"]["y"] >= linha["box"]["y"] + linha["box"]["h"] / 2
-
-    def test_peca_sem_chamada_na_arte_nao_muda(self, tmp_path):
-        """Nem toda arte tem camada de chamada: aí o texto novo continua
-        sendo trabalho do modelo, em espaço livre."""
-        from api.pipeline import trocar_a_chamada
-        p = {"canvas": {"w": 300, "h": 250}, "elementos": [
-            {"tipo": "imagem", "papel": "figura", "src": "a.png",
-             "box": {"x": 0, "y": 0, "w": 300, "h": 250}}]}
-        assert trocar_a_chamada(p, tmp_path, "Chamada") == []
-        assert len(p["elementos"]) == 1
+        Image.new("RGBA", (50, 10), (240, 240, 255, 255)).save(tmp_path / "a2.png")
+        p["elementos"].append({"tipo": "imagem", "papel": "apoio", "src": "a2.png",
+                               "camada": "Energia que impulsiona o futuro. copiar",
+                               "box": {"x": 10, "y": 112, "w": 50, "h": 10}})
+        trocar_a_chamada(p, tmp_path, "Uma frase de duas linhas")
+        assert self.trocada(p)["quebra"] is True
 
     def test_chamada_vazia_nao_mexe_na_arte(self, tmp_path):
         from api.pipeline import trocar_a_chamada
         p = self.peca(tmp_path)
         assert trocar_a_chamada(p, tmp_path, "   ") == []
-        assert len([e for e in p["elementos"] if e.get("papel") == "headline"]) == 3
+        assert not [e for e in p["elementos"] if e.get("tipo") == "texto"]
 
 
 class TestOModeloOlhaAArte:

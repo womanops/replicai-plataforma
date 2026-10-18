@@ -459,6 +459,50 @@ def cor_da_linha(caminhos: list[Path]) -> str:
     return melhor or "#FFFFFF"
 
 
+# o sufixo que o Photoshop gruda na camada duplicada, e que não é palavra da
+# frase: "Energia que impulsiona o futuro. copiar"
+_DO_PHOTOSHOP = ("copiar", "copia", "cópia", "copy")
+
+
+def _palavras(nome: str) -> int:
+    return len([p for p in (nome or "").split()
+                if p.strip().lower().strip(".") not in _DO_PHOTOSHOP])
+
+
+def linha_da_mensagem(elementos: list[dict]):
+    """Qual linha da arte a chamada nova substitui.
+
+    "A logo de energiza deveria permanecer e a frase energia que impulsiona o
+    futuro sair."
+
+    O nome da campanha é LETTERING: ele se repete em toda a campanha, é
+    identidade e não mensagem — numa arte de PSD ele chega como camada de
+    texto igual às outras, e por ser a maior virava `headline`. O que muda de
+    peça para peça é a FRASE. Entre uma palavra e uma frase, a frase é a
+    mensagem; empatando, a maior.
+
+    Devolve os pedaços da linha escolhida, ou `[]` quando a arte não tem
+    frase nenhuma — aí não há o que trocar, e inventar seria cobrir a
+    assinatura da campanha.
+    """
+    grupos: dict = {}
+    for e in elementos:
+        if e.get("papel") not in ("headline", "apoio"):
+            continue
+        grupos.setdefault(e.get("camada") or e.get("de") or id(e), []).append(e)
+    if not grupos:
+        return []
+
+    def nota(pedacos):
+        nome = next((p.get("conteudo") for p in pedacos if p.get("conteudo")), "") \
+            or pedacos[0].get("camada") or pedacos[0].get("de") or ""
+        area = sum(p["box"]["w"] * p["box"]["h"] for p in pedacos)
+        return (_palavras(nome), area)
+
+    melhor = max(grupos.values(), key=nota)
+    return melhor if nota(melhor)[0] > 1 else []
+
+
 def trocar_a_chamada(peca: dict, pasta: Path, texto: str, fonte_de=None) -> list[str]:
     """A chamada que ela escreveu SUBSTITUI a da arte.
 
@@ -472,9 +516,13 @@ def trocar_a_chamada(peca: dict, pasta: Path, texto: str, fonte_de=None) -> list
     desenhar a frase nova na caixa da linha inteira, com a cor que ela tinha.
     A mesma mecânica do ✎ da tela de ajuste.
     """
-    alvos = [e for e in peca.get("elementos", []) if e.get("papel") == "headline"]
-    if not alvos or not (texto or "").strip():
+    if not (texto or "").strip():
         return []
+    alvos = linha_da_mensagem(peca.get("elementos", []))
+    if not alvos:
+        return ["a chamada que você escreveu não entrou: nesta medida a arte não "
+                "tem linha de frase para trocar, só a assinatura da campanha"]
+    papel = alvos[0].get("papel") or "apoio"
     onde = peca["elementos"].index(alvos[0])
     caixa = {"x": min(e["box"]["x"] for e in alvos),
              "y": min(e["box"]["y"] for e in alvos),
@@ -496,7 +544,7 @@ def trocar_a_chamada(peca: dict, pasta: Path, texto: str, fonte_de=None) -> list
     pedida = next((e.get("fonte_mae") for e in alvos if e.get("fonte_mae")), "")
     familia, arquivo, aviso = (fonte_de or (lambda _: (FAMILIA_PADRAO, "", "")))(pedida)
     alto = max(8, int(caixa["h"]))
-    novo = {"tipo": "texto", "papel": "headline", "texto": texto.strip(),
+    novo = {"tipo": "texto", "papel": papel, "texto": texto.strip(),
             "camada": alvos[0].get("camada"), "box": caixa,
             "fonte": familia, "peso": 600,
             "cor": cor_da_linha([pasta / e["src"] for e in alvos if e.get("src")]),
@@ -508,9 +556,10 @@ def trocar_a_chamada(peca: dict, pasta: Path, texto: str, fonte_de=None) -> list
             # centrado continua centrado: a caixa é a da tinta que saiu, e a
             # frase nova pode ter outro comprimento
             "align": "center", "valign": "middle", "trocado": True}
-    peca["elementos"] = ([e for e in peca["elementos"][:onde] if e.get("papel") != "headline"]
+    fora = {id(e) for e in alvos}
+    peca["elementos"] = ([e for e in peca["elementos"][:onde] if id(e) not in fora]
                          + [novo]
-                         + [e for e in peca["elementos"][onde:] if e.get("papel") != "headline"])
+                         + [e for e in peca["elementos"][onde:] if id(e) not in fora])
     # a família tem que ir DECLARADA COM ARQUIVO: declarar sem o arquivo faz o
     # navegador cair numa fonte do sistema sem dizer nada, e a peça sai com
     # outra tipografia — o erro mais difícil de ver no olho
