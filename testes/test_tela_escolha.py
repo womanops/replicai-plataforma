@@ -1466,3 +1466,40 @@ class TestAPecaAjustadaApareceNaTela:
         assert "window.job" not in corpo
         assert "ident === job" in corpo
 
+
+class TestAPecaQueNaoSaiuTemSaida:
+    """"Tentei adaptar 3 peças agora e uma não foi, sem explicação/ressalva.
+    Numa situação como esta, que não deveria acontecer mas pode, deveria ter
+    um botão de gerar novamente para resolver a peça."
+
+    O cartão dizia "não saiu" e acabava. O motivo existia — e era a linha de
+    comando do subprocesso do navegador, num `title`.
+    """
+
+    def test_o_cartao_que_falhou_oferece_gerar_de_novo(self, tela):
+        corpo = tela.split("} else if (falhas[id]){")[1].split("} else if (!prontas")[0]
+        assert 'class="denovo"' in corpo
+        assert "refazerPeca(id)" in corpo
+
+    def test_o_motivo_aparece_no_cartao_e_nao_so_no_title(self, tela):
+        """Aviso que só aparece parando o mouse em cima é aviso que não foi
+        dado — a mesma regra da ressalva."""
+        corpo = tela.split("} else if (falhas[id]){")[1].split("} else if (!prontas")[0]
+        assert 'class="porque"' in corpo
+
+    def test_linguagem_de_maquina_nao_vai_para_o_cartao(self, tela):
+        corpo = tela.split("function curto(motivo){")[1].split("\n}")[0]
+        assert "Command |Traceback|timed out|subprocess" in corpo
+        assert "Gerar de novo costuma resolver" in corpo
+
+    def test_gerar_de_novo_chama_o_endereco_da_peca(self, tela):
+        corpo = tela.split("async function refazerPeca(fid){")[1].split("\n}")[0]
+        assert "/pecas/${fid}/refazer" in corpo
+        assert "method: 'POST'" in corpo
+
+    def test_falhar_de_novo_nao_e_anunciado_como_sucesso(self, tela):
+        """O recado é o mesmo canal do ajuste, e ali "pronto" quer dizer que
+        a tarefa acabou — não que a peça saiu."""
+        corpo = tela.split("if (aj.oque === 'peça')")[1].split("else aviso(")[0]
+        assert "aj.saiu" in corpo and "não saiu nem agora" in corpo
+

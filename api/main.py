@@ -24,7 +24,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from api import ambiente, cobranca, contas, correio, tranca, trabalhos, uso
 from api.pipeline import MARCA_DA_MAO, cor_da_linha as _cor_da_linha
 from api.tarefas import (MODOS, MODO_PADRAO, TEXTO_NOVO, modo_possivel, previas,
-                         processar, processar_video, redesenhar, refazer_fundo)
+                         processar, processar_video, redesenhar, refazer_fundo,
+                         refazer_peca)
 from api.fila import FILA_VIDEO, fila_do_ambiente
 from motor.replica import formato_by_id, load_formatos
 
@@ -978,6 +979,39 @@ def refazer_o_fundo(job: str, formato: str, c: contas.Conta = Depends(conta_atua
                                             "oque": "fundo"}})
     trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
         refazer_fundo, c.id, job, formato)})
+    return {"job": job, "formato": formato, "ajuste": "na fila"}
+
+
+@app.post("/jobs/{job}/pecas/{formato}/refazer", status_code=202)
+def refazer_a_peca(job: str, formato: str, c: contas.Conta = Depends(conta_atual)):
+    """Tenta de novo uma peça que não saiu.
+
+    Falha de peça quase nunca é da peça: é o navegador que demorou demais
+    porque a máquina estava ocupada. Refazer o trabalho inteiro para
+    recuperar uma seria pagar o PSD de novo e esperar tudo outra vez.
+    """
+    try:
+        estado = trabalhos.ler(c.id, job)
+    except ValueError:
+        raise HTTPException(400, "identificador inválido")
+    if estado is None:
+        raise HTTPException(404, "trabalho não existe")
+    if not formato_by_id(formato):
+        raise HTTPException(422, f"formato desconhecido: {formato}")
+    if formato not in (estado.get("formatos") or []):
+        raise HTTPException(409, f"`{formato}` não foi pedido neste trabalho")
+    if estado.get("status") in ("na fila", "rodando"):
+        raise HTTPException(409, "este trabalho ainda está rodando")
+    if (estado.get("ajuste") or {}).get("status") in ("na fila", "rodando"):
+        raise HTTPException(409, "já há uma peça sendo refeita neste trabalho")
+    if estado.get("arquivado"):
+        raise HTTPException(409, "o material bruto deste trabalho já foi apagado por "
+                                 "idade: sem a arte não dá para gerar de novo")
+
+    trabalhos.gravar(c.id, job, {"ajuste": {"status": "na fila", "formato": formato,
+                                            "oque": "peça"}})
+    trabalhos.gravar(c.id, job, {"id_na_fila": FILA.enfileirar(
+        refazer_peca, c.id, job, formato)})
     return {"job": job, "formato": formato, "ajuste": "na fila"}
 
 

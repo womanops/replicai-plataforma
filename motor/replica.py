@@ -234,7 +234,16 @@ def chrome_run(url: str, extra: list[str], timeout: int = 120) -> subprocess.Com
     # abrir sem --no-sandbox. A bandeira vem do ambiente em vez de ficar fixa
     # aqui: no Mac ela não existe, e no servidor o Dockerfile a define.
     ] + os.environ.get("CHROME_FLAGS", "").split() + extra + [url]
-    return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    try:
+        return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # o estouro vinha como o traceback do subprocesso, com a linha de
+        # comando inteira dentro. Isso virava a explicação da peça na tela:
+        # "Command '['/Applications/Google Chrome.app/...'] timed out". Quem
+        # abre a plataforma não tem o que fazer com isso.
+        raise RuntimeError(
+            f"o desenho desta peça passou de {timeout} segundos e foi interrompido. "
+            f"Costuma ser a máquina ocupada; gerar de novo costuma resolver") from None
 
 
 def higgsfield_status() -> dict:

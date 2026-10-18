@@ -334,6 +334,71 @@ def refazer_fundo(conta: str, job: str, formato: str) -> None:
                                              "limpo": not avisos}})
 
 
+def refazer_peca(conta: str, job: str, formato: str) -> None:
+    """Tenta de novo UM formato que não saiu.
+
+    "Tentei adaptar 3 peças e uma não foi. Numa situação como esta, que não
+    deveria acontecer mas pode, deveria ter um botão de gerar novamente."
+
+    Falha de peça quase nunca é da peça: é o navegador que demorou demais
+    porque a máquina estava ocupada, ou um passo que não respondeu. Refazer o
+    trabalho inteiro para recuperar uma peça é pagar o PSD de novo e esperar
+    tudo outra vez — e as outras duas já estavam prontas.
+
+    O que sai daqui é somado ao trabalho, não escrito por cima: as peças que
+    já tinham saído continuam onde estão.
+    """
+    pasta = trabalhos.pasta_do(conta, job)
+    estado = trabalhos.ler(conta, job) or {}
+    arte = pasta / estado.get("arte", "")
+    if not arte.exists():
+        raise ValueError("a arte deste trabalho não está mais aqui")
+
+    trabalhos.gravar(conta, job, {"ajuste": {"status": "rodando", "formato": formato,
+                                             "oque": "peça"}})
+    try:
+        r = desdobrar(arte, [formato],
+                      compositor(str(arte), estado.get("headline", ""),
+                                 estado.get("cta", ""), estado.get("modo", MODO_PADRAO)),
+                      pasta, estado.get("brief", ""), leitor(),
+                      estado.get("prancheta", ""), final=bool(estado.get("final")),
+                      fonte_de=_fonte_da_conta(conta, pasta))
+    except Exception as e:
+        trabalhos.gravar(conta, job, {"ajuste": {"status": "erro", "formato": formato,
+                                                 "oque": "peça", "erro": str(e)}})
+        raise
+
+    prontas = sorted(set(estado.get("prontas") or []) | set(r.prontas))
+    falhas = {k: v for k, v in (estado.get("falhas") or {}).items() if k != formato}
+    falhas.update(r.falhas)
+    avisos = dict(estado.get("avisos") or {})
+    avisos.pop(formato, None)
+    avisos.update(r.avisos)
+    avisos.update(_contar(conta, job, r))
+    descartados = dict(estado.get("descartados") or {})
+    descartados.pop(formato, None)
+    descartados.update(r.descartados)
+    if r.prontas:
+        _apresentar(conta, job, prontas)
+    trabalhos.gravar(conta, job, {
+        "status": "pronto" if not falhas else "parcial",
+        "prontas": prontas, "falhas": falhas, "avisos": avisos,
+        "descartados": descartados})
+    # `desdobrar` deixou um `resultado.json` só deste formato: o registro do
+    # trabalho é o trabalho inteiro, e foi dele que saiu a recuperação de um
+    # estado perdido uma vez
+    import json
+    (pasta / "resultado.json").write_text(json.dumps({
+        "status": "pronto" if not falhas else "parcial",
+        "prontas": {k: str(pasta / f"{k}.png") for k in prontas},
+        "falhas": falhas, "avisos": avisos, "descartados": descartados,
+        "psd": estado.get("psd") or r.psd, "generativo": r.generativo,
+        "custo": r.custo}, ensure_ascii=False, indent=1), encoding="utf-8")
+    trabalhos.gravar(conta, job, {"ajuste": {"status": "pronto", "formato": formato,
+                                             "oque": "peça",
+                                             "saiu": formato in r.prontas}})
+
+
 def redesenhar(conta: str, job: str, formato: str) -> None:
     """Desenha de novo um formato cuja peça foi remontada na mão.
 

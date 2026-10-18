@@ -113,6 +113,16 @@ textarea{resize:vertical;min-height:70px}
   letter-spacing:.1em;text-transform:uppercase;padding:2px 5px;border-radius:3px;
   background:rgba(14,10,12,.82);color:var(--sinal)}
 .f.falhou .selo{color:var(--err)}
+/* A SAÍDA DA PEÇA QUE NÃO SAIU. Antes o cartão dizia "não saiu" e acabava: o
+   motivo ficava num `title` — e era o traceback do subprocesso. Quem está
+   olhando uma peça que falhou quer uma coisa só, que é tentar de novo. */
+.f .denovo{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:3;
+  background:var(--err);color:#fff;border:0;border-radius:8px;padding:7px 10px;
+  font:500 11px var(--corpo);cursor:pointer;white-space:nowrap;max-width:94%}
+.f .denovo:hover{filter:brightness(1.12)}
+.f .denovo[disabled]{opacity:.6;cursor:default}
+.f .porque{position:absolute;left:4px;right:4px;bottom:4px;z-index:3;
+  font:400 9.5px var(--corpo);line-height:1.25;color:var(--mut);text-align:center}
 .pulsa{animation:p 1.2s ease-in-out infinite}
 .f .ressalva{font:500 9.5px var(--mono);letter-spacing:.08em;text-transform:uppercase;
   color:var(--sinal);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
@@ -1607,7 +1617,14 @@ async function acompanhar(){
     if ((d.ajuste || {}).status === 'pronto' && esperandoAjuste === d.ajuste.formato){
       recemAjustada = esperandoAjuste;
       refazer.add(esperandoAjuste); esperandoAjuste = null;
-      aviso('Peça atualizada. É esta que vai na exportação.', true);
+      // gerar de novo uma peça que não saiu é outro recado: ela pode não ter
+      // saído de novo, e aí dizer "peça atualizada" seria mentir
+      const aj = d.ajuste;
+      if (aj.oque === 'peça')
+        aviso(aj.saiu ? `${aj.formato} saiu agora. É esta que vai no pacote.`
+                      : `${aj.formato} não saiu nem agora. Veja o motivo no cartão.`,
+              !!aj.saiu);
+      else aviso('Peça atualizada. É esta que vai na exportação.', true);
     }
     const pedidas = (d.psd || {}).fontes || [];
     if (pedidas.join() !== fontesDaArte.join()){
@@ -1660,7 +1677,14 @@ async function acompanhar(){
         b.classList.toggle('ajustavel', d.modo !== 'sem');
       } else if (falhas[id]){
         b.classList.add('falhou'); b.classList.remove('pulsa');
-        if (!cx.querySelector('.selo')) cx.insertAdjacentHTML('afterbegin', `<span class="selo">não saiu</span>`);
+        if (!cx.querySelector('.denovo')){
+          cx.innerHTML = `<span class="selo">não saiu</span>`
+            + `<button class="denovo" type="button">Gerar de novo</button>`
+            + `<span class="porque">${esc(curto(falhas[id]))}</span>`;
+          cx.querySelector('.denovo').onclick = ev => {
+            ev.stopPropagation(); refazerPeca(id);
+          };
+        }
         b.title = falhas[id];
       } else if (!prontas.has(id)) b.classList.add('pulsa');
     }
@@ -2441,6 +2465,40 @@ function verRessalvas(fid){
   if (aj) aj.onclick = () => { $('#ressalvas').classList.add('hidden'); abrirEditor(fid); };
   if (fu) fu.onclick = () => refazerFundoDe(fid);
   $('#ressalvas').classList.remove('hidden');
+}
+
+/* ---------- a peça que não saiu ----------
+   Falha de peça quase nunca é da peça: é o navegador que demorou demais
+   porque a máquina estava ocupada. Refazer o trabalho inteiro para recuperar
+   uma seria esperar tudo outra vez, com as outras já prontas. */
+function curto(motivo){
+  const m = String(motivo || '').replace(/^não renderizou:\s*/, '');
+  // o que vier do servidor em linguagem de máquina não vai para o cartão
+  if (/Command |Traceback|timed out|subprocess/.test(m) && m.length > 90)
+    return 'o desenho não terminou. Gerar de novo costuma resolver.';
+  return m.length > 110 ? m.slice(0, 108) + '…' : m;
+}
+
+async function refazerPeca(fid){
+  const b = document.querySelector(`.f[data-id="${fid}"] .denovo`);
+  if (b){ b.disabled = true; b.textContent = 'Gerando…'; }
+  try {
+    const r = await fetch(`/jobs/${job}/pecas/${fid}/refazer`, { method: 'POST' });
+    if (!r.ok){
+      aviso((await r.json().catch(() => ({}))).detail || 'Não deu para gerar de novo.');
+      if (b){ b.disabled = false; b.textContent = 'Gerar de novo'; }
+      return;
+    }
+  } catch(e){
+    aviso('Não consegui falar com o servidor.');
+    if (b){ b.disabled = false; b.textContent = 'Gerar de novo'; }
+    return;
+  }
+  refazer.add(fid);
+  esperandoAjuste = fid;
+  $('#conta').textContent = 'Gerando de novo';
+  $('#detalhe').textContent = `${fid} · a peça que não saiu.`;
+  acompanhar();
 }
 
 /* Refaz só o fundo desta peça, insistindo no generativo. Se sair limpo, o
