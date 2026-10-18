@@ -177,7 +177,7 @@ def manter_a_mao(peca: dict, pasta: Path, fid: str) -> list[str]:
 
 def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
               pasta: Path, brief: str = "", leitor=None, prancheta: str = "",
-              progresso=None, final: bool = False) -> Resultado:
+              progresso=None, final: bool = False, fonte_de=None) -> Resultado:
     """Compõe e renderiza cada formato pedido dentro de `pasta`.
 
     `final` liga a insistência com o fundo generativo e reaproveita o que já
@@ -187,6 +187,10 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
     `progresso(dict)` é chamado a cada passo. Sem ele o trabalho fica minutos
     em "rodando" sem dizer nada, e quem está do outro lado não distingue um
     render demorado de um travamento.
+
+    `fonte_de(nome) -> (familia, aviso)` resolve a fonte que o PSD pede contra
+    as fontes da conta. A esteira não conhece conta: quem sabe disso é a
+    tarefa, que entrega esta função pronta.
 
     `leitor(arte) -> Leitura` diz onde a arte já tem tinta e o que ela diz. Com
     ele, o fundo de cada formato é montado antes de qualquer texto: a arte é
@@ -221,7 +225,7 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
         # assar. Entrava achatado antes, e a peça inteira não animava.
         with custo.medir() as conta:
             _psd_e_render(r, formatos, copia, pasta, brief, compositor, prancheta,
-                          _passo(progresso, len(formatos), r), final)
+                          _passo(progresso, len(formatos), r), final, fonte_de)
         r.custo = conta.resumo()
         (pasta / "resultado.json").write_text(
             json.dumps(r.para_json(), ensure_ascii=False, indent=1), encoding="utf-8")
@@ -250,6 +254,9 @@ def desdobrar(base: Path, formatos: list[str], compositor: Compositor,
 
 
 FONTE_PADRAO = Path(__file__).resolve().parent.parent / "motor/assets/fontes/grotesk.ttf"
+# a família que o trabalho declara: quem desenha é o navegador, e declarar uma
+# família sem ter o arquivo faz ele cair numa fonte do sistema, calado
+FAMILIA_PADRAO = "PecaSans"
 
 
 def _fonte_do_trabalho(pasta: Path) -> list[dict]:
@@ -269,7 +276,8 @@ def _fonte_do_trabalho(pasta: Path) -> list[dict]:
 
 
 def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
-                  compositor, prancheta: str, avisar=None, final: bool = False) -> None:
+                  compositor, prancheta: str, avisar=None, final: bool = False,
+                  fonte_de=None) -> None:
     """A esteira do PSD: abre em camadas e desdobra cada formato.
 
     O fundo vem assado pelo próprio Photoshop, as camadas soltas vêm com
@@ -327,6 +335,14 @@ def _psd_e_render(r: Resultado, formatos, copia: Path, pasta: Path, brief: str,
             r.avisar(fid, d)
 
         avisar("compondo", i, fid)
+        # A CHAMADA QUE ELA ESCREVEU TROCA A DA ARTE. Antes ela era entregue
+        # ao modelo como texto a ACRESCENTAR, e numa arte que ocupa a peça
+        # inteira não há onde acrescentar: ele recusava dizendo que já havia
+        # um texto ali — o texto que era para ser trocado.
+        pedida = (getattr(compositor, "headline", "") or "").strip()
+        if pedida and not getattr(compositor, "preserva", False):
+            for a in trocar_a_chamada(peca, pasta, pedida, fonte_de):
+                r.avisar(fid, a)
         for a in _texto_novo(peca, f, pasta, leitura, brief, compositor, info):
             r.avisar(fid, a)
         # o que o modelo deixou de fora chega à tela nos dois caminhos. Aqui
@@ -419,6 +435,79 @@ def ficou_de_fora(peca: dict, compositor, brief: str) -> list[str]:
     return avisos
 
 
+def cor_da_linha(caminhos: list[Path]) -> str:
+    """A cor da linha, pela letra que tem mais tinta.
+
+    Não é a média: em "A PORTO BELO!" o A é branco e o resto azul-escuro, e a
+    média dos dois dá um azul lavado que não existe na peça. A letra de maior
+    área manda, que é o que o olho lê como a cor da linha.
+    """
+    from PIL import Image
+    melhor, quanto = "", -1
+    for caminho in caminhos:
+        try:
+            with Image.open(caminho) as im:
+                px = [p for p in im.convert("RGBA").getdata() if p[3] > 128]
+        except Exception:
+            continue
+        if not px or len(px) <= quanto:
+            continue
+        quanto, n = len(px), len(px)
+        melhor = "#%02X%02X%02X" % (sum(p[0] for p in px) // n,
+                                    sum(p[1] for p in px) // n,
+                                    sum(p[2] for p in px) // n)
+    return melhor or "#FFFFFF"
+
+
+def trocar_a_chamada(peca: dict, pasta: Path, texto: str, fonte_de=None) -> list[str]:
+    """A chamada que ela escreveu SUBSTITUI a da arte.
+
+    "Adaptação + Novos Textos" é a opção de TROCAR o texto. O que acontecia
+    era outra coisa: a chamada nova era entregue ao modelo para ACRESCENTAR
+    num espaço livre, e numa arte que ocupa a peça inteira não há espaço
+    livre. Ele recusava dizendo que já havia um texto ali — que é exatamente
+    o texto que era para ser trocado. De fora, a opção não fazia nada.
+
+    A linha da arte é uma imagem por letra, então trocar não é editar PNG: é
+    desenhar a frase nova na caixa da linha inteira, com a cor que ela tinha.
+    A mesma mecânica do ✎ da tela de ajuste.
+    """
+    alvos = [e for e in peca.get("elementos", []) if e.get("papel") == "headline"]
+    if not alvos or not (texto or "").strip():
+        return []
+    onde = peca["elementos"].index(alvos[0])
+    caixa = {"x": min(e["box"]["x"] for e in alvos),
+             "y": min(e["box"]["y"] for e in alvos),
+             "w": max(e["box"]["x"] + e["box"]["w"] for e in alvos)
+                  - min(e["box"]["x"] for e in alvos),
+             "h": max(e["box"]["y"] + e["box"]["h"] for e in alvos)
+                  - min(e["box"]["y"] for e in alvos)}
+    pedida = next((e.get("fonte_mae") for e in alvos if e.get("fonte_mae")), "")
+    familia, arquivo, aviso = (fonte_de or (lambda _: (FAMILIA_PADRAO, "", "")))(pedida)
+    alto = max(8, int(caixa["h"]))
+    novo = {"tipo": "texto", "papel": "headline", "texto": texto.strip(),
+            "camada": alvos[0].get("camada"), "box": caixa,
+            "fonte": familia, "peso": 600,
+            "cor": cor_da_linha([pasta / e["src"] for e in alvos if e.get("src")]),
+            "min": max(8, round(alto * 0.35)), "max": alto, "lineHeight": 1.05,
+            # centrado continua centrado: a caixa é a da tinta que saiu, e a
+            # frase nova pode ter outro comprimento
+            "align": "center", "valign": "middle", "trocado": True}
+    peca["elementos"] = ([e for e in peca["elementos"][:onde] if e.get("papel") != "headline"]
+                         + [novo]
+                         + [e for e in peca["elementos"][onde:] if e.get("papel") != "headline"])
+    # a família tem que ir DECLARADA COM ARQUIVO: declarar sem o arquivo faz o
+    # navegador cair numa fonte do sistema sem dizer nada, e a peça sai com
+    # outra tipografia — o erro mais difícil de ver no olho
+    declaradas = {f["familia"]: f for f in (peca.get("fontes") or [])}
+    for f in _fonte_do_trabalho(pasta):
+        declaradas.setdefault(f["familia"], f)
+    if arquivo:
+        declaradas[familia] = {"familia": familia, "arquivo": arquivo, "peso": "100 900"}
+    peca["fontes"] = list(declaradas.values())
+    return [aviso] if aviso else []
+
+
 def _texto_novo(peca: dict, formato: dict, pasta: Path, leitura, brief: str,
                 compositor, info: dict) -> list[str]:
     """Acrescenta à peça do PSD o que o brief pede e a arte não diz.
@@ -445,13 +534,24 @@ def _texto_novo(peca: dict, formato: dict, pasta: Path, leitura, brief: str,
     livres = prep_fundo.espaco_livre(formato, tinta)
     with Image.open(pasta / peca["fundo"]["src"]) as pronto:
         livres, _ = sossego.acalmar(pronto.convert("RGB"), livres)
+    # o que a peça já diz AGORA: a chamada trocada entra aqui, senão o modelo
+    # acrescentaria de novo a frase que acabou de substituir a da arte
+    ja = [c.texto for c in leitura.camadas if c.texto]
+    ja += [e["texto"] for e in peca.get("elementos", [])
+           if e.get("trocado") and e.get("texto")]
     terreno = Terreno(fundo=peca["fundo"], livres=livres,
-                      ja_escrito=[c.texto for c in leitura.camadas if c.texto],
+                      ja_escrito=ja,
                       fontes=_fonte_do_trabalho(pasta), tinta=tinta)
+    # o que o modelo OLHA. Era o fundo assado — e num PSD cujas camadas vêm
+    # todas soltas esse fundo é a prancheta vazia: ele recebia uma imagem
+    # branca e decidia em cima dela ("a imagem recebida aparece totalmente
+    # branca, sem texto nem logo visível", escreveu ele mesmo). A arte-mãe é
+    # a prancheta composta, com texto e logo: é o que a pessoa aprovou.
+    olha = pasta / "arte-mae.png"
+    if not olha.exists():
+        olha = pasta / leitura.fundo
     try:
-        # o que o modelo olha é o fundo assado: é a arte de verdade da peça, e
-        # o arquivo original é PSD, que ele não abre
-        extra = compositor.compor(pasta / leitura.fundo, formato["id"], brief, terreno)
+        extra = compositor.compor(olha, formato["id"], brief, terreno)
     except ComposicaoImpossivel as e:
         return [f"nada foi acrescentado à peça: {e}"]
 
@@ -461,7 +561,12 @@ def _texto_novo(peca: dict, formato: dict, pasta: Path, leitura, brief: str,
               for d in extra.pop("_desvios", [])]
     novos = [e for e in extra.get("elementos", []) if e.get("tipo") in ("texto", "botao")]
     peca["elementos"].extend(novos)
-    peca["fontes"] = extra.get("fontes") or peca.get("fontes") or []
+    # junta, não substitui: a chamada trocada já declarou a fonte da marca, e
+    # sobrescrever aqui faria aquela linha sair na letra errada
+    declaradas = {f["familia"]: f for f in (peca.get("fontes") or [])}
+    for f in extra.get("fontes") or []:
+        declaradas.setdefault(f["familia"], f)
+    peca["fontes"] = list(declaradas.values())
     if extra.get("descartados"):
         peca["descartados"] = extra["descartados"]
     return avisos

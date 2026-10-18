@@ -1597,6 +1597,18 @@ async function acompanhar(){
     let d; try { d = await (await fetch(`/jobs/${job}`)).json(); } catch(e){ return; }
     const prontas = new Set(d.prontas || []), falhas = d.falhas || {};
     avisosDoJob = d.avisos || {}; descartadosDoJob = d.descartados || {};
+    // O AJUSTE TERMINOU: marcar ANTES de pintar os cartões.
+    // Isto morava lá embaixo, no bloco de "parado" — que roda depois do laço
+    // dos cartões e logo após `clearInterval`. Ou seja: o cartão daquele
+    // formato era pintado antes de alguém saber que a peça tinha mudado, e o
+    // pulso que repintaria não vinha mais. A peça nova estava no disco e a
+    // tela seguia mostrando a antiga.
+    let recemAjustada = null;
+    if ((d.ajuste || {}).status === 'pronto' && esperandoAjuste === d.ajuste.formato){
+      recemAjustada = esperandoAjuste;
+      refazer.add(esperandoAjuste); esperandoAjuste = null;
+      aviso('Peça atualizada. É esta que vai na exportação.', true);
+    }
     const pedidas = (d.psd || {}).fontes || [];
     if (pedidas.join() !== fontesDaArte.join()){
       fontesDaArte = pedidas; pintarFontesPedidas(pedidas);
@@ -1657,6 +1669,10 @@ async function acompanhar(){
       const b = document.querySelector(`.f[data-id="${fid}"]`); if (!b) continue;
       const cx = b.querySelector('.cx');
       if (cx.querySelector('video')) continue;
+      // peça recém-ajustada mostra a PEÇA, não o vídeo de antes dela: o vídeo
+      // foi feito com a diagramação velha, e pintá-lo por cima escondia de
+      // novo o ajuste que acabou de ficar pronto
+      if (recemAjustada === fid) continue;
       const arq = (d.entregas||[]).find(e => e.nome.startsWith('video/') && e.nome.includes(fid));
       if (!arq) continue;
       // o vídeo substitui o conteúdo do cartão e levava junto o botão de
@@ -1728,12 +1744,6 @@ async function acompanhar(){
       clearInterval(pulso);
       espelhar(false);
       if ((d.ajuste||{}).status === 'erro') aviso(d.ajuste.erro || 'O ajuste não desenhou.');
-      // só avisa de ajuste pedido agora: ao reabrir um trabalho antigo o
-      // estado ainda diz "pronto", e a tela anunciava um redesenho que não houve
-      if ((d.ajuste||{}).status === 'pronto' && esperandoAjuste === d.ajuste.formato){
-        refazer.add(esperandoAjuste); esperandoAjuste = null;
-        aviso('Peça atualizada. É esta que vai na exportação.', true);
-      }
       if (feitas){
         // baixar é o que se faz sempre: fica em destaque, sozinho
         const z=$('#btnZip'); z.style.display=''; z.onclick=()=>location.href=`/jobs/${job}/zip`;
@@ -2247,7 +2257,9 @@ async function abrirCampanhas(){
    o NOME do que vai sumir: "tem certeza?" sem nome é a pergunta que todo
    mundo responde no automático. */
 function perguntarSeApaga(linha){
-  const job = linha.dataset.job, nome = linha.dataset.nome;
+  // `ident`, e não `job`: `job` é a campanha ABERTA na tela, e precisamos
+  // comparar as duas no fim. Chamar as duas de `job` escondia a de fora
+  const ident = linha.dataset.job, nome = linha.dataset.nome;
   const pergunta = document.createElement('div');
   pergunta.className = 'pergunta';
   pergunta.innerHTML = `<span>Apagar <b>${esc(nome)}</b>? As peças e os vídeos`
@@ -2259,7 +2271,7 @@ function perguntarSeApaga(linha){
   pergunta.querySelector('.sim').onclick = async e => {
     e.target.disabled = true; e.target.textContent = 'Apagando…';
     let r;
-    try { r = await fetch(`/jobs/${job}`, { method: 'DELETE' }); }
+    try { r = await fetch(`/jobs/${ident}`, { method: 'DELETE' }); }
     catch(err){ aviso('Não consegui falar com o servidor.'); abrirCampanhas(); return; }
     if (!r.ok){
       aviso((await r.json().catch(() => ({}))).detail || 'Não deu para apagar.');
@@ -2267,7 +2279,7 @@ function perguntarSeApaga(linha){
     }
     // a campanha aberta na tela acabou de deixar de existir: o painel não
     // pode continuar mostrando as peças dela
-    if (job === window.job){ limparPainel(); window.job = null; }
+    if (ident === job){ limparPainel(); job = null; }
     aviso(`${nome} foi apagada.`, true);
     abrirCampanhas();
   };

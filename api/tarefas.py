@@ -153,6 +153,45 @@ def previas(conta: str, job: str, arte: str) -> None:
         for p in lista]})
 
 
+def _fonte_da_conta(conta: str, pasta):
+    """Como a esteira resolve a fonte que o PSD pede.
+
+    O PSD diz o nome — "FuturaICG-Bold" — e não leva o arquivo dentro. Se a
+    conta já enviou essa fonte, ela é copiada para o trabalho e o texto
+    trocado sai na MESMA letra. Se não, sai na letra da casa, e isso tem que
+    ser dito: declarar uma família sem ter o arquivo faz o navegador cair numa
+    fonte do sistema, calado, e a peça sai com outra tipografia.
+
+    A esteira não conhece conta de propósito — quem sabe disso é esta camada.
+    """
+    import shutil
+    from pathlib import Path
+
+    from api import contas
+    from api.pipeline import FAMILIA_PADRAO
+
+    def resolver(pedida: str):
+        pedida = (pedida or "").strip()
+        if not pedida:
+            return FAMILIA_PADRAO, "", ""
+        try:
+            c = contas.por_id(conta)
+            achada = contas.fonte_de(c, pedida) if c else None
+        except Exception:
+            achada = None
+        if not achada:
+            return (FAMILIA_PADRAO, "",
+                    f"a chamada da arte é {pedida}, e essa fonte não está na sua "
+                    f"conta: o texto novo saiu na letra da casa. Envie o arquivo "
+                    f"dela em Fontes da marca e replique de novo para sair igual")
+        destino = Path(pasta) / achada["nome"]
+        if not destino.exists():
+            shutil.copy2(contas.pasta_das_fontes(c) / achada["nome"], destino)
+        return pedida, achada["nome"], ""
+
+    return resolver
+
+
 def processar(conta: str, job: str, arte: str, formatos: list[str], headline: str,
               cta: str, brief: str, prancheta: str = "", final: bool = False,
               modo: str = MODO_PADRAO) -> None:
@@ -173,7 +212,8 @@ def processar(conta: str, job: str, arte: str, formatos: list[str], headline: st
     try:
         r = desdobrar(Path(arte), formatos, compositor(arte, headline, cta, modo),
                       trabalhos.pasta_do(conta, job), brief, leitor(), prancheta,
-                      progresso=contar, final=final)
+                      progresso=contar, final=final,
+                      fonte_de=_fonte_da_conta(conta, trabalhos.pasta_do(conta, job)))
         avisos = {**r.avisos, **_contar(conta, job, r)}
         if r.prontas:
             contar({"etapa": "montando a apresentação", "feito": len(formatos),

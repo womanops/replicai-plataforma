@@ -1422,3 +1422,47 @@ class TestApagarCampanhaDoHistorico:
         corpo = tela.split("function perguntarSeApaga(linha){")[1].split("\n}")[0]
         assert "limparPainel()" in corpo
 
+
+class TestAPecaAjustadaApareceNaTela:
+    """"Quando ajusto a peça e ela roda a atualização, ela não muda no
+    preview."
+
+    A marcação de "este cartão ficou velho" morava no bloco de "parado" — que
+    roda DEPOIS do laço dos cartões e logo após `clearInterval`. O cartão
+    daquele formato era pintado antes de alguém saber que a peça tinha
+    mudado, e o pulso que repintaria não vinha mais. A peça nova estava no
+    disco e a tela seguia mostrando a antiga.
+    """
+
+    def test_o_fim_do_ajuste_e_marcado_antes_de_pintar(self, tela):
+        corpo = tela.split("const ver = async () => {")[1].split("const parado =")[0]
+        i_marca = corpo.find("refazer.add(esperandoAjuste)")
+        i_laco = corpo.find("for (const b of document.querySelectorAll('.f'))")
+        assert 0 <= i_marca < i_laco, "marcar depois de pintar não repinta nada"
+
+    def test_e_nao_sobrou_no_bloco_de_parado(self, tela):
+        """Lá embaixo ele rodava depois de `clearInterval`: não havia próximo
+        pulso para repintar."""
+        parado = tela.split("if (parado){")[1].split("if (feitas){")[0]
+        assert "refazer.add" not in parado
+
+    def test_a_peca_repintada_leva_carimbo_contra_o_cache(self, tela):
+        """O arquivo tem o mesmo nome de antes: sem carimbo o navegador
+        devolve a imagem guardada e a tela segue igual."""
+        corpo = tela.split("const jaPintada =")[1].split("refazer.delete(id)")[0]
+        assert "refazer.has(id) ? '?v=' + Date.now() : ''" in corpo
+
+    def test_o_video_velho_nao_tapa_a_peca_recem_ajustada(self, tela):
+        """O vídeo foi feito com a diagramação velha: pintá-lo por cima
+        escondia de novo o ajuste que acabou de ficar pronto."""
+        corpo = tela.split("// o vídeo de cada formato, quando houver")[1].split("const feitas =")[0]
+        assert "if (recemAjustada === fid) continue;" in corpo
+
+    def test_apagar_compara_com_a_campanha_aberta(self, tela):
+        """`window.job` não é a variável `job` da tela: `let` não vira
+        propriedade de window, então a comparação nunca dava certo e o painel
+        seguia mostrando as peças de uma campanha apagada."""
+        corpo = tela.split("function perguntarSeApaga(linha){")[1].split("\n}")[0]
+        assert "window.job" not in corpo
+        assert "ident === job" in corpo
+

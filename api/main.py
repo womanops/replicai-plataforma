@@ -22,7 +22,7 @@ from fastapi import (Cookie, Depends, FastAPI, File, Form, Header, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 
 from api import ambiente, cobranca, contas, correio, tranca, trabalhos, uso
-from api.pipeline import MARCA_DA_MAO
+from api.pipeline import MARCA_DA_MAO, cor_da_linha as _cor_da_linha
 from api.tarefas import (MODOS, MODO_PADRAO, TEXTO_NOVO, modo_possivel, previas,
                          processar, processar_video, redesenhar, refazer_fundo)
 from api.fila import FILA_VIDEO, fila_do_ambiente
@@ -1027,29 +1027,9 @@ AJUSTAVEL = {"box", "texto", "align", "valign", "cor", "peso", "min", "max",
 FAMILIA_DO_TRABALHO = "PecaSans"
 
 
-def _cor_da_linha(caminhos: list[Path]) -> str:
-    """A cor da linha, pela letra que tem mais tinta.
-
-    Não é a média: em "A PORTO BELO!" o A é branco e o resto azul-escuro, e a
-    média dos dois dá um azul lavado que não existe na peça. A letra de maior
-    área manda, que é o que o olho lê como a cor da linha.
-    """
-    from PIL import Image
-    melhor, quanto = "", -1
-    for caminho in caminhos:
-        try:
-            with Image.open(caminho) as im:
-                px = [p for p in im.convert("RGBA").getdata() if p[3] > 128]
-        except Exception:
-            continue
-        if len(px) <= quanto:
-            continue
-        quanto = len(px)
-        n = len(px)
-        melhor = "#%02X%02X%02X" % (sum(p[0] for p in px) // n,
-                                    sum(p[1] for p in px) // n,
-                                    sum(p[2] for p in px) // n)
-    return melhor or "#FFFFFF"
+# a cor da linha mora no pipeline (`cor_da_linha`, importada no topo): é a
+# mesma conta da troca feita na esteira, e duas cópias dela sairiam do lugar
+# uma da outra
 
 
 def _fonte_da_linha(conta: contas.Conta, base: dict, pasta: Path) -> tuple[str, str]:

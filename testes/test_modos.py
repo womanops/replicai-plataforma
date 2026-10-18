@@ -498,3 +498,123 @@ class TestDuasPessoasNaMesmaPeca:
         mao = cliente.get(f"/jobs/{job}/pecas/gdn-300x250").json()["mao"]
         assert mao["nome"]
         assert mao["quando"]
+
+
+class TestAChamadaTrocaADaArte:
+    """"Selecionei a opção de trocar texto, ele vem na ressalva que não foi
+    possível pois já havia um texto lá, mas não faz sentido, uma vez que a
+    opção é pra trocar o texto."
+
+    A chamada escrita era entregue ao modelo como texto a ACRESCENTAR num
+    espaço livre. Numa arte que ocupa a peça inteira não há espaço livre, e
+    ele recusava: "não há zona livre na arte para posicioná-la; além disso,
+    repetiria a ideia de 'Energia que impulsiona o futuro'". Ou seja:
+    recusava porque já havia ali exatamente o texto que era para ser trocado.
+    """
+
+    def peca(self, tmp_path):
+        """Uma peça de PSD com a chamada em três letras recortadas."""
+        from PIL import Image
+        els = []
+        for i, x in enumerate((10, 40, 70)):
+            Image.new("RGBA", (28, 30), (255, 255, 255, 255)).save(tmp_path / f"l{i}.png")
+            els.append({"tipo": "imagem", "papel": "headline", "de": "energiza",
+                        "camada": "energiza", "letra": i, "fonte_mae": "FuturaICG-Bold",
+                        "src": f"l{i}.png", "box": {"x": x, "y": 50, "w": 28, "h": 30}})
+        els.insert(0, {"tipo": "imagem", "papel": "figura", "src": "arte.png",
+                       "box": {"x": 0, "y": 0, "w": 300, "h": 250}})
+        els.append({"tipo": "imagem", "papel": "apoio", "src": "a.png",
+                    "box": {"x": 10, "y": 90, "w": 100, "h": 10}})
+        return {"canvas": {"w": 300, "h": 250}, "elementos": els, "fontes": []}
+
+    def test_a_chamada_nova_entra_no_lugar_da_antiga(self, tmp_path):
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        trocar_a_chamada(p, tmp_path, "A sua energia para o futuro")
+        chamadas = [e for e in p["elementos"] if e.get("papel") == "headline"]
+        assert len(chamadas) == 1, "os recortes antigos continuaram na peça"
+        assert chamadas[0]["tipo"] == "texto"
+        assert chamadas[0]["texto"] == "A sua energia para o futuro"
+
+    def test_ocupa_a_caixa_da_linha_inteira(self, tmp_path):
+        """A frase nova mora onde a antiga morava: é o que preserva a
+        diagramação da arte-mãe."""
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        trocar_a_chamada(p, tmp_path, "Outra chamada")
+        caixa = next(e for e in p["elementos"] if e.get("papel") == "headline")["box"]
+        assert caixa == {"x": 10, "y": 50, "w": 88, "h": 30}
+
+    def test_sai_na_cor_que_a_linha_tinha(self, tmp_path):
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        trocar_a_chamada(p, tmp_path, "Outra")
+        assert next(e for e in p["elementos"]
+                    if e.get("papel") == "headline")["cor"] == "#FFFFFF"
+
+    def test_o_resto_da_peca_fica_onde_estava(self, tmp_path):
+        """Trocar a chamada não é refazer a peça: figura e apoio continuam."""
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        trocar_a_chamada(p, tmp_path, "Outra")
+        papeis = [e.get("papel") for e in p["elementos"]]
+        assert papeis == ["figura", "headline", "apoio"], papeis
+
+    def test_sem_a_fonte_da_marca_o_aviso_vem(self, tmp_path):
+        """O PSD diz o nome da fonte e não leva o arquivo. Sair noutra letra
+        em silêncio é o erro mais difícil de ver no olho."""
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        avisos = trocar_a_chamada(p, tmp_path, "Outra",
+                                  lambda f: ("PecaSans", "", f"a chamada da arte é {f}"))
+        assert avisos and "FuturaICG-Bold" in avisos[0]
+
+    def test_com_a_fonte_da_marca_ela_vai_declarada_com_arquivo(self, tmp_path):
+        """Família declarada sem arquivo faz o navegador cair numa fonte do
+        sistema, calado."""
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        avisos = trocar_a_chamada(p, tmp_path, "Outra",
+                                  lambda f: (f, "futura.ttf", ""))
+        linha = next(e for e in p["elementos"] if e.get("papel") == "headline")
+        assert linha["fonte"] == "FuturaICG-Bold"
+        assert {"familia": "FuturaICG-Bold", "arquivo": "futura.ttf",
+                "peso": "100 900"} in p["fontes"]
+        assert not avisos
+
+    def test_peca_sem_chamada_na_arte_nao_muda(self, tmp_path):
+        """Nem toda arte tem camada de chamada: aí o texto novo continua
+        sendo trabalho do modelo, em espaço livre."""
+        from api.pipeline import trocar_a_chamada
+        p = {"canvas": {"w": 300, "h": 250}, "elementos": [
+            {"tipo": "imagem", "papel": "figura", "src": "a.png",
+             "box": {"x": 0, "y": 0, "w": 300, "h": 250}}]}
+        assert trocar_a_chamada(p, tmp_path, "Chamada") == []
+        assert len(p["elementos"]) == 1
+
+    def test_chamada_vazia_nao_mexe_na_arte(self, tmp_path):
+        from api.pipeline import trocar_a_chamada
+        p = self.peca(tmp_path)
+        assert trocar_a_chamada(p, tmp_path, "   ") == []
+        assert len([e for e in p["elementos"] if e.get("papel") == "headline"]) == 3
+
+
+class TestOModeloOlhaAArte:
+    """O modelo decidia olhando a PRANCHETA, não a arte.
+
+    Num PSD cujas camadas vêm todas soltas, o fundo assado é a prancheta
+    vazia. Ele recebia uma imagem branca e escreveu isso na própria resposta:
+    "a imagem recebida aparece totalmente branca, sem texto nem logo visível".
+    Toda decisão dele naquela peça foi tomada sobre uma imagem em branco.
+    """
+
+    def test_a_arte_mae_e_o_que_vai_para_o_modelo(self, tmp_path):
+        assert "arte-mae.png" in open("api/pipeline.py", encoding="utf-8").read()
+        from pathlib import Path
+        import inspect
+        from api import pipeline
+        fonte = inspect.getsource(pipeline._texto_novo)
+        assert 'olha = pasta / "arte-mae.png"' in fonte
+        assert "compositor.compor(olha," in fonte
+        # e segue valendo o fundo assado quando a arte-mãe não saiu
+        assert "if not olha.exists():" in fonte
