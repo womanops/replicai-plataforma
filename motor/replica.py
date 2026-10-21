@@ -221,14 +221,22 @@ def find_chrome() -> str | None:
     return None
 
 
-def chrome_run(url: str, extra: list[str], timeout: int = 120) -> subprocess.CompletedProcess[str]:
+# em quantas vezes o tamanho do formato a peça é desenhada. 2 é o teto útil:
+# o fundo assado vem do arquivo da arte, e acima disso ele é que viraria o
+# limite — a nitidez que se ganha é a da letra e a da logomarca.
+ESCALA_DO_RENDER = 2
+
+
+def chrome_run(url: str, extra: list[str], timeout: int = 120,
+               escala: int = 1) -> subprocess.CompletedProcess[str]:
     chrome = find_chrome()
     if not chrome:
         raise RuntimeError("Chrome não encontrado. Instale o Google Chrome para renderizar as peças.")
     # sem --user-data-dir: com ele o Chrome 153 escreve o PNG e nunca fecha.
     args = [
         chrome, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
-        "--disable-extensions", "--allow-file-access-from-files", "--force-device-scale-factor=1",
+        "--disable-extensions", "--allow-file-access-from-files",
+        f"--force-device-scale-factor={escala}",
         "--virtual-time-budget=6000", "--default-background-color=00000000",
     # Dentro de um contêiner o processo roda como root e o Chromium se recusa a
     # abrir sem --no-sandbox. A bandeira vem do ambiente em vez de ficar fixa
@@ -1232,18 +1240,32 @@ def render_peca(peca_path: Path, out_path: Path | None, debug: bool = False, som
         if debug:
             out_path = out_path.with_name(out_path.stem + "-debug.png")
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    r = chrome_run(url, [f"--window-size={w},{h}", f"--screenshot={out_path}"])
+    # DESENHA EM DOBRO E ENTREGA NOS DOIS TAMANHOS.
+    # O arquivo do formato tem o tamanho que o formato pede — 300x600 é
+    # 300x600, e rede nenhuma aceita outra coisa. Só que esse arquivo é
+    # olhado AMPLIADO: na lupa da tela, numa tela retina, e na apresentação,
+    # onde um banner pequeno cresce até três vezes para ocupar a folha. A
+    # 1x isso vira mingau. Desenhando em 2x, a letra e a logomarca ficam
+    # nítidas onde se olha de perto, e o arquivo do formato sai da redução —
+    # que de quebra tira o serrilhado das bordas.
+    r = chrome_run(url, [f"--window-size={w},{h}", f"--screenshot={out_path}"],
+                   escala=ESCALA_DO_RENDER)
     if not out_path.exists():
         raise RuntimeError("Chrome não gerou o PNG: " + (r.stderr or r.stdout)[-600:])
     im = Image.open(out_path)
+    grande = out_path.with_name(f"{out_path.stem}@{ESCALA_DO_RENDER}x.png")
+    if somente is None and ESCALA_DO_RENDER > 1 and im.size == (w * ESCALA_DO_RENDER,
+                                                                h * ESCALA_DO_RENDER):
+        im.save(grande)
     if im.size != (w, h):
-        im = im.crop((0, 0, w, h)) if im.width >= w and im.height >= h else im.resize((w, h))
+        im = (im.resize((w, h), Image.Resampling.LANCZOS)
+              if im.width >= w and im.height >= h else im.resize((w, h)))
         im.save(out_path)
     if somente is not None:
         return {"out": str(out_path), "w": w, "h": h, "somente": somente, "ready": True, "elementos": []}
     if peca.get("jpg"):
         Image.open(out_path).convert("RGB").save(out_path.with_suffix(".jpg"), quality=int(peca.get("jpg_qualidade", 88)), optimize=True)
-    d = chrome_run(url, [f"--window-size={w},{h}", "--dump-dom"])
+    d = chrome_run(url, [f"--window-size={w},{h}", "--dump-dom"])   # o DOM é 1x
     rep = _dom_report(d.stdout)
     rep.update({"out": str(out_path), "html": str(html_p), "w": w, "h": h, "formato": peca.get("formato"), "kb": out_path.stat().st_size // 1024})
     rep_p = peca_path.with_suffix(".report.json")
@@ -2165,11 +2187,14 @@ def cmd_validate(args) -> int:
 
 # ----------------------------------------------------------------------------- sheet / manifest / output
 
-def _img_data_uri(p: Path, max_side: int = 900) -> str:
+def _img_data_uri(p: Path, max_side: int = 900, qualidade: int = 92) -> str:
+    """A imagem embutida no HTML. `qualidade` sobe para a apresentação: JPEG
+    80 em letra branca sobre fundo chapado deixa um halo em volta de cada
+    letra, e é o tipo de peça que esta casa faz."""
     im = Image.open(p).convert("RGB")
-    im.thumbnail((max_side, max_side))
+    im.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
     import base64, io
-    buf = io.BytesIO(); im.save(buf, "JPEG", quality=80)
+    buf = io.BytesIO(); im.save(buf, "JPEG", quality=qualidade, subsampling=0)
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 

@@ -546,6 +546,10 @@ header .saldo.apertado .fio i{background:var(--err)}
 #lupa.hidden{display:none}
 /* contra a janela, e não contra a célula da grade: a célula cresce com a
    imagem, e `100%` dela não limitava nada — a peça saía maior que a tela */
+/* a cópia em dobro tem o dobro dos pixels: sem travar a largura ela
+   apareceria duas vezes maior que a peça. `zoom` deixa a medida na tela ser a
+   do formato e a nitidez ser a do arquivo grande. */
+#lupa img.dobro{zoom:.5}
 #lupa img,#lupa video{max-width:calc(100vw - 60px);max-height:calc(100vh - 70px);object-fit:contain;
   border-radius:4px;display:block;box-shadow:0 30px 90px rgba(0,0,0,.7)}
 #lupa img[hidden],#lupa video[hidden]{display:none}
@@ -1694,10 +1698,17 @@ async function acompanhar(){
           `<button class="olho" title="Ampliar">⤢</button>`
           + (d.modo === 'sem' || d.arquivado ? ''
              : `<button class="mao" title="Ajustar a diagramação">ajustar</button>`));
+        // AMPLIAR MOSTRA A CÓPIA EM DOBRO. O arquivo do formato tem o
+        // tamanho que a rede exige — 300x600 é 300x600 — e olhado grande,
+        // numa tela retina, ele é metade dos pixels que a tela tem. A peça
+        // parecia de baixa resolução sem nunca ter sido.
+        const emDobro = (d.entregas || []).find(e => e.nome === id + '@2x.png');
         cx.querySelector('.olho').onclick = ev => {
           ev.stopPropagation();
           const vd = cx.querySelector('video'), im = cx.querySelector('img');
-          if (vd || im) ampliar((vd || im).src, id, !!vd);
+          if (vd) return ampliar(vd.src, id, true);
+          if (im) ampliar(emDobro
+            ? `/jobs/${job}/arquivos/${encodeURIComponent(emDobro.nome)}` : im.src, id, false);
         };
         const mao = cx.querySelector('.mao');
         if (mao) mao.onclick = ev => { ev.stopPropagation(); abrirEditor(id); };
@@ -2615,6 +2626,7 @@ function ampliar(url, fid, filme){
   if (filme){ vd.src = url; vd.play().catch(() => {}); }
   else { vd.pause(); vd.removeAttribute('src'); }
   im.src = filme ? '' : url;
+  im.classList.toggle('dobro', !filme && /@2x\.png/.test(url));
   l.querySelector('.pe').textContent = fid ? `${fid} · clique para fechar` : 'clique para fechar';
   // de ver para ajustar sem fechar e procurar o botão de novo: é a decisão
   // que se toma olhando a peça grande

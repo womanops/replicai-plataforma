@@ -27,7 +27,7 @@ from api.tarefas import (MODOS, MODO_PADRAO, TEXTO_NOVO, modo_possivel, previas,
                          processar, processar_video, redesenhar, refazer_fundo,
                          refazer_peca)
 from api.fila import FILA_VIDEO, fila_do_ambiente
-from motor.replica import formato_by_id, load_formatos
+from motor.replica import ESCALA_DO_RENDER, formato_by_id, load_formatos
 
 ambiente.carregar()          # antes de qualquer coisa ler os.environ
 
@@ -1370,8 +1370,12 @@ def para_entregar(estado: dict, itens: list[dict]) -> list[dict]:
     """
     prontas = list(estado.get("prontas") or [])
     # o PDF entra: é ele que se manda para o cliente aprovar, e sem ele o
-    # pacote volta a ser oito arquivos soltos para quem recebe adivinhar
-    quero = {f"{fid}.png" for fid in prontas} | {"apresentacao.pdf"}
+    # pacote volta a ser oito arquivos soltos para quem recebe adivinhar.
+    # A cópia em dobro entra também: o arquivo do formato tem o tamanho que a
+    # rede exige, e esse é pequeno para olhar de perto, aprovar ou imprimir.
+    quero = ({f"{fid}.png" for fid in prontas}
+             | {f"{fid}@{ESCALA_DO_RENDER}x.png" for fid in prontas}
+             | {"apresentacao.pdf"})
     fica = []
     for it in itens:
         nome = it["nome"]

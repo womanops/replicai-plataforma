@@ -15,11 +15,17 @@ import json
 from datetime import date
 from pathlib import Path
 
-from motor.replica import _img_data_uri, chrome_run, formato_by_id
+from motor.replica import (ESCALA_DO_RENDER, _img_data_uri, chrome_run,
+                           formato_by_id)
 
 # a apresentação é a última coisa do trabalho e não pode segurá-lo: passou
 # disto, a entrega sai sem ela e dizendo que saiu
 ESPERA = 180
+
+# o maior lado da imagem dentro da folha. A peça aparece num espaço de 1100 px
+# e pode crescer até três vezes o tamanho do formato: com 1400 o PDF já tinha
+# menos pixels do que a folha mostra, e quem abre e dá zoom vê o mingau.
+LADO_NA_FOLHA = 2400
 
 FOLHA = """<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>{titulo}</title>
 <style>
@@ -115,12 +121,18 @@ def montar(pasta: Path, estado: dict) -> Path:
             continue
         f = formato_by_id(fid) or {}
         from PIL import Image
+        # a MEDIDA é a do formato; a IMAGEM é a desenhada em dobro, quando ela
+        # existe. Um banner pequeno cresce até três vezes para ocupar a folha,
+        # e a 1x isso vira mingau — a peça parecia de baixa resolução no PDF
+        # sem nunca ter sido.
         with Image.open(png) as im:
             w, h = im.size
+        grande = png.with_name(f"{png.stem}@{ESCALA_DO_RENDER}x.png")
         paginas.append(PAGINA.format(
             classe="", canal=html.escape(f.get("canal") or "Medida livre"),
             nome=html.escape(f.get("nome") or fid), w=w, h=h,
-            imagem=_img_data_uri(png, 1400), escala=_escala(w, h)))
+            imagem=_img_data_uri(grande if grande.exists() else png, LADO_NA_FOLHA),
+            escala=_escala(w, h)))
 
     if not paginas:
         raise ValueError("não há peça pronta para montar a apresentação")
