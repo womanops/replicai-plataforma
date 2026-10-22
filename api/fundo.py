@@ -96,9 +96,13 @@ def _melhor_continuacao(base, ex: dict, espera: int, plano: dict, w: int, h: int
             pronta = tela.resize((w, h), Im.Resampling.LANCZOS) if tela.size != (w, h) else tela
             pronta.save(prova)
             caixa = _to_target_coords(plano, 0, 0, w, h)["base_box"]
-            # cor fora da paleta pesa como traço inventado: as duas tornam a
-            # tentativa inútil, e insistir é mais barato do que entregar
-            nota = len(inventou_estrutura(prova, caixa)) + len(cor_estranha(prova, caixa, base))
+            # cor fora da paleta e texto inventado pesam como traço
+            # inventado: os três tornam a tentativa inútil, e insistir é mais
+            # barato do que entregar. Na insistência isto é o que evita gastar
+            # a segunda chamada repetindo o mesmo letreiro.
+            nota = (len(inventou_estrutura(prova, caixa))
+                    + len(cor_estranha(prova, caixa, base))
+                    + len(inventou_letreiro(prova, caixa)))
         finally:
             prova.unlink(missing_ok=True)
         if nota == 0:
@@ -269,7 +273,11 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
         avisos = (inventou_estrutura(destino, plano["base_box"])
                   # e a pergunta oposta: um bloco chapado não inventa traço
                   # nenhum e passava, mesmo sendo magenta num KV azul
-                  + cor_estranha(destino, plano["base_box"], img))
+                  + cor_estranha(destino, plano["base_box"], img)
+                  # e a terceira: o generativo escreveu. Num site-hero real
+                  # ele encheu as duas pontas de letreiro falso e a peça saiu
+                  # falando de faixa encolhida, nada sobre texto inventado
+                  + inventou_letreiro(destino, plano["base_box"]))
 
     # cor absurda não é ressalva: o generativo devolveu faixa magenta num KV
     # azul e a peça saiu "com ressalva" — ninguém publica isso, e entregar é só
@@ -279,21 +287,29 @@ def preparar(arte: Path, formato: dict, protegido=None, destino: Path | None = N
         medidas = medidas_de_cor(destino, plano["base_box"], img)
         pior = max((m[0] for m in medidas.values()), default=0.0)
         mancha = max((m[1] for m in medidas.values()), default=0.0)
-        if pior >= COR_RECUSADA or mancha >= MANCHA:
+        # texto inventado é da mesma família da cor absurda: não é ressalva,
+        # é outra peça. Ninguém publica um fundo com palavra que ninguém
+        # escreveu — e avisar, ali, é só empurrar o problema para quem assina
+        escreveu = inventou_letreiro(destino, plano["base_box"])
+        if pior >= COR_RECUSADA or mancha >= MANCHA or escreveu:
             tela = base
             for lado in ("left", "right", "top", "bottom"):
                 tela = _stretch_side(tela, lado, ex[lado])
             final = tela.resize((w, h), Image.Resampling.LANCZOS) if tela.size != (w, h) else tela
             final.save(destino)
             modo = "stretch"
-            caiu_para = ((f"o fundo generativo saiu numa cor que não existe na arte "
+            caiu_para = ("o fundo generativo escreveu texto que a arte não tem e foi "
+                         "descartado: peça não ganha palavra que ninguém escreveu"
+                         if escreveu else
+                         (f"o fundo generativo saiu numa cor que não existe na arte "
                           f"(distância {pior:.0f} da paleta dela) e foi descartado")
                          if pior >= COR_RECUSADA else
                          (f"{round(mancha * 100)}% da faixa continuada saiu numa cor "
                           f"que não existe na arte e foi descartada: mancha de cor "
                           f"estranha na peça não é continuação"))
             avisos = (inventou_estrutura(destino, plano["base_box"])
-                      + cor_estranha(destino, plano["base_box"], img))
+                      + cor_estranha(destino, plano["base_box"], img)
+                      + inventou_letreiro(destino, plano["base_box"]))
 
     # a assinatura guarda o plano e se a conferência passou: é com ela que a
     # exportação final sabe o que reaproveitar e o que precisa refazer
@@ -400,6 +416,117 @@ def inventou_estrutura(caminho, base_box) -> list[str]:
                 f"o fundo esticado no {nome} criou um traço que a arte não tem. "
                 f"Refaça o fundo desta peça")
     return avisos
+
+
+# ---------- letreiro inventado ----------
+# Quanta troca de tinta numa linha já é "linha de letra". Uma linha de texto
+# acende e apaga a tinta muitas vezes; uma borda de objeto, duas.
+TROCAS_DE_LETRA = 8
+# Até que fração das linhas da faixa pode estar cheia para ainda valer a
+# pergunta. Acima disso a faixa é foto ou textura, e ali a régua não sabe
+# distinguir letra de grão — e chutar seria acusar toda peça com fundo rico.
+DENSIDADE_DE_FOTO = 0.25
+# A altura de uma linha de texto, em fração da altura da peça.
+LINHA_DE_TEXTO = (0.006, 0.07)
+# Faixa mais estreita que isto não comporta palavra nenhuma: acusá-la de ter
+# escrito algo é acusar o brilho de um dedo. Foi o único falso positivo em
+# quarenta fundos reais — uma faixa de 36 px.
+FAIXA_QUE_ESCREVE = 80
+# Quanto as linhas de um bloco de texto se cobrem na horizontal. Medido: o
+# letreiro inventado deu 0,69 e 0,96; o brilho de um dedo e a linha de luz de
+# um KV deram 0,00 e 0,22.
+EMPILHADO = 0.5
+
+
+def _blocos_de_linha(a, corte: int = TROCAS_DE_LETRA):
+    """Blocos de linhas seguidas em que a tinta troca muitas vezes, quanto da
+    faixa está cheia, e quanto as linhas cheias se sobrepõem na horizontal.
+
+    Texto vira blocos curtos, de altura parecida, separados por linhas
+    quietas — a entrelinha — e EMPILHADOS: as linhas de um bloco de texto
+    começam e acabam quase no mesmo lugar. Textura de foto vira um bloco só,
+    comprido; brilho de objeto vira linhas espalhadas que não se alinham com
+    ninguém.
+    """
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    im = Image.fromarray(a.astype("uint8"))
+    local = np.asarray(im.filter(ImageFilter.BoxBlur(9)), dtype=float)
+    tinta = np.abs(a - local) > 14
+    trocas = np.abs(np.diff(tinta.astype(np.int8), axis=1)).sum(axis=1)
+    cheias = trocas >= corte
+    blocos, n = [], 0
+    for v in cheias:
+        if v:
+            n += 1
+        elif n:
+            blocos.append(n)
+            n = 0
+    if n:
+        blocos.append(n)
+
+    pontas = [(xs.min(), xs.max()) for xs in
+              (np.where(tinta[y])[0] for y in np.where(cheias)[0]) if len(xs)]
+    sobrepoe = 0.0
+    if len(pontas) > 1:
+        dentro = min(p[1] for p in pontas) - max(p[0] for p in pontas)
+        sobrepoe = max(0, dentro) / max(1, max(p[1] - p[0] for p in pontas))
+    return blocos, (cheias.sum() / max(1, len(cheias))), sobrepoe
+
+
+def _tem_letreiro(a, altura_da_peca: int) -> bool:
+    """Há um bloco de texto desenhado nesta faixa?
+
+    Duas ou mais linhas de letra, de altura parecida, numa faixa que no mais
+    está quieta. É o que separa o letreiro inventado — "CAFIDAHILO LIDA",
+    "ITCO UHNI" — da textura da foto que a faixa continua: a foto enche a
+    faixa inteira, o letreiro são três riscos de sete pixels com entrelinha
+    entre eles.
+    """
+    blocos, densidade, sobrepoe = _blocos_de_linha(a)
+    if densidade > DENSIDADE_DE_FOTO:
+        return False                       # foto ou textura: a régua não sabe
+    if sobrepoe < EMPILHADO:
+        return False                       # linhas espalhadas: brilho, não texto
+    baixo, alto = (round(altura_da_peca * f) for f in LINHA_DE_TEXTO)
+    linhas = sorted(b for b in blocos if baixo <= b <= max(alto, baixo + 1))
+    if len(linhas) < 2:
+        return False
+    # alturas parecidas: linha de texto repete a medida, respingo não
+    meio = linhas[len(linhas) // 2]
+    return sum(1 for b in linhas if abs(b - meio) <= meio * 0.5) >= 2
+
+
+def inventou_letreiro(caminho, base_box) -> list[str]:
+    """A extensão escreveu texto que a arte não tem?
+
+    Numa rodada real o generativo encheu as duas pontas de um site-hero com
+    letreiro falso — "CAFIDAHILD LIO'A", "ITOЯ UIÉNI" —, um segundo botão e
+    blocos de texto ilegível. A peça saiu com ressalva sobre faixa encolhida
+    e nada sobre conteúdo inventado. A casa não inventa: a extensão continua
+    o desenho do fundo, não escreve.
+    """
+    import numpy as np
+    from PIL import Image
+
+    caminho = Path(caminho)
+    if not caminho.exists() or not base_box:
+        return []
+    with Image.open(caminho) as im:
+        a = np.asarray(im.convert("L"), dtype=float)
+    H, W = a.shape
+    x0, y0, x1, y1 = (int(v) for v in base_box)
+    faixas = {"à esquerda": a[:, :x0], "à direita": a[:, x1:],
+              "no topo": a[:y0, :], "no rodapé": a[y1:, :]}
+    achados = [nome for nome, faixa in faixas.items()
+               if min(faixa.shape) >= 16
+               and max(faixa.shape[1], 0) >= FAIXA_QUE_ESCREVE
+               and _tem_letreiro(faixa, H)]
+    if not achados:
+        return []
+    return [f"o fundo esticado {' e '.join(achados)} escreveu texto que a arte "
+            f"não tem. Refaça o fundo desta peça"]
 
 
 # quanto a cor da faixa pode se afastar da paleta da arte, em distância RGB
