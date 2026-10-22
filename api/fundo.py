@@ -133,6 +133,13 @@ def _continuar(base, ex: dict, espera: int):
         # credencial ou crédito. Custou meia hora de busca errada uma vez.
         levou = monotonic() - comecou
         porque = log.get("erro") or "sem resposta"
+        # O QUE O SERVIÇO RESPONDEU, junto. "upload não devolveu UUID" diz
+        # que a conversa falhou e não diz por quê: a mesma frase serve para
+        # sessão expirada, arquivo grande demais e cota no fim. A resposta
+        # dele estava no log e morria ali — quem foi atrás gastou a tarde.
+        dito = " ".join((log.get("stdout") or "").split())[-180:]
+        if dito:
+            porque = f"{porque} — o serviço respondeu: {dito}"
         if levou >= espera * 0.9:
             return None, f"o fundo generativo não respondeu em {espera}s ({porque})"
         return None, (f"o fundo generativo recusou em {round(levou)}s: {porque}. "

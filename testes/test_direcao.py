@@ -522,7 +522,35 @@ class TestOQueFicaPequenoEDito:
         from api.psd import LETRA_MINIMA, o_que_fica_pequeno
         avisos = o_que_fica_pequeno(self._elementos(), 0.5)   # 14 px * 0.5 = 7
         assert avisos and f"{LETRA_MINIMA} px" in avisos[0]
-        assert "linha de apoio" in avisos[0], "fala em `apoio`, que é palavra do arquivo"
+        assert "assinatura" in avisos[0], "o nome da camada é o que ela reconhece"
+
+    def test_sem_nome_de_camada_vale_o_nome_da_peca(self):
+        """`apoio` é palavra de dentro do arquivo."""
+        from api.psd import o_que_fica_pequeno
+        els = [dict(e) for e in self._elementos()]
+        for e in els:
+            e.pop("camada", None)
+        avisos = o_que_fica_pequeno(els, 0.5)
+        assert any("linha de apoio" in a for a in avisos), avisos
+
+    def test_todo_conteudo_entra_na_conta(self):
+        """A régua nasceu para decidir o que TIRAR, e aí só o acessório era
+        candidato. Hoje ela só mede e diz — calar sobre um título de 10 px é
+        esconder justamente o que estraga a peça. E num PSD de texto
+        rasterizado todo o conteúdo chega como `figura`."""
+        from api.psd import o_que_fica_pequeno
+        els = [{"papel": "figura", "assinatura": True, "camada": "Título",
+                "box": {"x": 10, "y": 10, "w": 300, "h": 20}}]
+        assert [a for a in o_que_fica_pequeno(els, 0.2) if "Título" in a]
+
+    def test_desenho_do_fundo_nao_entra(self):
+        """Textura e foto não são lidas: acusá-las seria ruído em toda peça."""
+        from api.psd import o_que_fica_pequeno
+        els = [{"papel": "figura", "camada": "Textura",
+                "box": {"x": 0, "y": 0, "w": 900, "h": 6}},
+               {"papel": "figura", "plantado": ["left"], "camada": "Foto",
+                "box": {"x": 0, "y": 0, "w": 900, "h": 6}}]
+        assert o_que_fica_pequeno(els, 0.2) == []
 
     def test_o_aviso_diz_onde_resolver(self):
         """Medir e calar é metade: a saída existe e é a tela de ajuste."""

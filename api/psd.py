@@ -725,9 +725,20 @@ def tinta_de(leitura: Leitura) -> tuple[int, int, int, int] | None:
     # a área protegida para além do próprio quadro
     # a figura plantada fica de fora; a foto da colagem também. A tinta é o
     # que a assinatura ocupa, e é por ela que o lockup é escalado na faixa
-    camadas = [c for c in leitura.camadas
-               if not c.plantada and (c.tipo == "texto" or MARCA.search(c.nome or ""))]
-    camadas = camadas or [c for c in leitura.camadas if not c.plantada] or leitura.camadas
+    soltas = [c for c in leitura.camadas if not c.plantada]
+    textos = [c for c in soltas if c.tipo == "texto"]
+    if textos:
+        # com texto no arquivo, a tinta é ele mais a marca
+        camadas = textos + [c for c in soltas
+                            if c not in textos and MARCA.search(c.nome or "")]
+    else:
+        # SEM NENHUMA CAMADA DE TEXTO a conta era outra e estava errada: só a
+        # camada com cara de marca entrava, e a tinta virava a caixa da
+        # logomarca sozinha. Todo o resto — o título, o apoio, o botão —
+        # passava a ser "fundo", e o reenquadramento os levava para fora do
+        # quadro. Muito PSD de cliente chega com o texto rasterizado: ali as
+        # camadas soltas SÃO o conteúdo, todas elas.
+        camadas = soltas or leitura.camadas
     if not camadas:
         return None
     xs0 = min(c.box["x"] for c in camadas)
@@ -1604,12 +1615,26 @@ MARCA_ATE = 0.02          # da área da arte
 MARCA_PERTO = 0.05        # da menor dimensão da arte
 
 
-def _da_assinatura(e: dict, tinta, W: int, H: int) -> bool:
+def so_camadas_de_pixel(leitura: "Leitura") -> bool:
+    """O arquivo não tem nenhuma camada de texto?
+
+    Muito PSD de cliente chega com o texto rasterizado. Ali não há como
+    distinguir título de desenho pelo tipo da camada — e, se o arquivo não
+    tem texto nenhum, o que está solto É o conteúdo: título, apoio, marca,
+    botão. Tratar isso como desenho foi o que mandou o título da Torra para
+    fora do quadro, com a peça saindo "pronta".
+    """
+    return not any(c.tipo == "texto" for c in leitura.camadas)
+
+
+def _da_assinatura(e: dict, tinta, W: int, H: int, so_pixel: bool = False) -> bool:
     """Esta parte acompanha o lockup, ou acompanha o fundo?"""
     if e.get("plantado"):
         return False                      # plantada na borda: é do fundo
     if e.get("papel") != "figura":
         return True                       # texto, marca, selo: lockup
+    if so_pixel:
+        return True                       # sem camada de texto, o solto é conteúdo
     b = e["box"]
     if not tinta or b["w"] * b["h"] > W * H * MARCA_ATE:
         return False
@@ -1623,7 +1648,8 @@ def tinta_com_a_marca(leitura: "Leitura", base: list[dict], W: int, H: int):
     tinta = tinta_de(leitura)
     if not tinta:
         return None
-    caixas = [e["box"] for e in base if _da_assinatura(e, tinta, W, H)]
+    so_pixel = so_camadas_de_pixel(leitura)
+    caixas = [e["box"] for e in base if _da_assinatura(e, tinta, W, H, so_pixel)]
     if not caixas:
         return tinta
     return (min(tinta[0], min(b["x"] for b in caixas)),
@@ -1728,13 +1754,29 @@ def _bloco(e: dict):
 
 
 def _ilegivel(bloco: list[dict], escala: float, linha=None) -> bool:
-    """Esta FRASE vai ser lida no tamanho real da peça?
+    """Este BLOCO vai ser lido no tamanho real da peça?
 
-    Pela linha mais alta dela: se nem a maior é lida, nenhuma é.
+    Pela linha mais alta dele: se nem a maior é lida, nenhuma é.
+
+    Vale para tudo que é conteúdo, e não só para apoio e selo. A régua nasceu
+    para decidir o que TIRAR, e aí só o acessório era candidato; hoje ela só
+    mede e diz, e aí calar sobre um título de 10 px é esconder justamente o
+    que estraga a peça. Num PSD de texto rasterizado todo o conteúdo chega
+    como `figura`, e a régua antiga ficava cega.
     """
-    return (bloco[0].get("papel") in PODE_SAIR
-            and not any(_na_linha(e["box"], linha) for e in bloco)
+    if e_do_fundo(bloco[0]):
+        return False
+    return (not any(_na_linha(e["box"], linha) for e in bloco)
             and max(e["box"]["h"] for e in bloco) * escala < LETRA_MINIMA)
+
+
+def e_do_fundo(e: dict) -> bool:
+    """Desenho que acompanha o fundo — não é conteúdo a ser lido."""
+    if e.get("plantado"):
+        return True
+    if "assinatura" in e:
+        return not e["assinatura"]
+    return e.get("papel") == "figura"
 
 
 def o_que_fica_pequeno(elementos: list[dict], escala: float) -> list[str]:
@@ -1754,19 +1796,50 @@ def o_que_fica_pequeno(elementos: list[dict], escala: float) -> list[str]:
     blocos: dict = {}
     for e in elementos:
         blocos.setdefault(_bloco(e), []).append(e)
-    nomes = sorted({blocos[b][0].get("papel") or "?"
-                    for b, pedacos in blocos.items() if _ilegivel(pedacos, escala, linha)})
     # o nome que a peça usa, não o do arquivo: "apoio" e "selo" são palavras
-    # de dentro do PSD. Mesmo vocabulário da régua de contraste.
+    # de dentro do PSD. Mesmo vocabulário da régua de contraste — e, quando a
+    # camada tem nome de gente ("Título", "Botão"), é ele que vale
     from api.contraste import NA_PECA
-    return [f"{NA_PECA.get(n, n)} sai com menos de {LETRA_MINIMA} px nesta medida, e "
-            f"abaixo disso a letra não se lê. No ajuste dá para aumentar ou tirar"
-            for n in nomes]
+    nomes = sorted({(blocos[b][0].get("camada")
+                     or NA_PECA.get(blocos[b][0].get("papel"), blocos[b][0].get("papel") or "?"))
+                    for b, pedacos in blocos.items() if _ilegivel(pedacos, escala, linha)})
+    return [f"`{n}` sai com menos de {LETRA_MINIMA} px nesta medida, e abaixo disso a "
+            f"letra não se lê. No ajuste dá para aumentar ou tirar" for n in nomes]
 
 
 def _e_assinatura(e: dict) -> bool:
     return (e["assinatura"] if "assinatura" in e
             else not (e.get("plantado") or e.get("papel") == "figura"))
+
+
+# quanto de um elemento pode passar da borda antes de ele estar FORA. Um
+# pedaço de desenho sangrando é projeto; a frase da peça pela metade, não.
+PASSOU_DA_BORDA = 0.25
+
+
+def _fora_do_quadro(e: dict, formato: dict) -> float:
+    """Que fração da área deste elemento caiu fora do canvas."""
+    b = e["box"]
+    area = max(1, b["w"] * b["h"])
+    dentro_w = max(0, min(b["x"] + b["w"], formato["w"]) - max(b["x"], 0))
+    dentro_h = max(0, min(b["y"] + b["h"], formato["h"]) - max(b["y"], 0))
+    return 1 - (dentro_w * dentro_h) / area
+
+
+def o_que_saiu_do_quadro(elementos: list[dict], formato: dict) -> list[int]:
+    """Quem ficou (quase) todo fora da peça.
+
+    A rede de segurança que faltava. O título de um PSD com texto rasterizado
+    entra como `figura` — camada de pixel não se distingue de desenho — e o
+    reenquadramento o levou junto com o fundo para fora do quadro: no
+    yt-thumb a caixa dele foi parar em y=-746. A peça saiu sem a frase e com
+    `status: pronto`, `avisos: {}`. Entregar a peça sem o que ela diz, calado,
+    é o pior jeito de errar.
+
+    Desenho plantado na borda não conta: ele sangra de propósito.
+    """
+    return [i for i, e in enumerate(elementos)
+            if not e.get("plantado") and _fora_do_quadro(e, formato) > PASSOU_DA_BORDA]
 
 
 def _quanto_cabe(elementos: list[dict], formato: dict) -> float:
@@ -1810,7 +1883,9 @@ def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
         with open_rgb(arte) as im:
             W0, H0 = im.size
         tinta0 = tinta_de(leitura)
-        base = [dict(e, assinatura=_da_assinatura(e, tinta0, W0, H0)) for e in base]
+        so_pixel = so_camadas_de_pixel(leitura)
+        base = [dict(e, assinatura=_da_assinatura(e, tinta0, W0, H0, so_pixel))
+                for e in base]
     ancora = _ancora_centrada(leitura, formato, arte,
                               ancora_das_bordas(set(leitura.plantada_em)))
     protegido = (tinta_com_a_marca(leitura, base, W0, H0) if cortando is not None
@@ -1830,6 +1905,27 @@ def reenquadrar(leitura: Leitura, formato: dict, pasta: Path,
         # assim estar dois pixels fora do quadro, que foi o logotipo do cliente
         # saindo cortado no alto do 320x50
         movidos = _caber(movidos, formato, min(1.0, cortando))
+        # O QUE SAIU DO QUADRO VOLTA. Camada de pixel com texto dentro entra
+        # como `figura`, e figura acompanha o fundo: cortando o fundo, a
+        # frase da peça ia junto para fora. Quem caiu fora não é desenho que
+        # acompanha o corte — é conteúdo, e conteúdo anda com o lockup. A
+        # casa não corta conteúdo.
+        saiu = o_que_saiu_do_quadro(movidos, formato)
+        if saiu:
+            movidos = [dict(e, assinatura=True) if i in saiu else e
+                       for i, e in enumerate(movidos)]
+            movidos = _caber(movidos, formato, min(1.0, _quanto_cabe(movidos, formato)))
+            trazidos = sorted({(movidos[i].get("camada") or movidos[i].get("papel") or "?")
+                               for i in saiu})
+            miudas.append("o reenquadramento desta medida jogava "
+                          + ", ".join(f"`{t}`" for t in trazidos)
+                          + " para fora do quadro: trazido para dentro com o lockup")
+            ainda = o_que_saiu_do_quadro(movidos, formato)
+            if ainda:
+                nomes = ", ".join(sorted({(movidos[i].get("camada")
+                                           or movidos[i].get("papel") or "?") for i in ainda}))
+                raise ValueError(f"nesta medida {nomes} não cabe no quadro nem junto "
+                                 f"do lockup — a peça sairia sem essa parte")
     elementos_finais, encolheu = _afastar(movidos, leitura, pasta, formato)
     return {
         "formato": formato["id"],
@@ -2132,10 +2228,11 @@ def ampliar_e_centrar(leitura: "Leitura", formato: dict, pasta: Path,
 
     W, H, s = formato["w"], formato["h"], formato["safe"]
     so_texto = tinta_de(leitura) or tinta
+    so_pixel = so_camadas_de_pixel(leitura)
     assinatura = [dict(e, assinatura=True) for e in base
-                  if _da_assinatura(e, so_texto, W0, H0)]
+                  if _da_assinatura(e, so_texto, W0, H0, so_pixel)]
     desenho = [dict(e, box=pf.mover(e["box"], info["plano"])) for e in base
-               if not _da_assinatura(e, so_texto, W0, H0)]
+               if not _da_assinatura(e, so_texto, W0, H0, so_pixel)]
     if not assinatura:
         return None
 
@@ -2159,6 +2256,12 @@ def ampliar_e_centrar(leitura: "Leitura", formato: dict, pasta: Path,
     # diagramação que ninguém pediu.
     postos = pousar(W / 2, H / 2)
 
+    # a mesma régua do outro caminho. Ela morava só lá, e é AQUI que a
+    # informação é reduzida até caber: no 728x90 o lockup inteiro desta arte
+    # desceu para 10 px de título e 1 px de apoio, e a peça saía sem dizer
+    # nada. Medir e dizer; quem decide o que fazer é quem assina.
+    miudas = o_que_fica_pequeno(postos, 1.0)
+
     return {
         "formato": formato["id"],
         "canvas": {"w": W, "h": H},
@@ -2168,7 +2271,7 @@ def ampliar_e_centrar(leitura: "Leitura", formato: dict, pasta: Path,
         "fundo": {"tipo": "imagem", "src": info["src"], "fit": "cover"},
         "fontes": [],
         "elementos": _plantar(desenho, formato) + postos,
-        "_fundo": info,
+        "_fundo": {**info, "avisos": list(info.get("avisos") or []) + miudas},
     }
 
 

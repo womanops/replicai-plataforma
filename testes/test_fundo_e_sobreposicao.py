@@ -894,3 +894,31 @@ class TestNaoPedirOQueNaoPrecisa:
         pf.preparar(arte, formato_by_id("ig-feed-1x1"), (0, 0, 1920, 1080),
                     tmp_path / "f.png", modo="outpaint")
         assert chamou and any(chamou[0].values())
+
+
+class TestARecusaDoGenerativoDizOQueOServicoDisse:
+    """"O fundo generativo recusou em 2s: upload não devolveu UUID."
+
+    A frase diz que a conversa falhou e não diz por quê — a mesma serve para
+    sessão expirada, arquivo grande demais e cota no fim. A resposta do
+    serviço estava no log e morria ali; quem foi atrás gastou a tarde, e o
+    `higgsfield account status` no terminal respondia normal.
+    """
+
+    def _recusa(self, monkeypatch, log):
+        from PIL import Image
+
+        from api import fundo
+        monkeypatch.setattr(fundo, "_outpaint_higgsfield", lambda *a, **k: (None, log))
+        base = Image.new("RGB", (40, 40), "#334455")
+        return fundo._continuar(base, {"left": 10, "right": 0, "top": 0, "bottom": 0}, 180)[1]
+
+    def test_a_resposta_do_servico_vai_junto(self, monkeypatch):
+        msg = self._recusa(monkeypatch, {"erro": "upload não devolveu UUID",
+                                         "stdout": "Error: session expired, run `higgsfield auth login`"})
+        assert "upload não devolveu UUID" in msg
+        assert "session expired" in msg, "a resposta do serviço continua morrendo no log"
+
+    def test_sem_resposta_a_frase_continua_inteira(self, monkeypatch):
+        msg = self._recusa(monkeypatch, {"erro": "upload não devolveu UUID"})
+        assert "upload não devolveu UUID" in msg and "respondeu:" not in msg
