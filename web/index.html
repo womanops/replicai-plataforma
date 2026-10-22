@@ -597,7 +597,18 @@ header .saldo.apertado .fio i{background:var(--err)}
 #editor .camadas button{display:flex;justify-content:space-between;align-items:center;gap:10px;
   padding:9px 11px;border-radius:9px;border:1px solid var(--linha);background:var(--painel);
   color:var(--fg);font:500 13px var(--corpo);cursor:pointer;text-align:left}
-#editor .camadas button small{font:400 10px var(--mono);color:var(--mut);white-space:nowrap}
+#editor .camadas button small{font:400 10px var(--mono);color:var(--mut);white-space:nowrap;
+  margin-left:auto}
+/* a miniatura da camada, sobre xadrez: é ela que diz qual elemento é */
+#editor .camadas button .mini{width:26px;height:26px;flex:none;border-radius:5px;
+  object-fit:contain;background-color:var(--painel2);
+  background-image:linear-gradient(45deg,rgba(var(--fgRGB),.07) 25%,transparent 25%,
+    transparent 75%,rgba(var(--fgRGB),.07) 75%),
+    linear-gradient(45deg,rgba(var(--fgRGB),.07) 25%,transparent 25%,
+    transparent 75%,rgba(var(--fgRGB),.07) 75%);
+  background-size:8px 8px;background-position:0 0,4px 4px}
+#editor .camadas button .mini.letra{display:grid;place-items:center;
+  font:500 12px var(--mono);color:var(--mut)}
 #editor .camadas button[aria-pressed=true]{border-color:var(--rosa);background:var(--painel2);
   box-shadow:inset 3px 0 0 var(--rosa)}
 #editor .camadas button[aria-pressed=true] b{color:var(--rosa)}
@@ -1618,6 +1629,10 @@ function limparPainel(){
   // houver peça pronta de novo
   $('#btnZip').style.display = 'none';
   for (const id of ['btnPdf', 'btnAnimar', 'btnFinal']) $('#' + id).hidden = true;
+  // o Replicar some ao mandar rodar e nunca voltava: subir outra arte depois
+  // de uma entrega deixava a tela sem como mandar a próxima, e a saída era
+  // recarregar o navegador
+  $('#btnIr').style.display = '';
   $('#mais').style.display = 'none';
   $('#menuMais').hidden = true;
   // e os cartões: fora a peça antiga, o vídeo antigo e o selo de ressalva
@@ -2682,6 +2697,10 @@ let reabrirPeca = false;
 
 const arquivoUrl = nome => `/jobs/${job}/arquivos/${encodeURIComponent(nome)}`;
 
+/* o corpo da letra de um elemento de texto, se ele tiver um */
+const corpoDe = e => (e.tipo === 'texto' || e.tipo === 'botao')
+  ? { min: e.min, max: e.max, tamanho: e.tamanho } : null;
+
 async function abrirEditor(fid){
   let pc;
   try { pc = await (await fetch(`/jobs/${job}/pecas/${fid}`)).json(); }
@@ -2693,6 +2712,12 @@ async function abrirEditor(fid){
   ed = { fid, peca: pc, k: 1, sel: null, trocas: {},
          boxes: pc.elementos.map(e => ({...e.box})),
          orig: pc.elementos.map(e => ({...e.box})),
+         // O CORPO DA LETRA. Puxar o canto de um texto crescia a CAIXA e
+         // deixava a letra do mesmo tamanho, porque `min`/`max` são o teto
+         // do ajuste automático e ficavam onde estavam: "não tem opção de
+         // aumentar a fonte dos textos". Agora eles andam junto com a caixa.
+         letras: pc.elementos.map(corpoDe),
+         letrasOrig: pc.elementos.map(corpoDe),
          // o recorte do fundo que já estava gravado, para reabrir no mesmo
          // lugar; `recorteMexido` é o que distingue "não toquei nisso" de
          // "tirei o recorte", que no servidor são coisas diferentes
@@ -2725,7 +2750,8 @@ function marcarPasso(junto){
     ed.ultimo.quando = agora; return;
   }
   ed.ultimo = { junto, quando: agora };
-  ed.passos.push({ boxes: ed.boxes.map(b => ({...b})), fora: new Set(ed.fora),
+  ed.passos.push({ boxes: ed.boxes.map(b => ({...b})),
+                   letras: ed.letras.map(c => c && {...c}), fora: new Set(ed.fora),
                    trocas: {...ed.trocas}, recorte: ed.recorte ? {...ed.recorte} : null,
                    recorteMexido: ed.recorteMexido });
   if (ed.passos.length > 40) ed.passos.shift();
@@ -2735,7 +2761,7 @@ function marcarPasso(junto){
 function desfazerPasso(){
   if (!ed || !ed.passos.length) return;
   const p = ed.passos.pop();
-  ed.boxes = p.boxes; ed.fora = p.fora; ed.trocas = p.trocas;
+  ed.boxes = p.boxes; ed.letras = p.letras; ed.fora = p.fora; ed.trocas = p.trocas;
   ed.recorte = p.recorte; ed.recorteMexido = p.recorteMexido;
   ed.ultimo = null;
   $('#edDesfaz').disabled = !ed.passos.length;
@@ -2757,6 +2783,7 @@ $('#edVolta').onclick = () => {
   if (!ed) return;
   marcarPasso();
   ed.boxes = ed.orig.map(b => ({...b}));
+  ed.letras = ed.letrasOrig.map(c => c && {...c});
   ed.fora.clear(); ed.trocas = {}; ed.sel = null;
   // o corte do fundo volta junto: "desfazer tudo" que deixa uma coisa feita
   // é a pior espécie de desfazer. `recorteMexido` fica marcado para o
@@ -2771,23 +2798,40 @@ $('#edVolta').onclick = () => {
 const PAPEIS = { headline: 'Título', apoio: 'Apoio', cta: 'Botão', selo: 'Selo',
                  marca: 'Marca', figura: 'Figura', legenda: 'Legenda', titulo: 'Título' };
 
-function nomeDaCamada(g){
+/* o que o Photoshop deixa no nome da camada e não diz nada: "Camada 9",
+   "Objeto Inteligente de Vetor copiar 3", "Vector Smart Object" */
+const NOME_VAZIO = /^(camada|layer|grupo|group|objeto inteligente( de vetor)?|vector smart object|smart object|objeto inteligente vectorial|forma|shape|rect(angle|ângulo)?|elipse|ellipse|path|caminho|imagem|image|bitmap|fundo|background|bg)\b/i;
+
+function nomeDaCamada(g, n){
   const e = ed.peca.elementos[g.itens[0]] || {};
   const papel = PAPEIS[e.papel] || e.papel || 'Elemento';
   const dito = textoDoGrupo(g);
-  // texto: o que ele diz é o melhor nome que existe. Imagem: o papel, com o
-  // nome da camada do arquivo em letra pequena, para quem conhece o PSD
-  return dito ? { nome: dito.slice(0, 28), tipo: papel.toLowerCase() }
-              : { nome: papel, tipo: (g.rotulo || '').slice(0, 22) };
+  // texto: o que ele diz é o melhor nome que existe
+  if (dito) return { nome: dito.slice(0, 28), tipo: papel.toLowerCase() };
+  // imagem: o nome do arquivo só serve se for nome de gente. "Figura" em oito
+  // camadas não distingue nada, e era o que a lista mostrava
+  const cru = (g.rotulo || '').trim();
+  const util = cru && !NOME_VAZIO.test(cru);
+  const c = cerca(g.itens);
+  return { nome: util ? cru.slice(0, 26) : `${papel} ${n}`,
+           tipo: `${Math.round(c.w)}×${Math.round(c.h)}` };
 }
 
 function pintarPainel(){
   const lista = grupos();
   const atual = lista.find(g => g.chave === ed.sel);
+  // a MINIATURA da camada: é ela que diz qual elemento é. Nome de camada de
+  // PSD é lixo de arquivo na maioria das vezes, e "Figura" repetido oito
+  // vezes não distingue nada — quem reconhece o elemento é o olho
+  let fig = 0;
   $('#edCamadas').innerHTML = lista.map(g => {
-    const { nome, tipo } = nomeDaCamada(g);
+    const e0 = ed.peca.elementos[g.itens[0]] || {};
+    const { nome, tipo } = nomeDaCamada(g, ++fig);
+    const src = e0.src ? arquivoUrl(e0.src) : '';
     return `<button type="button" data-chave="${g.chave.replace(/"/g,'&quot;')}"`
-      + ` aria-pressed="${g.chave === ed.sel}"><b>${nome.replace(/</g,'&lt;')}</b>`
+      + ` aria-pressed="${g.chave === ed.sel}">`
+      + (src ? `<img class="mini" src="${src}" alt="">` : `<span class="mini letra">T</span>`)
+      + `<b>${nome.replace(/</g,'&lt;')}</b>`
       + `<small>${(tipo || '').replace(/</g,'&lt;')}</small></button>`;
   }).join('') + `<button type="button" data-chave="__fundo"${ed.sel === '__fundo' ? ' class="on"' : ''}>`
     + `<b>Fundo</b><small>${ed.recorte ? 'recortado' : 'cortar'}</small></button>`;
@@ -3022,6 +3066,7 @@ function pegar(el, g){
     el.setPointerCapture(ev.pointerId);
     const x0 = ev.clientX, y0 = ev.clientY;
     const antes = g.itens.map(i => ({...ed.boxes[i]}));
+    const letras = g.itens.map(i => ed.letras[i] && {...ed.letras[i]});
     const c0 = cerca(g.itens);
     let mexeu = false;
     const anda = e2 => {
@@ -3037,6 +3082,13 @@ function pegar(el, g){
         const fx = Math.max(.15, (c0.w + dx) / c0.w), fy = Math.max(.15, (c0.h + dy) / c0.h);
         ed.boxes[i] = { x: Math.round(c0.x + (a.x - c0.x) * fx), y: Math.round(c0.y + (a.y - c0.y) * fy),
                         w: Math.max(4, Math.round(a.w * fx)), h: Math.max(4, Math.round(a.h * fy)) };
+        // a letra cresce com a caixa: é a altura que manda, como no corpo de
+        // qualquer tipografia
+        const c = letras[n];
+        if (c) ed.letras[i] = {
+          min: c.min ? Math.max(6, Math.round(c.min * fy)) : c.min,
+          max: c.max ? Math.max(7, Math.round(c.max * fy)) : c.max,
+          tamanho: c.tamanho ? Math.max(6, Math.round(c.tamanho * fy)) : c.tamanho };
       });
       pintarLona();
     };
@@ -3230,8 +3282,10 @@ $('#edSalva').onclick = async () => {
   const elementos = ed.peca.elementos.map((e, i) => {
     if (ed.fora.has(i) || sumiu.has(i)) return null;
     const tr = trocado.get(i);
+    const corpo = ed.letras[i] || {};
+    const mudou = JSON.stringify(corpo) !== JSON.stringify(ed.letrasOrig[i] || {});
     return tr ? { i, box: tr.box, texto: tr.texto, tipografar: true }
-              : { i, box: ed.boxes[i] };
+              : { i, box: ed.boxes[i], ...(mudou ? corpo : {}) };
   }).filter(Boolean);
   if (!elementos.length && !confirm('Isto tira todos os elementos da peça. Seguir?')) return;
   $('#edSalva').disabled = true;

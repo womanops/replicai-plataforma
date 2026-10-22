@@ -1054,7 +1054,7 @@ def finalizar(job: str, c: contas.Conta = Depends(conta_atual)):
 # `src` fica de fora, senão um pedido forjado faria o motor desenhar — e
 # devolver no PNG — qualquer arquivo da máquina
 AJUSTAVEL = {"box", "texto", "align", "valign", "cor", "peso", "min", "max",
-             "lineHeight", "opacidade"}
+             "tamanho", "lineHeight", "opacidade"}
 
 # a família que o trabalho declara em `fontes`. Quem desenha é o navegador, e
 # ele só conhece a que foi copiada para a pasta do trabalho

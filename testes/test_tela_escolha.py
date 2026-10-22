@@ -335,7 +335,7 @@ class TestOPainelDoAjuste:
         """"headline" não é nome, e `Consigaz-Nino-Poses-Pose-5-A3-300dpi
         copiar` é o nome do arquivo, não o da coisa."""
         assert "const PAPEIS = { headline: 'Título'" in tela
-        assert "function nomeDaCamada(g)" in tela
+        assert "function nomeDaCamada(g, n)" in tela
 
     def test_o_texto_se_escreve_no_painel(self, tela):
         assert 'id="edTexto"' in tela
@@ -1578,4 +1578,76 @@ class TestOQueAjustarSoOndeAlguemLe:
         """Senão a instrução chega ao servidor para virar ressalva de algo
         que nunca teve como ser feito."""
         assert "fd.set('brief', modoPeca() === 'novo' ? $('#brief').value.trim() : '');" in tela
+
+
+class TestArteNovaDevolveORéplicar:
+    """"Se eu gero imagens e exporto e quero gerar novas num outro PSD, mesmo
+    subindo um novo, o botão de replicação não aparece — tenho que atualizar
+    o browser."
+
+    O Replicar some ao mandar rodar, e nada o trazia de volta: subir outra
+    arte depois de uma entrega deixava a tela sem como mandar a próxima.
+    """
+
+    def test_a_limpeza_devolve_o_botao(self, tela):
+        corpo = tela.split("function limparPainel(){")[1].split("async function acompanhar")[0]
+        assert "$('#btnIr').style.display = '';" in corpo
+
+
+class TestACamadaDizQualElementoE:
+    """"Nas camadas de ajustes, deveriam ficar nomenclaturas que dessem
+    clareza de qual elemento se trata: ficam a maioria escrito figura."
+
+    Nome de camada de PSD é lixo de arquivo — "Camada 9", "Objeto Inteligente
+    de Vetor copiar 3" — e o papel sozinho repete "Figura" oito vezes. Quem
+    reconhece o elemento é o olho.
+    """
+
+    def test_a_lista_mostra_a_miniatura_da_camada(self, tela):
+        corpo = tela.split("function pintarPainel(){")[1].split("const caixa = $('#edTextos')")[0]
+        assert 'class="mini"' in corpo and "arquivoUrl(e0.src)" in corpo
+
+    def test_nome_de_arquivo_sem_sentido_e_descartado(self, tela):
+        assert "const NOME_VAZIO = " in tela
+        for lixo in ("camada", "objeto inteligente", "vector smart object"):
+            assert lixo in tela.split("const NOME_VAZIO = ")[1].split("\n")[0].lower()
+
+    def test_figura_sem_nome_ao_menos_e_numerada(self, tela):
+        """"Figura" repetido não distingue; "Figura 1", "Figura 2" distingue."""
+        corpo = tela.split("function nomeDaCamada(g, n){")[1].split("\n}")[0]
+        assert "`${papel} ${n}`" in corpo
+
+    def test_e_a_medida_vai_junto(self, tela):
+        corpo = tela.split("function nomeDaCamada(g, n){")[1].split("\n}")[0]
+        assert "Math.round(c.w)}×${Math.round(c.h)}" in corpo
+
+
+class TestOCorpoDaLetraAcompanhaACaixa:
+    """"Não tem opção de aumentar a fonte dos textos e deveria."
+
+    Puxar o canto de um texto crescia a CAIXA e deixava a letra do mesmo
+    tamanho: `min`/`max` são o teto do ajuste automático e ficavam onde
+    estavam. O gesto já existia; o que faltava era ele levar o corpo junto.
+    """
+
+    def test_escalar_leva_o_corpo_junto(self, tela):
+        corpo = tela.split("function pegar(el, g){")[1].split("function textoDoGrupo")[0]
+        assert "ed.letras[i] = {" in corpo
+        assert "Math.round(c.min * fy)" in corpo and "Math.round(c.max * fy)" in corpo
+
+    def test_o_corpo_vai_no_pedido_quando_muda(self, tela):
+        corpo = tela.split("$('#edSalva').onclick")[1].split("acompanhar()")[0]
+        assert "...(mudou ? corpo : {})" in corpo
+
+    def test_desfazer_tudo_devolve_o_corpo(self, tela):
+        corpo = tela.split("$('#edVolta').onclick")[1].split("\n};")[0]
+        assert "ed.letras = ed.letrasOrig" in corpo
+
+    def test_o_passo_a_passo_tambem(self, tela):
+        corpo = tela.split("function marcarPasso(")[1].split("function desfazerPasso")[0]
+        assert "letras:" in corpo
+
+    def test_o_servidor_aceita_o_corpo_fixo(self):
+        from api.main import AJUSTAVEL
+        assert {"min", "max", "tamanho"} <= AJUSTAVEL
 

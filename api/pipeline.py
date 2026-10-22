@@ -15,6 +15,7 @@ import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from api.composicao import como_botao
 from api import (contraste, custo, fundo as prep_fundo, psd as leitor_psd,
                  sobreposicao, sossego)
 from api.compositor import ComposicaoImpossivel, Compositor, Terreno
@@ -656,7 +657,11 @@ def _texto_novo(peca: dict, formato: dict, pasta: Path, leitura, brief: str,
     # vez; aqui ela voltou no caminho novo, e o CTA saiu sem botão
     avisos = [f"o texto novo saiu pela régua, não pelo modelo — {d}"
               for d in extra.pop("_desvios", [])]
-    novos = [e for e in extra.get("elementos", []) if e.get("tipo") in ("texto", "botao")]
+    # CTA é botão, componha quem compuser: a régua sempre desenhou o calço, o
+    # modelo às vezes devolvia o mesmo CTA como linha de texto solta — e a
+    # mesma campanha saía com botão numa medida e sem botão na outra
+    novos = [como_botao(e, formato["h"])
+             for e in extra.get("elementos", []) if e.get("tipo") in ("texto", "botao")]
     peca["elementos"].extend(novos)
     # junta, não substitui: a chamada trocada já declarou a fonte da marca, e
     # sobrescrever aqui faria aquela linha sair na letra errada

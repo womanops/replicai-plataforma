@@ -386,6 +386,50 @@ def _posicionar(formato: dict, por_zona: dict, livres: dict | None = None,
 BOTAO_FUNDO = "#ffffff"
 
 
+def como_botao(el: dict, altura_da_peca: int) -> dict:
+    """Garante que um CTA saia como BOTÃO, com o calço atrás da letra.
+
+    "As peças menores ficaram sem o calço do botão Saiba Mais, como ficou a
+    maior peça." A régua sempre desenhou o CTA como botão; o modelo às vezes
+    devolvia o mesmo CTA como linha de texto solta. A mesma campanha saía com
+    botão numa medida e sem botão na outra — e um CTA sem calço não lê como
+    chamada para ação, lê como legenda.
+
+    O que decide não é quem compôs: é o papel. CTA é botão.
+    """
+    if el.get("tipo") == "botao" or el.get("papel") != "cta":
+        return el
+    box = dict(el.get("box") or {})
+    alt = int(box.get("h") or 0)
+    # o mesmo corpo da régua: vem da peça, não da caixa da coluna, senão numa
+    # faixa estreita o botão sai com letra minúscula
+    corpo = int(el.get("tamanho")
+                or max(14, min(round(altura_da_peca * 0.024), round(alt * 0.62) or 14)))
+    # O BOTÃO ABRAÇA O TEXTO. Herdando a caixa da coluna ele sai como uma
+    # barra branca atravessando a peça com a letra minúscula no meio — foi
+    # exatamente o que apareceu quando a conversão manteve a caixa que veio.
+    # A largura vem do texto, como na régua, e o que sobra fica centrado no
+    # lugar que o CTA já ocupava.
+    larg = min(int(box.get("w") or 0) or 10**6,
+               round(len(el.get("texto") or "") * corpo * 0.60) + corpo * 3)
+    # a pílula tem a altura que a letra pede. Espremida na caixa que veio —
+    # oito pixels, numa faixa — ela sairia como um risco branco com a letra
+    # saindo por cima. Fica centrada onde o CTA estava e dentro da peça.
+    altura = round(corpo * 2.4)
+    antes = int(box.get("h") or altura)
+    box["x"] = int(box.get("x", 0) + (int(box.get("w") or larg) - larg) // 2)
+    box["y"] = int(max(0, min(altura_da_peca - altura,
+                              box.get("y", 0) + (antes - altura) // 2)))
+    box["w"], box["h"] = int(larg), int(altura)
+    # A COR DA LETRA NÃO SE HERDA. Ela vinha de texto solto sobre arte escura,
+    # então era branca — e branca dentro de uma pílula branca é uma pílula
+    # vazia. Quem manda agora é o calço: letra escura sobre ele.
+    return {**el, "tipo": "botao", "box": box, "peso": el.get("peso") or 700,
+            "cor": "#101828", "fundo": el.get("fundo") or BOTAO_FUNDO,
+            "tamanho": corpo, "raio": el.get("raio") or round(altura / 2),
+            "letterSpacing": el.get("letterSpacing") or "0.03em"}
+
+
 ALINHAMENTO = {"esquerda": "left", "centro": "center", "direita": "right"}
 
 
