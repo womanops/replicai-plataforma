@@ -1836,10 +1836,15 @@ def o_que_saiu_do_quadro(elementos: list[dict], formato: dict) -> list[int]:
     `status: pronto`, `avisos: {}`. Entregar a peça sem o que ela diz, calado,
     é o pior jeito de errar.
 
-    Desenho plantado na borda não conta: ele sangra de propósito.
+    SÓ CONTEÚDO. Desenho que acompanha o fundo passa da borda por definição:
+    a arte é ampliada até cobrir a peça e o que sobra fica de fora — é disso
+    que o enquadramento é feito. Contando o desenho, a rede puxava a arte
+    INTEIRA para dentro do quadro e a peça saía com o desenho encolhido num
+    retângulo no meio, cercado da prancheta branca. Foi o que apareceu nos
+    dois banners pequenos no primeiro teste depois dela entrar.
     """
     return [i for i, e in enumerate(elementos)
-            if not e.get("plantado") and _fora_do_quadro(e, formato) > PASSOU_DA_BORDA]
+            if not e_do_fundo(e) and _fora_do_quadro(e, formato) > PASSOU_DA_BORDA]
 
 
 def _quanto_cabe(elementos: list[dict], formato: dict) -> float:

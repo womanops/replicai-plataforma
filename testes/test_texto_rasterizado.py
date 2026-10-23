@@ -82,6 +82,26 @@ class TestNadaSaiDoQuadroCalado:
                {"camada": "Logo", "box": {"x": 89, "y": 528, "w": 337, "h": 94}}]
         assert o_que_saiu_do_quadro(els, self._formato()) == [0]
 
+    def test_o_desenho_do_fundo_passa_da_borda_a_vontade(self):
+        """A REGRESSÃO. A arte é ampliada até cobrir a peça e o que sobra
+        fica de fora — é disso que o enquadramento é feito. Contando o
+        desenho, a rede puxava a arte INTEIRA para dentro do quadro: os dois
+        banners saíram com o desenho encolhido num retângulo no meio, cercado
+        da prancheta branca.
+        """
+        els = [{"camada": "Camada 9", "papel": "figura", "assinatura": False,
+                "box": {"x": -400, "y": -300, "w": 1600, "h": 900}},
+               {"camada": "Grain", "papel": "figura", "assinatura": False,
+                "box": {"x": -900, "y": -900, "w": 3000, "h": 2000}}]
+        assert o_que_saiu_do_quadro(els, self._formato()) == []
+
+    def test_mas_o_conteudo_continua_sendo_cobrado(self):
+        """A mesma caixa, marcada como conteúdo, é acusada: o que separa não
+        é a medida, é o papel."""
+        els = [{"camada": "Título", "papel": "figura", "assinatura": True,
+                "box": {"x": 91, "y": -746, "w": 674, "h": 216}}]
+        assert o_que_saiu_do_quadro(els, self._formato()) == [0]
+
     def test_um_canto_sangrando_nao_e_estar_fora(self):
         """Peça de borda a borda é projeto, não defeito."""
         els = [{"camada": "Foto", "box": {"x": -20, "y": -10, "w": 1320, "h": 740}}]
