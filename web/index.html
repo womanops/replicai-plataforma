@@ -149,6 +149,7 @@ button.acao:hover:not(:disabled){background:#A32C68}
 button.acao:disabled{background:var(--painel2);color:rgba(var(--fgRGB),.4);cursor:default}
 button.secund{background:transparent;color:var(--fg);border:1px solid var(--linha);
   border-radius:9px;padding:10px 16px;font:500 13px var(--corpo);cursor:pointer}
+button.secund[aria-pressed=true]{border-color:var(--sinal);color:var(--sinal)}
 .aviso{position:fixed;left:50%;bottom:78px;transform:translateX(-50%);z-index:80;
   background:var(--painel2);border:1px solid var(--linha);border-left:3px solid var(--err);
   padding:11px 16px;border-radius:9px;font-size:13.5px;max-width:560px;box-shadow:0 14px 40px rgba(0,0,0,.6)}
@@ -956,6 +957,13 @@ header .saldo.apertado .fio i{background:var(--err)}
          da medida junto, e `pintarLona` morria tentando preenchê-lo — o
          editor abria vazio, sem lona e sem camadas -->
     <h2 id="edTitulo"><span id="edNome">Ajustar</span><small id="edMedida"></small></h2>
+    <!-- A ferramenta de corte do fundo tem botão próprio aqui em cima. Ela
+         existia só como a ÚLTIMA linha da lista de camadas: num PSD de
+         dezessete camadas isso fica mil pixels abaixo da dobra, dentro de
+         uma coluna que rola. "A ferramenta de corte não está mais aqui" —
+         ela estava, fora do alcance do olho, que dá no mesmo. -->
+    <button class="secund" id="edCorta" aria-pressed="false"
+            title="Escolher o trecho do fundo que vai encher a peça">✂ Cortar fundo</button>
     <button class="secund" id="edDesfaz" title="Desfazer o último passo (⌘Z)"
             disabled>↩ Desfazer</button>
     <button class="secund" id="edVolta">Desfazer tudo</button>
@@ -2771,6 +2779,13 @@ function desfazerPasso(){
 function fecharEditor(){ $('#editor').classList.add('hidden'); ed = null; }
 $('#edFecha').onclick = fecharEditor;
 $('#edDesfaz').onclick = desfazerPasso;
+// ligar e desligar o modo de corte. Escolher o fundo É a ferramenta: com ele
+// escolhido a lona mostra o fundo inteiro e a moldura por cima
+$('#edCorta').onclick = () => {
+  if (!ed) return;
+  ed.sel = ed.sel === '__fundo' ? null : '__fundo';
+  pintarLona();
+};
 // ⌘Z é o gesto de quem ajusta arte. Sem ele, errar o arrasto não tinha volta
 addEventListener('keydown', e => {
   if (!ed || $('#editor').classList.contains('hidden')) return;
@@ -2833,7 +2848,7 @@ function pintarPainel(){
       + (src ? `<img class="mini" src="${src}" alt="">` : `<span class="mini letra">T</span>`)
       + `<b>${nome.replace(/</g,'&lt;')}</b>`
       + `<small>${(tipo || '').replace(/</g,'&lt;')}</small></button>`;
-  }).join('') + `<button type="button" data-chave="__fundo"${ed.sel === '__fundo' ? ' class="on"' : ''}>`
+  }).join('') + `<button type="button" data-chave="__fundo" aria-pressed="${ed.sel === '__fundo'}">`
     + `<b>Fundo</b><small>${ed.recorte ? 'recortado' : 'cortar'}</small></button>`;
   $('#edCamadas').querySelectorAll('button[data-chave]').forEach(b => b.onclick = () => {
     ed.sel = b.dataset.chave; pintarLona();
@@ -3047,6 +3062,10 @@ function pintarLona(){
     pegar(el, g);
     lona.appendChild(el);
   }
+  const bc = $('#edCorta');
+  bc.setAttribute('aria-pressed', ed.sel === '__fundo' ? 'true' : 'false');
+  bc.textContent = ed.recorte ? '✂ Fundo cortado' : '✂ Cortar fundo';
+
   pintarPainel();
 }
 
