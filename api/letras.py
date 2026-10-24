@@ -30,6 +30,11 @@ ACENTO_ATE = 0.55
 # virando uma nona letra em "energiza"
 LINHA_BAIXA = 0.35
 
+# tinta com esta força é TRAÇO; abaixo disso é franja de anti-serrilhado.
+# Serve para seguir o rabo de uma letra para baixo, onde contar tinta não
+# serve — ver `_quanto_desce`.
+TRACO = 128
+
 
 def _blocos(soma, limite: float, minimo: int = 1) -> list[tuple[int, int]]:
     """Trechos seguidos em que há tinta."""
@@ -51,8 +56,11 @@ def linhas(alfa) -> list[tuple[int, int]]:
     """As faixas horizontais com tinta, com acento junto da linha dele."""
     soma = alfa.sum(1)
     achadas = _blocos(soma, soma.max() * LIMIAR if soma.max() else 0)
+    # uma linha só também tem rabo de letra para recuperar: a volta curta
+    # daqui deixava o conserto de fora justamente na camada de uma linha, que
+    # é a maioria das chamadas de peça
     if len(achadas) < 2:
-        return achadas
+        return [(a, _quanto_desce(alfa, b, alfa.shape[0])) for a, b in achadas]
     alta = max(b - a for a, b in achadas)
     juntas: list[list[int]] = []
     for a, b in achadas:
@@ -63,7 +71,59 @@ def linhas(alfa) -> list[tuple[int, int]]:
             juntas[-1][1] = b          # a faixa baixa era acento da que vem abaixo
         else:
             juntas.append([a, b])
+    # o que desce abaixo da base — ç, g, j, p, q, y — entra na linha a que
+    # pertence. Sem isto a faixa acaba na base e o rabo da letra é descartado
+    for i, faixa in enumerate(juntas):
+        teto = juntas[i + 1][0] if i + 1 < len(juntas) else alfa.shape[0]
+        faixa[1] = _quanto_desce(alfa, faixa[1], teto)
     return [(a, b) for a, b in juntas]
+
+
+def _quanto_desce(alfa, fim: int, teto: int) -> int:
+    """Até onde a linha que termina em `fim` ainda desce, sem passar de `teto`.
+
+    O DEFEITO QUE ISTO CONSERTA. As faixas de linha saem de um piso de 2% da
+    linha mais cheia de tinta — regra boa para achar o corpo do texto e
+    péssima para o que desce abaixo da base. A cedilha do "ç" pertence a UMA
+    letra: quanto mais palavras houver na linha, menor a fração dela no total,
+    e mais certo que o rabo fique abaixo do piso e seja lido como linha vazia.
+
+    Na peça da Consigaz "solução" saía "solucão" — faltaram 22 pontos de tinta
+    para a cedilha sobreviver. O mesmo corte rente comia o pé do "p" de
+    `prefere` e o do "g" de `Consigaz`. Silencioso: a peça sai, nenhuma
+    ressalva aparece, e só se vê ampliando a palavra.
+
+    Aqui a pergunta deixa de ser QUANTA tinta a fileira tem e passa a ser se o
+    traço CONTINUA: fileira a fileira, enquanto alguma coluna forte da nova
+    encostar numa coluna forte da anterior, ainda é a mesma letra descendo.
+    O rabo da cedilha desce até tocar a altura da linha seguinte, mas em
+    colunas próprias — por isso o teto, que é onde o corpo da próxima começa,
+    impede que as duas virem uma faixa só.
+    """
+    import numpy as np
+
+    largura = alfa.shape[1]
+
+    def encostando(colunas):
+        """As colunas vizinhas destas, inclusive elas — o traço entorta ao
+        descer, então exigir a MESMA coluna partiria o rabo no meio."""
+        viz = np.zeros(largura + 2, bool)
+        viz[colunas + 1] = True
+        return viz[:-2] | viz[1:-1] | viz[2:]
+
+    seguindo = np.nonzero(alfa[fim - 1] > TRACO)[0]
+    y = fim
+    while y < teto and len(seguindo):
+        perto = encostando(seguindo)
+        agora = np.nonzero((alfa[y] > TRACO) & perto)[0]
+        if not len(agora):
+            break
+        # segue SÓ o traço que continua. Pegar a fileira inteira traria junto
+        # a tinta da linha de baixo que por acaso comece ali — na camada da
+        # Consigaz eram duas fileiras da linha seguinte entrando na de cima
+        seguindo = agora
+        y += 1
+    return y
 
 
 def _so_no_alto(faixa, a: int, b: int) -> bool:
