@@ -345,7 +345,7 @@ class TestOPainelDoAjuste:
         assert "Esta camada é imagem" in tela
 
     def test_clicar_na_lista_seleciona_na_peca(self, tela):
-        assert "ed.sel = b.dataset.chave; pintarLona();" in tela
+        assert "escolher(b.dataset.chave, ev)" in tela
 
     def test_as_setas_movem_a_camada_escolhida(self, tela):
         """Arrastar serve para a intenção; para encostar na margem sem passar
@@ -397,7 +397,11 @@ class TestASelecaoSolta:
 
     def test_clicar_no_vazio_da_prancha_solta(self, tela):
         assert "lona.onpointerdown = ev => {" in tela
-        assert "if (ev.target.closest('.pe-el') || ed.sel === null) return;" in tela
+        corpo = tela.split("lona.onpointerdown = ev => {")[1].split("};")[0]
+        assert "closest('.pe-el')" in corpo
+        # a moldura do conjunto é tão "elemento" quanto uma caixa sozinha
+        assert "closest('.pe-juntas')" in corpo
+        assert "escolher(null)" in corpo
 
     def test_clicar_fora_da_prancha_tambem(self, tela):
         """A prancha é menor que a tela: o escuro em volta é o lugar mais
@@ -1074,16 +1078,17 @@ class TestATelaDeAjustes:
 
         Bola cheia tapa a arte justamente onde se quer ver o alinhamento.
         Agora o manípulo É o canto: duas linhas em L, sem preenchimento."""
-        regra = tela.split(".pe-el .puxa{")[1].split("}")[0]
+        regra = tela.split(".pe-el .puxa,#lona .pe-juntas .puxa{")[1].split("}")[0]
         assert "border-right:2px solid" in regra and "border-bottom:2px solid" in regra
         assert "background:var(--rosa)" not in regra, "voltou a ser bola"
         # e continua fácil de pegar: a área de pegar é maior que o desenho
-        assert ".pe-el .puxa::after{content:'';position:absolute;inset:-7px}" in tela
+        pegar = tela.split(".pe-el .puxa::after,")[1].split("}")[0]
+        assert "inset:-7px" in pegar
 
     def test_o_manipulo_so_existe_no_elemento_escolhido(self, tela):
         """Pintado em toda caixa, uma peça de PSD com dezessete camadas virava
         uma peneira de pontos vermelhos espalhados pela arte."""
-        corpo = tela.split("for (const g of grupos()){")[1].split("function pegar(")[0]
+        corpo = tela.split("for (const g of lista){")[1].split("function pegar(")[0]
         marcacao = corpo.split("el.innerHTML =")[1].split(";")[0]
         assert "class=\"puxa\"" in marcacao
         # o manípulo está DENTRO do ramo do escolhido, junto dos botões
@@ -1118,7 +1123,7 @@ class TestATelaDeAjustes:
         """"Os ícones em torno do elemento não permitem ver a ponta dele para
         esticar o tamanho." A lixeira de 22 px morava no canto de cima, em
         cima justamente da ponta que se pega."""
-        regra = tela.split(".pe-el .lixo,.pe-el .lapis{")[1].split("}")[0]
+        regra = tela.split(".pe-el .lixo,.pe-el .lapis,#lona .pe-juntas .lixo{")[1].split("}")[0]
         assert "top:-16px" in regra, "o botão tem que ficar ACIMA da caixa"
         assert "width:15px;height:15px" in regra, "22 px tapava o canto"
         for canto in ("top:-9px", "right:-9px"):
@@ -1145,7 +1150,8 @@ class TestATelaDeAjustes:
         """Desfazer que devolve a caixa mas não o texto trocado é pior do que
         não desfazer: a peça fica num estado que nunca existiu."""
         corpo = tela.split("function marcarPasso(")[1].split("function desfazerPasso")[0]
-        for campo in ("boxes", "fora", "trocas", "recorte", "recorteMexido"):
+        for campo in ("boxes", "fora", "trocas", "recorte", "recorteMexido",
+                      "pilha"):
             assert campo in corpo, campo
 
     def test_segurar_a_seta_e_um_gesto_so(self, tela):
@@ -1157,7 +1163,7 @@ class TestATelaDeAjustes:
     def test_um_clique_que_nao_move_nao_vira_passo(self, tela):
         """Escolher a camada é clique, não ação: desfazer depois de escolher
         não pode "desfazer" o nada e deixar a pessoa achando que travou."""
-        corpo = tela.split("function pegar(el, g){")[1].split("function textoDoGrupo")[0]
+        corpo = tela.split("function pegar(el, g, varias){")[1].split("function textoDoGrupo")[0]
         assert "if (!mexeu){ mexeu = true; marcarPasso(); }" in corpo
 
     def test_a_camada_que_cobre_a_peca_e_fundo_e_nao_elemento(self, tela):
@@ -1170,16 +1176,16 @@ class TestATelaDeAjustes:
         e escolhida lá pode ser arrastada.
         """
         assert "function cobreAPeca(g){" in tela
-        corpo = tela.split("function pegar(el, g){")[1].split("function textoDoGrupo")[0]
+        corpo = tela.split("function pegar(el, g, varias){")[1].split("function textoDoGrupo")[0]
         assert "cobreAPeca(g) && ed.sel !== g.chave" in corpo
-        assert "ed.sel = null" in corpo.split("cobreAPeca(g)")[1][:120]
+        assert "escolher(null)" in corpo.split("cobreAPeca(g)")[1][:200]
 
     def test_clicar_na_peca_escolhe_a_camada(self, tela):
         """"Quero que ao clicar na peça ela possa ser ajustada, não apenas na
         camada lateral." O clique na lona chega ao elemento: é `pegar` que
         escolhe e arrasta, e a lista ao lado é o outro caminho para o mesmo."""
-        corpo = tela.split("function pegar(el, g){")[1].split("function textoDoGrupo")[0]
-        assert "ed.sel = g.chave" in corpo
+        corpo = tela.split("function pegar(el, g, varias){")[1].split("function textoDoGrupo")[0]
+        assert "escolher(g.chave, ev)" in corpo
         assert "el.onpointerdown" in corpo
 
     def test_clicar_fora_da_peca_solta_a_selecao(self, tela):
@@ -1187,7 +1193,7 @@ class TestATelaDeAjustes:
         nada, e o elemento seguia escolhido com o manípulo em cima da arte."""
         assert "$('#palco').onpointerdown" in tela
         corpo = tela.split("$('#palco').onpointerdown")[1].split("};")[0]
-        assert "ed.sel = null" in corpo
+        assert "escolher(null)" in corpo
         assert "closest('#lona')" in corpo
 
 
@@ -1631,7 +1637,7 @@ class TestOCorpoDaLetraAcompanhaACaixa:
     """
 
     def test_escalar_leva_o_corpo_junto(self, tela):
-        corpo = tela.split("function pegar(el, g){")[1].split("function textoDoGrupo")[0]
+        corpo = tela.split("function pegar(el, g, varias){")[1].split("function textoDoGrupo")[0]
         assert "ed.letras[i] = {" in corpo
         assert "Math.round(c.min * fy)" in corpo and "Math.round(c.max * fy)" in corpo
 

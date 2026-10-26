@@ -317,21 +317,44 @@ class TestVideoNaoTravaPeca:
 
 class TestOEditorAlcancaTodoMundo:
     """As caixas do editor se sobrepõem — a logo fica debaixo do CTA, o
-    mascote atrás do texto. Sem ordem por tamanho, o manípulo de quem está
-    embaixo fica coberto pelo vizinho e o arrasto pega a camada errada."""
+    mascote atrás do texto. Sem regra, o manípulo de quem está embaixo fica
+    coberto pelo vizinho e o arrasto pega a camada errada.
+
+    Em 26/10/2026 o empilhamento da tela passou a ser o DE VERDADE: o que se
+    vê é o que a peça vai ser, porque quem desenha empilha pela ordem do
+    arquivo. Isso devolveu o problema — a caixa da foto voltou a cobrir a da
+    linha de texto. As duas coisas passaram a conviver separadas: o DESENHO
+    empilha pela ordem do arquivo, e o CLIQUE procura, entre as caixas sob o
+    cursor, a de MENOR ÁREA. A regra é a mesma de antes, noutro lugar.
+    """
 
     def _tela(self) -> str:
         return (RAIZ / "web" / "index.html").read_text(encoding="utf-8")
 
-    def test_o_menor_fica_por_cima(self):
+    def test_o_desenho_empilha_pela_ordem_do_arquivo(self):
+        """Antes era o menor por cima: bom para pegar, mentiroso sobre como a
+        peça ia sair."""
         tela = self._tela()
-        assert "200 - Math.round(Math.sqrt(c.w * c.h) / 12)" in tela
-        assert "z-index:${ed.sel === g.chave ? 300 : ordem}" in tela
+        assert "const ordem = 1 + pilha.indexOf(g.chave);" in tela
+
+    def test_o_clique_ainda_acha_o_menor(self):
+        tela = self._tela()
+        apanhador = tela.split("lona._apanhador = true;")[1].split("}, true);")[0]
+        assert "(A.w * A.h) - (B.w * B.h)" in apanhador, (
+            "o clique deixou de procurar a caixa menor")
+        assert "ev.stopPropagation()" in apanhador, (
+            "sem isto a caixa grande recebe o clique assim mesmo")
+        # a fase de CAPTURA: sem ela o `onpointerdown` da caixa grande roda
+        # primeiro e o clique já foi
+        assert "addEventListener('pointerdown'" in tela
+        assert tela.split("lona.addEventListener('pointerdown'")[1] \
+                   .split("\n")[0].strip() != "", "o apanhador sumiu"
+        assert "}, true);" in tela.split("lona.addEventListener('pointerdown'")[1][:2000]
 
     def test_o_manipulo_se_acha_sobre_a_arte(self):
         """Onze pixels sem contorno somem sobre uma foto."""
         tela = self._tela()
-        bloco = tela[tela.index(".pe-el .puxa{"):tela.index(".pe-el .letra{")]
+        bloco = tela[tela.index(".pe-el .puxa,"):tela.index(".pe-el .letra{")]
         assert "box-shadow" in bloco and "z-index" in bloco
 
 

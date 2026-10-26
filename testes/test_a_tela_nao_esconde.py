@@ -47,7 +47,8 @@ addEventListener('load', () => {
          boxes: els.map(e => ({...e.box})), orig: els.map(e => ({...e.box})),
          letras: els.map(() => null), letrasOrig: els.map(() => null),
          recorte: null, recorteMexido: false, versao: 1,
-         fora: new Set(), passos: [], ultimo: null };
+         fora: new Set(), juntas: new Set(), pilha: null, zoom: 1,
+         passos: [], ultimo: null };
   document.getElementById('editor').classList.remove('hidden');
   pintarLona();
 
@@ -91,6 +92,98 @@ addEventListener('load', () => {
     medido.tirarDiz = escolhido ? (escolhido.querySelector('.lixo') || {}).textContent : null;
     medido.temManipulo = !!(escolhido && escolhido.querySelector('.puxa'));
   }
+
+  // OS GESTOS DO PHOTOSHOP. Cada um foi pedido por ela em 26/10/2026, e cada
+  // um é geometria — ou a proporção se mantém, ou não se mantém.
+  Element.prototype.setPointerCapture = function(){};
+  const arrasta = (alvo, dx, dy, mais) => {
+    const r = alvo.getBoundingClientRect();
+    const b = { bubbles: true, pointerId: 1, clientX: r.left + r.width / 2,
+                clientY: r.top + r.height / 2, ...(mais || {}) };
+    alvo.dispatchEvent(new PointerEvent('pointerdown', b));
+    window.dispatchEvent(new PointerEvent('pointermove',
+      { ...b, clientX: b.clientX + dx, clientY: b.clientY + dy }));
+    window.dispatchEvent(new PointerEvent('pointerup', b));
+  };
+  const chaves = grupos().map(g => g.chave);
+  const prop = b => Math.round((b.w / b.h) * 1000) / 1000;
+
+  escolher(chaves[0]); pintarLona();
+  const i0 = grupos()[0].itens[0];
+  const caixa0 = { ...ed.boxes[i0] };
+  const puxa = document.querySelector('.pe-el .puxa');
+  medido.temManipuloParaEscalar = !!puxa;
+  if (puxa){
+    arrasta(puxa, 90, 6);
+    medido.cresceu = ed.boxes[i0].w > caixa0.w;
+    medido.proporcaoAntes = prop(caixa0);
+    medido.proporcaoDepois = prop(ed.boxes[i0]);
+    ed.boxes[i0] = { ...caixa0 }; pintarLona();
+    arrasta(document.querySelector('.pe-el .puxa'), 90, 6, { shiftKey: true });
+    medido.proporcaoComShift = prop(ed.boxes[i0]);
+  }
+
+  const botao = c => [...document.querySelectorAll('#edCamadas button[data-chave]')]
+    .find(b => b.dataset.chave === c);
+  ed.boxes = ed.orig.map(b => ({ ...b })); escolher(null); pintarLona();
+  botao(chaves[0]).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  botao(chaves[1]).dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }));
+  medido.escolhidasComShift = ed.juntas.size;
+  const conjunto = document.querySelector('.pe-juntas');
+  medido.temCaixaDeConjunto = !!conjunto;
+  if (conjunto){
+    const i1 = grupos().find(g => g.chave === chaves[0]).itens[0];
+    const i2 = grupos().find(g => g.chave === chaves[1]).itens[0];
+    const x1 = ed.boxes[i1].x, x2 = ed.boxes[i2].x;
+    arrasta(conjunto, 40, 0);
+    medido.andouJunto = (ed.boxes[i1].x - x1) === (ed.boxes[i2].x - x2)
+                        && ed.boxes[i1].x !== x1;
+  }
+
+  // a lista é de cima para baixo, como a do Photoshop
+  const naLista = [...document.querySelectorAll('#edCamadas button[data-chave]')]
+    .map(b => b.dataset.chave).filter(c => c !== '__fundo');
+  medido.listaDeCimaParaBaixo = naLista.join('|') === chaves.slice().reverse().join('|');
+  medido.fundoNoPe = [...document.querySelectorAll('#edCamadas button[data-chave]')]
+    .pop().dataset.chave === '__fundo';
+
+  // empilhar com a tecla de comando, e o conjunto sobe rígido
+  escolher(null); ed.pilha = null; pintarLona();
+  botao(chaves[0]).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  const pilhaAntes = grupos().map(g => g.chave).join('|');
+  empilhar(1);
+  medido.subiuNaPilha = grupos().map(g => g.chave).join('|') !== pilhaAntes;
+
+  // o zoom
+  ed.zoom = 1; pintarLona();
+  const kCabe = ed.k;
+  aproximar(1.25);
+  medido.zoomCresceu = ed.k > kCabe;
+  medido.zoomDiz = /%/.test(document.getElementById('edMedida').textContent);
+  for (let n = 0; n < 30; n++) aproximar(1.25);
+  medido.zoomTemTeto = ed.zoom <= 6;
+  ed.zoom = 1; pintarLona();
+
+  // O MENOR SOB O CURSOR. A foto grande fica ACIMA do texto pequeno na pilha
+  // — então a caixa dela cobre a dele. O clique tem que achar o texto assim
+  // mesmo, senão a camada de baixo vira inalcançável na prancheta.
+  const grande = chaves[0], pequeno = chaves[1];
+  const ig = grupos().find(g => g.chave === grande).itens[0];
+  const ip = grupos().find(g => g.chave === pequeno).itens[0];
+  ed.boxes[ig] = { x: 0, y: 0, w: 900, h: 1400 };
+  ed.boxes[ip] = { x: 300, y: 500, w: 200, h: 80 };
+  ed.pilha = chaves.filter(c => c !== grande).concat([grande]);   // a foto no topo
+  escolher(null); pintarLona();
+  const caixaG = document.querySelector(`.pe-el[data-chave="${CSS.escape(grande)}"]`);
+  const caixaP = document.querySelector(`.pe-el[data-chave="${CSS.escape(pequeno)}"]`);
+  medido.oGrandeDesenhaPorCima =
+    Number(getComputedStyle(caixaG).zIndex) > Number(getComputedStyle(caixaP).zIndex);
+  const rp = caixaP.getBoundingClientRect();
+  caixaG.dispatchEvent(new PointerEvent('pointerdown', {
+    bubbles: true, pointerId: 1,
+    clientX: rp.left + rp.width / 2, clientY: rp.top + rp.height / 2 }));
+  window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+  medido.cliqueAchouOMenor = ed.sel === pequeno;
 
   const saida = document.createElement('pre');
   saida.id = 'aferido';
@@ -167,3 +260,73 @@ class TestOQueElaJaAprovouNestaTela:
         tapava justamente a ponta do elemento que ela quer ver para esticar."""
         assert medido["temManipulo"]
         assert medido["botoesSoNoEscolhido"] == 1
+
+
+class TestOsGestosDoPhotoshop:
+    """Pedido dela em 26/10/2026: "preciso que os comandos da tela de ajustes
+    sejam iguais aos do photoshop". Cada teste aqui é um dos gestos, medido
+    no navegador — proporção é número, não impressão."""
+
+    def test_puxar_o_canto_mantem_a_proporcao(self, medido):
+        assert medido["temManipuloParaEscalar"]
+        assert medido["cresceu"], "puxar o canto não aumentou a camada"
+        assert medido["proporcaoDepois"] == medido["proporcaoAntes"], (
+            "a imagem saiu distorcida: a proporção mudou de "
+            f"{medido['proporcaoAntes']} para {medido['proporcaoDepois']}")
+
+    def test_com_shift_a_deformacao_e_liberada(self, medido):
+        """Como no Photoshop desde 2019: proporcional por padrão, livre com
+        Shift. Sem esta saída não há como achatar de propósito."""
+        assert medido["proporcaoComShift"] != medido["proporcaoAntes"]
+
+    def test_shift_no_clique_escolhe_varias(self, medido):
+        assert medido["escolhidasComShift"] == 2
+
+    def test_as_escolhidas_andam_juntas_por_uma_moldura_so(self, medido):
+        assert medido["temCaixaDeConjunto"], (
+            "cada camada ficou com o manípulo dela: puxar um deles cresceria "
+            "só aquela, que é o trabalho uma-a-uma que a seleção evita")
+        assert medido["andouJunto"], "as camadas escolhidas não andaram juntas"
+
+    def test_a_lista_de_camadas_e_de_cima_para_baixo(self, medido):
+        """A de cima na lista é a que cobre as outras, e o Fundo fica no pé —
+        como no Photoshop. Ao contrário, arrastar para reordenar significa o
+        oposto do que a mão espera."""
+        assert medido["listaDeCimaParaBaixo"]
+        assert medido["fundoNoPe"]
+
+    def test_da_para_mudar_o_empilhamento(self, medido):
+        assert medido["subiuNaPilha"]
+
+
+class TestOZoomDaPrancheta:
+    """Numa peça de 1080x1920 vista a 40% da tela, um pixel de arrasto são
+    dois e meio da peça: não há como encostar na margem com precisão."""
+
+    def test_aproximar_aumenta_de_verdade(self, medido):
+        assert medido["zoomCresceu"]
+
+    def test_a_tela_diz_em_quanto_esta(self, medido):
+        assert medido["zoomDiz"], "aproximou e não disse de quanto"
+
+    def test_o_zoom_tem_teto(self, medido):
+        assert medido["zoomTemTeto"]
+
+
+class TestOQueSeVeEOQueSePega:
+    """O empilhamento da tela passou a ser o de verdade — o que se vê é o que
+    a peça vai ser. Isso devolveu um problema antigo dela: a caixa da foto
+    cobre a da linha de texto e rouba o clique.
+
+    As duas coisas convivem separadas: o DESENHO empilha pela ordem do
+    arquivo, o CLIQUE procura a caixa de menor área sob o cursor.
+    """
+
+    def test_a_camada_de_cima_desenha_por_cima(self, medido):
+        assert medido["oGrandeDesenhaPorCima"], (
+            "a tela empilhou ao contrário do que a peça vai sair")
+
+    def test_mas_o_clique_acha_a_camada_de_baixo(self, medido):
+        assert medido["cliqueAchouOMenor"], (
+            "cliquei em cima do texto e a foto que o cobre foi selecionada: "
+            "a camada de baixo ficou inalcançável na prancheta")

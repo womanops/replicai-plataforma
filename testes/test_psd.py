@@ -692,3 +692,35 @@ class TestAssarSoQuandoEhLegitimo:
         leitura = self._leitura(do_fundo=[Camada("x", "imagem", "x.png",
                                                  {"x": 0, "y": 0, "w": 1, "h": 1})])
         assert como_o_arquivo_pede(leitura) is leitura
+
+
+class TestAFalhaDizOQueFazer:
+    """A peça da Consigaz perdeu o calço do botão "Agende uma visita grátis!"
+    e a ressalva disse `ImportError`. A chamada ficou branca sobre azul claro,
+    ilegível, e quem leu a ressalva não tinha o que fazer com ela.
+
+    Faltava `aggdraw`: é ela que desenha forma vetorial COM CONTORNO, e sem
+    ela a forma some calada — e a composição da prancheta inteira cai num
+    plano B. A biblioteca entrou no requirements; esta prova é para a
+    MENSAGEM, que é o que sobra quando faltar outra coisa amanhã.
+    """
+
+    def test_a_forma_vetorial_diz_o_que_aconteceu_com_ela(self):
+        """E NÃO manda instalar a `aggdraw`: ela desenha a forma, mas pinta o
+        preenchimento mesmo quando o arquivo o desliga. Numa cartela da
+        Consigaz isso virou um retângulo branco de 594x751 em cima da
+        chamada, onde a arte tem só um contorno de 3px."""
+        from api.psd import _porque_falhou
+        dito = _porque_falhou(ImportError("Vector shape rendering requires: aggdraw"))
+        assert "fundo" in dito, "não disse onde a forma foi parar"
+        assert "aggdraw" not in dito and "pip install" not in dito, (
+            "mandou instalar uma biblioteca que tapa a chamada de outras peças")
+
+    def test_biblioteca_desconhecida_ainda_diz_que_e_biblioteca(self):
+        from api.psd import _porque_falhou
+        dito = _porque_falhou(ImportError("No module named 'coisa'"))
+        assert "biblioteca" in dito and "coisa" in dito
+
+    def test_o_que_nao_e_falta_de_biblioteca_continua_como_estava(self):
+        from api.psd import _porque_falhou
+        assert _porque_falhou(ValueError("qualquer")) == "ValueError"

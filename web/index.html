@@ -586,7 +586,20 @@ header .saldo.apertado .fio i{background:var(--err)}
    navegador — dava para ajustar, mas às cegas */
 #editor .corpo{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 300px;
   gap:20px;padding-bottom:16px}
-#editor .palco{min-height:0;display:grid;place-items:center}
+/* `safe center` e não `center`: com a peça aproximada ela fica maior que o
+   palco, e o centramento comum corta o topo — a parte que não dá para rolar
+   até. Com `safe` o excesso vai para baixo e para a direita, que é rolável. */
+#editor .palco{min-height:0;display:grid;place-items:safe center;overflow:auto}
+/* a moldura do conjunto: uma só, em volta de tudo que está escolhido */
+#lona .pe-juntas{position:absolute;border:1px dashed var(--rosa);
+  background:rgba(232,180,200,.06);cursor:grab}
+#lona .pe-juntas .rot{position:absolute;left:0;top:-15px;font:500 9px var(--mono);
+  color:var(--rosa);letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;
+  pointer-events:none}
+/* a camada sendo arrastada na lista, e a linha de onde ela vai cair */
+#editor .camadas button.indo{opacity:.4}
+#editor .camadas button.acima{box-shadow:inset 0 2px 0 var(--sinal)}
+#editor .camadas button.abaixo{box-shadow:inset 0 -2px 0 var(--sinal)}
 #editor .painel{display:grid;gap:20px;align-content:start;overflow:auto;
   padding-left:20px;border-left:1px solid var(--linha)}
 #editor .painel h3{font:500 10.5px var(--mono);color:var(--mut);margin:0 0 8px;
@@ -703,20 +716,20 @@ header .saldo.apertado .fio i{background:var(--err)}
    virava uma constelação de pontos vermelhos espalhados pela peça. Agora é
    um L de duas linhas, só no elemento escolhido, com a área de pegar
    invisível em volta. */
-.pe-el .puxa{position:absolute;right:-1px;bottom:-1px;width:13px;height:13px;
+.pe-el .puxa,#lona .pe-juntas .puxa{position:absolute;right:-1px;bottom:-1px;width:13px;height:13px;
   border-right:2px solid var(--rosa);border-bottom:2px solid var(--rosa);
   border-bottom-right-radius:3px;cursor:nwse-resize;z-index:4}
-.pe-el .puxa::after{content:'';position:absolute;inset:-7px}
+.pe-el .puxa::after,#lona .pe-juntas .puxa::after{content:'';position:absolute;inset:-7px}
 /* a lixeira só existe no elemento escolhido: uma por caixa, em dez caixas,
    seria um campo minado em cima da peça */
 /* Os botões moram ACIMA da caixa, na linha do rótulo — nunca em cima do
    canto. Em cima do canto, a lixeira de 22 px tapava justamente a ponta que
    se quer pegar para esticar, e a peça não dava para ser medida por ali. */
-.pe-el .lixo,.pe-el .lapis{position:absolute;top:-16px;width:15px;height:15px;border:0;
+.pe-el .lixo,.pe-el .lapis,#lona .pe-juntas .lixo{position:absolute;top:-16px;width:15px;height:15px;border:0;
   border-radius:4px;font:600 10px/1 var(--corpo);cursor:pointer;z-index:5;
   display:grid;place-items:center;box-shadow:0 0 0 1px var(--bg);opacity:.85}
-.pe-el .lixo:hover,.pe-el .lapis:hover{opacity:1}
-.pe-el .lixo{right:0;background:var(--err);color:#fff}
+.pe-el .lixo:hover,.pe-el .lapis:hover,#lona .pe-juntas .lixo:hover{opacity:1}
+.pe-el .lixo,#lona .pe-juntas .lixo{right:0;background:var(--err);color:#fff}
 .pe-el .lapis{right:18px;background:var(--rosa);color:#2A0E1C}
 /* o texto trocado, como ele vai sair: a letra é a do trabalho, não a da arte */
 .pe-el .trocado{position:absolute;inset:0;display:flex;align-items:center;
@@ -973,8 +986,14 @@ header .saldo.apertado .fio i{background:var(--err)}
   <div class="corpo">
     <div class="palco" id="palco"><div id="lona"></div></div>
     <aside class="painel">
-      <p class="dica">Arraste para mover, puxe o canto para redimensionar. As setas
-        movem a camada escolhida com precisão — com Shift, de 10 em 10.
+      <p class="dica" id="edDica">Arraste para mover, puxe o canto para
+        redimensionar — a proporção é mantida, e com <b>Shift</b> ela é livre.
+        <b>Shift</b> ou <b class="tecla">⌘</b> no clique escolhe várias camadas juntas.
+        Arraste uma camada na lista para pôr acima ou abaixo da outra
+        (<b class="tecla">⌘</b>] e <b class="tecla">⌘</b>[ também).
+        As setas movem com precisão; com Shift, de 10 em 10.
+        <b class="tecla">⌘</b>+ e <b class="tecla">⌘</b>− aproximam,
+        <b class="tecla">⌘</b>0 volta a caber na tela.
         <b class="limite">A linha vermelha é o limite da rede</b>: o que passa dela pode
         ser cortado na publicação.</p>
       <div><h3>Camadas</h3><div class="camadas" id="edCamadas"></div></div>
@@ -2735,6 +2754,20 @@ async function abrirEditor(fid){
          // ajuste de outra pessoa da agência sem ninguém perceber
          versao: pc.versao || 0,
          fora: new Set(),
+         // VÁRIAS CAMADAS JUNTAS. `sel` continua sendo a ATIVA — é dela que o
+         // painel de texto fala, e é nela que o lápis e o ✕ aparecem. `juntas`
+         // é quem anda e cresce junto, como no Photoshop: clique limpo troca a
+         // seleção, Shift ou ⌘ soma e tira.
+         juntas: new Set(),
+         // a ordem de empilhamento, de baixo para cima. Nasce nula: enquanto
+         // ninguém reordenar, vale a ordem do arquivo — e no fim é essa lista
+         // que vai para o servidor, porque quem desenha empilha pela ordem em
+         // que recebe
+         pilha: null,
+         // o zoom da prancheta. 1 é "cabe na tela"; daí para cima a peça
+         // cresce e o palco rola. Sem ele não há como encostar um elemento na
+         // margem com precisão numa peça de 1080x1920 vista a 30%
+         zoom: 1,
          // a pilha do desfazer. Mexer na peça é tentativa e erro: sem um
          // passo atrás, errar o arrasto obrigava a desfazer TUDO e recomeçar
          passos: [], ultimo: null };
@@ -2761,7 +2794,8 @@ function marcarPasso(junto){
   ed.passos.push({ boxes: ed.boxes.map(b => ({...b})),
                    letras: ed.letras.map(c => c && {...c}), fora: new Set(ed.fora),
                    trocas: {...ed.trocas}, recorte: ed.recorte ? {...ed.recorte} : null,
-                   recorteMexido: ed.recorteMexido });
+                   recorteMexido: ed.recorteMexido,
+                   pilha: ed.pilha ? ed.pilha.slice() : null });
   if (ed.passos.length > 40) ed.passos.shift();
   const b = $('#edDesfaz'); if (b) b.disabled = false;
 }
@@ -2771,6 +2805,7 @@ function desfazerPasso(){
   const p = ed.passos.pop();
   ed.boxes = p.boxes; ed.letras = p.letras; ed.fora = p.fora; ed.trocas = p.trocas;
   ed.recorte = p.recorte; ed.recorteMexido = p.recorteMexido;
+  ed.pilha = p.pilha;
   ed.ultimo = null;
   $('#edDesfaz').disabled = !ed.passos.length;
   pintarLona();
@@ -2799,7 +2834,8 @@ $('#edVolta').onclick = () => {
   marcarPasso();
   ed.boxes = ed.orig.map(b => ({...b}));
   ed.letras = ed.letrasOrig.map(c => c && {...c});
-  ed.fora.clear(); ed.trocas = {}; ed.sel = null;
+  ed.fora.clear(); ed.trocas = {}; ed.sel = null; ed.juntas.clear();
+  ed.pilha = null;              // a ordem volta a ser a do arquivo
   // o corte do fundo volta junto: "desfazer tudo" que deixa uma coisa feita
   // é a pior espécie de desfazer. `recorteMexido` fica marcado para o
   // servidor saber que foi TIRADO, e não que ninguém encostou nele
@@ -2839,19 +2875,30 @@ function pintarPainel(){
   // PSD é lixo de arquivo na maioria das vezes, e "Figura" repetido oito
   // vezes não distingue nada — quem reconhece o elemento é o olho
   let fig = 0;
-  $('#edCamadas').innerHTML = lista.map(g => {
+  const nomes = new Map(lista.map(g => [g.chave, nomeDaCamada(g, ++fig)]));
+  // DE CIMA PARA BAIXO, como no Photoshop: a camada que cobre as outras é a
+  // primeira da lista, e o Fundo fica no pé. Mostrar ao contrário fazia
+  // arrastar para reordenar significar o oposto do que a mão espera.
+  const deCima = [...lista].reverse();
+  $('#edCamadas').innerHTML = deCima.map(g => {
     const e0 = ed.peca.elementos[g.itens[0]] || {};
-    const { nome, tipo } = nomeDaCamada(g, ++fig);
+    const { nome, tipo } = nomes.get(g.chave);
     const src = e0.src ? arquivoUrl(e0.src) : '';
-    return `<button type="button" data-chave="${g.chave.replace(/"/g,'&quot;')}"`
-      + ` aria-pressed="${g.chave === ed.sel}">`
+    const dentro = ed.juntas.size > 1 ? ed.juntas.has(g.chave) : g.chave === ed.sel;
+    return `<button type="button" draggable="true" data-chave="${g.chave.replace(/"/g,'&quot;')}"`
+      + ` aria-pressed="${dentro}">`
       + (src ? `<img class="mini" src="${src}" alt="">` : `<span class="mini letra">T</span>`)
       + `<b>${nome.replace(/</g,'&lt;')}</b>`
       + `<small>${(tipo || '').replace(/</g,'&lt;')}</small></button>`;
   }).join('') + `<button type="button" data-chave="__fundo" aria-pressed="${ed.sel === '__fundo'}">`
     + `<b>Fundo</b><small>${ed.recorte ? 'recortado' : 'cortar'}</small></button>`;
-  $('#edCamadas').querySelectorAll('button[data-chave]').forEach(b => b.onclick = () => {
-    ed.sel = b.dataset.chave; pintarLona();
+  $('#edCamadas').querySelectorAll('button[data-chave]').forEach(b => {
+    b.onclick = ev => {
+      if (b.dataset.chave === '__fundo'){ ed.juntas.clear(); ed.sel = '__fundo'; }
+      else escolher(b.dataset.chave, ev);
+      pintarLona();
+    };
+    if (b.dataset.chave !== '__fundo') arrastarNaLista(b);
   });
 
   const caixa = $('#edTextos');
@@ -2879,6 +2926,50 @@ function pintarPainel(){
   campo.onchange = () => { if (campo.value === dito) delete ed.trocas[atual.chave]; pintarLona(); };
 }
 
+/* ---------- arrastar uma camada na lista para reordenar ----------
+   É assim que se troca o empilhamento no Photoshop, e é o gesto que ela
+   pediu: "sobrepor uma camada em cima de outra". A lista é mostrada de cima
+   para baixo, e a pilha guardada é de baixo para cima — daí a inversão no
+   fim. */
+function arrastarNaLista(b){
+  b.ondragstart = ev => {
+    ev.dataTransfer.effectAllowed = 'move';
+    ev.dataTransfer.setData('text/plain', b.dataset.chave);
+    b.classList.add('indo');
+  };
+  b.ondragend = () => {
+    b.classList.remove('indo');
+    $('#edCamadas').querySelectorAll('.acima,.abaixo')
+      .forEach(x => x.classList.remove('acima', 'abaixo'));
+  };
+  b.ondragover = ev => {
+    ev.preventDefault();
+    const r = b.getBoundingClientRect();
+    const emCima = ev.clientY < r.top + r.height / 2;
+    b.classList.toggle('acima', emCima);
+    b.classList.toggle('abaixo', !emCima);
+  };
+  b.ondragleave = () => b.classList.remove('acima', 'abaixo');
+  b.ondrop = ev => {
+    ev.preventDefault();
+    const quem = ev.dataTransfer.getData('text/plain');
+    const onde = b.dataset.chave;
+    b.classList.remove('acima', 'abaixo');
+    if (!quem || quem === onde || onde === '__fundo') return;
+    const r = b.getBoundingClientRect();
+    const emCima = ev.clientY < r.top + r.height / 2;
+    const p = firmarPilha().filter(c => c !== quem);
+    const i = p.indexOf(onde);
+    if (i < 0) return;
+    marcarPasso();
+    // a lista desce o que na pilha sobe: soltar ACIMA da linha é empilhar
+    // DEPOIS dela
+    p.splice(emCima ? i + 1 : i, 0, quem);
+    ed.pilha = p;
+    pintarLona();
+  };
+}
+
 // enquanto se digita, só o texto da caixa muda — repintar a lona inteira a
 // cada tecla rouba o foco do campo
 function desenharTroca(g){
@@ -2886,6 +2977,50 @@ function desenharTroca(g){
   if (el) el.textContent = ed.trocas[g.chave];
   else pintarLona();
 }
+
+/* ---------- a tecla de comando desta máquina ----------
+   ⌘ no Mac, Ctrl no Windows e no Linux. Escrever "⌘" para quem está no
+   Windows manda a pessoa procurar uma tecla que o teclado dela não tem. */
+const NO_MAC = /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
+const TECLA = NO_MAC ? '⌘' : 'Ctrl';
+const comando = ev => NO_MAC ? ev.metaKey : ev.ctrlKey;
+// a dica é escrita com ⌘ no HTML; no Windows ela é reescrita ao abrir a
+// página. Teclado que não tem a tecla não ajuda ninguém a achá-la.
+if (!NO_MAC) addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.tecla').forEach(t => { t.textContent = 'Ctrl'; });
+  const d = document.getElementById('edDesfaz');
+  if (d) d.title = 'Desfazer o último passo (Ctrl+Z)';
+});
+
+/* ---------- escolher camada, com Shift e a tecla de comando ----------
+   No Photoshop o clique limpo troca a seleção e Shift (ou ⌘) soma e tira.
+   É o gesto que a mão de quem diagrama já tem; ensinar outro aqui seria
+   pedir para desaprender. */
+function escolher(chave, ev){
+  if (!ed) return;
+  const soma = ev && (ev.shiftKey || comando(ev));
+  if (!chave){ ed.juntas.clear(); ed.sel = null; return; }
+  if (!soma){ ed.juntas = new Set([chave]); ed.sel = chave; return; }
+  // a ativa de antes entra na conta: somar a partir de uma seleção de uma só
+  // camada tem que dar duas, não uma
+  if (ed.sel && ed.sel !== '__fundo') ed.juntas.add(ed.sel);
+  if (ed.juntas.has(chave) && ed.juntas.size > 1){
+    ed.juntas.delete(chave);
+    ed.sel = [...ed.juntas].pop() || null;
+  } else {
+    ed.juntas.add(chave); ed.sel = chave;
+  }
+}
+
+/* as camadas que andam juntas. Uma só escolhida, é ela. */
+function escolhidas(){
+  const todas = grupos();
+  if (ed.juntas.size > 1) return todas.filter(g => ed.juntas.has(g.chave));
+  return todas.filter(g => g.chave === ed.sel);
+}
+
+/* os índices de elemento de tudo que está escolhido */
+const itensEscolhidos = () => escolhidas().flatMap(g => g.itens);
 
 function grupos(){
   const mapa = new Map();
@@ -2896,7 +3031,48 @@ function grupos(){
       mapa.set(chave, { chave, rotulo: e.camada || e.papel || e.tipo, itens: [] });
     mapa.get(chave).itens.push(i);
   });
-  return [...mapa.values()];
+  const lista = [...mapa.values()];
+  if (!ed.pilha) return lista;
+  // de baixo para cima, na ordem que a pessoa deixou. O que a pilha não
+  // conhece — uma camada que voltou do desfazer — fica embaixo, que é o lugar
+  // seguro: embaixo ela não tapa nada
+  const porChave = new Map(lista.map(g => [g.chave, g]));
+  const fim = [];
+  for (const c of ed.pilha){
+    const g = porChave.get(c);
+    if (g){ fim.push(g); porChave.delete(c); }
+  }
+  return [...porChave.values(), ...fim];
+}
+
+/* a pilha congelada do jeito que está agora, para então mexer nela */
+function firmarPilha(){
+  if (!ed.pilha) ed.pilha = grupos().map(g => g.chave);
+  return ed.pilha;
+}
+
+/* sobe ou desce as camadas escolhidas na pilha — ⌘] e ⌘[ do Photoshop */
+function empilhar(passo){
+  const p = firmarPilha().slice();
+  const movendo = escolhidas().map(g => g.chave).filter(c => p.includes(c));
+  if (!movendo.length) return;
+  marcarPasso();
+  // O CONJUNTO SOBE RÍGIDO. Duas camadas escolhidas juntas mantêm a ordem
+  // relativa entre elas: se a de cima já está no topo, nada anda — senão a de
+  // baixo passa por cima da companheira, que não é o que ninguém pediu.
+  // Da de cima para a de baixo quando sobe, e ao contrário quando desce, para
+  // uma não atropelar a outra no meio do caminho.
+  const seleto = new Set(movendo);
+  const fila = movendo.slice()
+    .sort((a, b) => passo > 0 ? p.indexOf(b) - p.indexOf(a) : p.indexOf(a) - p.indexOf(b));
+  for (const chave of fila){
+    const i = p.indexOf(chave), j = i + passo;
+    if (j < 0 || j >= p.length) continue;
+    if (seleto.has(p[j])) continue;        // a vizinha também é do conjunto
+    [p[i], p[j]] = [p[j], p[i]];
+  }
+  ed.pilha = p;
+  pintarLona();
 }
 
 function cerca(itens){
@@ -2954,10 +3130,13 @@ function pintarLona(){
   const { peca } = ed, lona = $('#lona');
   const W = peca.canvas.w, H = peca.canvas.h;
   const palco = $('#editor .palco').getBoundingClientRect();
-  const k = ed.k = Math.min((palco.width - 30) / W, (palco.height - 30) / H);
+  const cabe = Math.min((palco.width - 30) / W, (palco.height - 30) / H);
+  const k = ed.k = cabe * (ed.zoom || 1);
+  ed.cabe = cabe;
   lona.style.width = W * k + 'px'; lona.style.height = H * k + 'px';
   const sv = peca.safe || {left:0,right:0,top:0,bottom:0};
-  $('#edMedida').textContent = `${W}×${H} · ${(peca.elementos || []).length} elementos`;
+  $('#edMedida').textContent = `${W}×${H} · ${(peca.elementos || []).length} elementos`
+    + ((ed.zoom || 1) !== 1 ? ` · ${Math.round(k * 100)}%` : '');
   const fundo = (peca.fundo || {}).src ? arquivoUrl(peca.fundo.src) : '';
   // fora do modo de corte a lona mostra o RESULTADO: é a peça que ela vai
   // ser. Escolhendo o trecho, mostra o fundo inteiro — não dá para escolher
@@ -2978,15 +3157,59 @@ function pintarLona(){
   // por cima de todos (ele sobe de camada para o manípulo ficar alcançável) e
   // rouba o clique do vizinho: a sensação é de que tudo ficou selecionado
   lona.onpointerdown = ev => {
-    if (ev.target.closest('.pe-el') || ed.sel === null) return;
-    ed.sel = null; pintarLona();
+    if (ev.target.closest('.pe-el') || ev.target.closest('.pe-juntas')) return;
+    if (ev.shiftKey || comando(ev) || ed.sel === null) return;
+    escolher(null); pintarLona();
   };
+  // O MENOR SOB O CURSOR É QUEM SE PEGA. O empilhamento da tela passou a ser
+  // o de verdade — o que se vê é o que a peça vai ser —, e com isso a caixa
+  // da foto voltou a cobrir a da linha de texto e a roubar o clique dela.
+  // Aqui as duas coisas convivem: o DESENHO empilha pela ordem do arquivo, e
+  // o CLIQUE procura, entre as caixas sob o cursor, a de menor área. É a
+  // regra que estava no z-index antes, agora no lugar certo.
+  // Na fase de captura, para chegar antes do `onpointerdown` da caixa grande.
+  if (!lona._apanhador){
+    lona._apanhador = true;
+    lona.addEventListener('pointerdown', ev => {
+      if (!ed || ev.button) return;
+      if (ev.target.closest('.puxa, .lixo, .lapis, .pe-juntas, .corte')) return;
+      const r = lona.getBoundingClientRect();
+      const px = (ev.clientX - r.left) / ed.k, py = (ev.clientY - r.top) / ed.k;
+      const sob = grupos().filter(g => {
+        if (cobreAPeca(g)) return false;      // camada que cobre tudo é fundo
+        const c = cerca(g.itens);
+        return px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h;
+      });
+      if (!sob.length) return;                // o vazio segue para quem solta
+      sob.sort((a, b) => {
+        const A = cerca(a.itens), B = cerca(b.itens);
+        return (A.w * A.h) - (B.w * B.h);
+      });
+      const alvo = lona.querySelector(
+        `.pe-el[data-chave="${CSS.escape(sob[0].chave)}"]`);
+      if (!alvo || !alvo._mover || alvo.contains(ev.target)) return;
+      ev.stopPropagation();                   // a caixa grande não vê o clique
+      alvo._mover(ev, false);
+    }, true);
+  }
+
+  // a roda com a tecla de comando aproxima no ponto do cursor; sem ela, rola
+  // o palco, que é o comportamento normal de uma prancheta grande
+  $('#palco').onwheel = ev => {
+    if (!comando(ev)) return;
+    ev.preventDefault();
+    const r = $('#palco').getBoundingClientRect();
+    aproximar(ev.deltaY < 0 ? 1.12 : 1 / 1.12,
+              { x: ev.clientX - r.left, y: ev.clientY - r.top });
+  };
+
   // e clicar FORA da peça também solta: a lona é menor que o palco, e clicar
   // na área escura ao redor dela não fazia nada — o elemento continuava
   // escolhido, com o manípulo em cima da arte
   $('#palco').onpointerdown = ev => {
     if (ev.target.closest('#lona') || ed.sel === null) return;
-    ed.sel = null; pintarLona();
+    if (ev.shiftKey || comando(ev)) return;
+    escolher(null); pintarLona();
   };
 
   // A FERRAMENTA DE CORTE. O enquadramento automático às vezes repete o
@@ -3006,17 +3229,21 @@ function pintarLona(){
     arrastarCorte(m, W, H, k);
   }
 
-  for (const g of grupos()){
+  const lista = grupos();
+  const pilha = lista.map(g => g.chave);
+  for (const g of lista){
     const c = cerca(g.itens);
     const el = document.createElement('div');
-    el.className = 'pe-el' + (ed.sel === g.chave ? ' sel' : '');
-    // o menor por cima: a caixa da foto cobre a da linha de texto, e o
-    // manípulo de quem está embaixo fica inalcançável. Em qualquer editor de
-    // caixas a regra é essa, senão só dá para pegar o elemento maior
-    const ordem = Math.max(1, 200 - Math.round(Math.sqrt(c.w * c.h) / 12));
+    const dentroDaSel = ed.juntas.size > 1 ? ed.juntas.has(g.chave) : ed.sel === g.chave;
+    el.className = 'pe-el' + (dentroDaSel ? ' sel' : '');
+    // o empilhamento da TELA é o mesmo do arquivo: quem está acima na lista
+    // cobre quem está abaixo, e é essa ordem que vai para o servidor. Antes
+    // era o menor por cima — bom para alcançar o manípulo, mentiroso sobre
+    // como a peça ia sair. Para alcançar o que ficou embaixo existe a lista.
+    const ordem = 1 + pilha.indexOf(g.chave);
     el.dataset.chave = g.chave;
     el.style.cssText = `left:${c.x*k}px;top:${c.y*k}px;width:${c.w*k}px;`
-      + `height:${c.h*k}px;z-index:${ed.sel === g.chave ? 300 : ordem}`;
+      + `height:${c.h*k}px;z-index:${dentroDaSel ? 300 + ordem : ordem}`;
     const ehTexto = g.itens.some(i => {
       const e = ed.peca.elementos[i];
       return e.tipo === 'texto' || e.tipo === 'botao' || e.de || e.texto;
@@ -3024,7 +3251,7 @@ function pintarLona(){
     // manípulo e botões só no escolhido: pintados em toda caixa, uma peça de
     // PSD com dezessete camadas virava uma peneira de pontos vermelhos
     el.innerHTML = `<span class="rot">${g.rotulo}</span>`
-      + (ed.sel === g.chave
+      + (ed.sel === g.chave && ed.juntas.size <= 1
          ? `<span class="puxa"></span>`
            + (ehTexto ? `<button class="lapis" type="button" title="Trocar o texto">✎</button>` : '')
            + `<button class="lixo" type="button" title="Tirar da peça">✕</button>` : '');
@@ -3062,6 +3289,31 @@ function pintarLona(){
     pegar(el, g);
     lona.appendChild(el);
   }
+
+  // A CAIXA DO CONJUNTO. Com várias camadas escolhidas, o Photoshop mostra UMA
+  // moldura em volta de todas e transforma por ela. Sem isso haveria um
+  // manípulo por camada e puxar um deles cresceria só aquele — que é
+  // exatamente o trabalho uma-a-uma que a seleção múltipla existe para evitar.
+  if (ed.juntas.size > 1){
+    const itens = itensEscolhidos();
+    if (itens.length){
+      const c = cerca(itens);
+      const cx = document.createElement('div');
+      cx.className = 'pe-juntas';
+      cx.style.cssText = `left:${c.x*k}px;top:${c.y*k}px;width:${c.w*k}px;`
+        + `height:${c.h*k}px;z-index:299`;
+      cx.innerHTML = `<span class="rot">${ed.juntas.size} camadas</span>`
+        + `<span class="puxa"></span>`
+        + `<button class="lixo" type="button" title="Tirar as ${ed.juntas.size} da peça">✕</button>`;
+      const falso = { chave: '__juntas', rotulo: `${ed.juntas.size} camadas`, itens };
+      cx.querySelector('.lixo').onpointerdown = ev => {
+        ev.preventDefault(); ev.stopPropagation(); tirarDaPeca(falso);
+      };
+      pegar(cx, falso, true);
+      lona.appendChild(cx);
+    }
+  }
+
   const bc = $('#edCorta');
   bc.setAttribute('aria-pressed', ed.sel === '__fundo' ? 'true' : 'false');
   bc.textContent = ed.recorte ? '✂ Fundo cortado' : '✂ Cortar fundo';
@@ -3078,27 +3330,45 @@ function cobreAPeca(g){
   return (c.w * c.h) / (p.w * p.h) >= COBRE_A_PECA;
 }
 
-function pegar(el, g){
+function pegar(el, g, varias){
   const mover = (ev, escalando) => {
     ev.preventDefault();
-    ed.sel = g.chave;
+    // clique limpo numa camada que não estava escolhida troca a seleção;
+    // Shift ou ⌘ soma. Quem já está dentro de uma seleção múltipla não a
+    // desfaz só por ser arrastado — senão não dá para mover o conjunto
+    if (!varias && !(ed.juntas.size > 1 && ed.juntas.has(g.chave))) escolher(g.chave, ev);
     el.setPointerCapture(ev.pointerId);
     const x0 = ev.clientX, y0 = ev.clientY;
-    const antes = g.itens.map(i => ({...ed.boxes[i]}));
-    const letras = g.itens.map(i => ed.letras[i] && {...ed.letras[i]});
-    const c0 = cerca(g.itens);
+    // tudo que está escolhido anda junto, não só a camada que foi pega
+    const alvos = itensEscolhidos();
+    const antes = alvos.map(i => ({...ed.boxes[i]}));
+    const letras = alvos.map(i => ed.letras[i] && {...ed.letras[i]});
+    const c0 = cerca(alvos);
     let mexeu = false;
     const anda = e2 => {
       // só o primeiro movimento vira passo: um clique para escolher a camada
       // não é uma ação para desfazer
       if (!mexeu){ mexeu = true; marcarPasso(); }
       const dx = (e2.clientX - x0) / ed.k, dy = (e2.clientY - y0) / ed.k;
-      g.itens.forEach((i, n) => {
+      // A PROPORÇÃO. Puxar o canto mudava largura e altura por conta própria e
+      // a foto saía esticada. Agora o padrão é proporcional — um fator só,
+      // tirado da projeção do arrasto sobre a diagonal da caixa — e Shift
+      // libera a deformação, que é como o Photoshop faz desde 2019.
+      let fx, fy;
+      if (escalando){
+        if (e2.shiftKey){
+          fx = Math.max(.15, (c0.w + dx) / c0.w);
+          fy = Math.max(.15, (c0.h + dy) / c0.h);
+        } else {
+          const diag = c0.w * c0.w + c0.h * c0.h;
+          fx = fy = Math.max(.15, 1 + (dx * c0.w + dy * c0.h) / (diag || 1));
+        }
+      }
+      alvos.forEach((i, n) => {
         const a = antes[n];
         if (!escalando){ ed.boxes[i] = {...a, x: Math.round(a.x + dx), y: Math.round(a.y + dy)}; return; }
-        // escalar o grupo inteiro em volta do canto de cima: cada peça guarda
-        // a posição relativa, senão o lettering se desmonta ao ser puxado
-        const fx = Math.max(.15, (c0.w + dx) / c0.w), fy = Math.max(.15, (c0.h + dy) / c0.h);
+        // escalar em volta do canto de cima: cada peça guarda a posição
+        // relativa, senão o lettering se desmonta ao ser puxado
         ed.boxes[i] = { x: Math.round(c0.x + (a.x - c0.x) * fx), y: Math.round(c0.y + (a.y - c0.y) * fy),
                         w: Math.max(4, Math.round(a.w * fx)), h: Math.max(4, Math.round(a.h * fy)) };
         // a letra cresce com a caixa: é a altura que manda, como no corpo de
@@ -3116,6 +3386,7 @@ function pegar(el, g){
     addEventListener('pointermove', anda);
     addEventListener('pointerup', solta);
   };
+  el._mover = mover;
   el.onpointerdown = ev => {
     if (ev.target.classList.contains('puxa')) return mover(ev, true);
     // Camada que cobre a peça inteira é FUNDO, e clicar no fundo é clicar no
@@ -3123,7 +3394,9 @@ function pegar(el, g){
     // dentro da lona — numa peça de PSD a arte cobre tudo, então todo clique
     // caía nela e em vez de soltar ele SELECIONAVA a arte. Ela continua à
     // mão na lista ao lado, e escolhida lá pode ser arrastada normalmente.
-    if (cobreAPeca(g) && ed.sel !== g.chave){ ed.sel = null; pintarLona(); return; }
+    if (cobreAPeca(g) && ed.sel !== g.chave && !(ev.shiftKey || comando(ev))){
+      escolher(null); pintarLona(); return;
+    }
     mover(ev, false);
   };
 }
@@ -3244,7 +3517,7 @@ document.addEventListener('pointerdown', ev => {
 function tirarDaPeca(g){
   marcarPasso();
   g.itens.forEach(i => ed.fora.add(i));
-  ed.sel = null; pintarLona();
+  escolher(null); pintarLona();
   aviso(`${g.rotulo} saiu da peça. "Desfazer tudo" traz de volta.`, true);
 }
 
@@ -3257,25 +3530,64 @@ addEventListener('keydown', e => {
   const andar = {ArrowLeft:[-passo,0], ArrowRight:[passo,0],
                  ArrowUp:[0,-passo], ArrowDown:[0,passo]}[e.key];
   if (!andar) return;
-  const g = grupos().find(x => x.chave === ed.sel);
-  if (!g) return;
+  const itens = itensEscolhidos();
+  if (!itens.length) return;
   e.preventDefault();
   marcarPasso('setas');
-  g.itens.forEach(i => {
+  itens.forEach(i => {
     ed.boxes[i] = {...ed.boxes[i], x: ed.boxes[i].x + andar[0], y: ed.boxes[i].y + andar[1]};
   });
   pintarLona();
 });
 
+/* ---------- empilhar e aproximar, com a tecla da casa ----------
+   ⌘] e ⌘[ sobem e descem a camada; ⌘+ e ⌘− aproximam e afastam a peça; ⌘0
+   volta ao tamanho que cabe. São os atalhos do Photoshop, e no Windows a
+   mesma coisa com Ctrl. */
+addEventListener('keydown', e => {
+  if (!ed || $('#editor').classList.contains('hidden')) return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (!comando(e)) return;
+  if (e.key === ']' || e.key === '['){
+    e.preventDefault();
+    empilhar(e.key === ']' ? 1 : -1);
+    return;
+  }
+  const zoom = { '=': 1.25, '+': 1.25, '-': 1 / 1.25, '_': 1 / 1.25 }[e.key];
+  if (zoom){ e.preventDefault(); aproximar(zoom); return; }
+  if (e.key === '0'){ e.preventDefault(); ed.zoom = 1; pintarLona(); }
+});
+
+/* ---------- o zoom da prancheta ----------
+   Numa peça de 1080x1920 vista a 30% da tela, um pixel de arrasto são três
+   da peça: não há como encostar na margem com precisão. */
+const ZOOM_MAX = 6, ZOOM_MIN = 0.25;
+function aproximar(fator, ancora){
+  if (!ed) return;
+  const palco = $('#palco');
+  const antes = ed.zoom || 1;
+  ed.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, antes * fator));
+  if (ed.zoom === antes) return;
+  // o ponto sob o cursor fica onde está: sem isto, aproximar joga a peça para
+  // um canto e a pessoa perde de vista o que estava olhando
+  const mudou = ed.zoom / antes;
+  const px = ancora ? ancora.x : palco.clientWidth / 2;
+  const py = ancora ? ancora.y : palco.clientHeight / 2;
+  const sx = (palco.scrollLeft + px) * mudou - px;
+  const sy = (palco.scrollTop + py) * mudou - py;
+  pintarLona();
+  palco.scrollLeft = sx; palco.scrollTop = sy;
+}
+
 addEventListener('keydown', e => {
   if (!ed || $('#editor').classList.contains('hidden')) return;
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
   if (e.key !== 'Delete' && e.key !== 'Backspace') return;
-  if (!ed.sel) return;
-  const g = grupos().find(x => x.chave === ed.sel);
-  if (!g) return;
+  const alvos = escolhidas();
+  if (!alvos.length) return;
   e.preventDefault();
-  tirarDaPeca(g);
+  tirarDaPeca(alvos.length === 1 ? alvos[0]
+    : { rotulo: `${alvos.length} camadas`, itens: alvos.flatMap(g => g.itens) });
 });
 
 $('#edSalva').onclick = async () => {
@@ -3298,7 +3610,13 @@ $('#edSalva').onclick = async () => {
     trocado.set(g.itens[0], { texto: novo, box: { x: c.x, y: c.y, w: c.w, h: c.h } });
     g.itens.slice(1).forEach(i => sumiu.add(i));
   }
-  const elementos = ed.peca.elementos.map((e, i) => {
+  // NA ORDEM DA PILHA, de baixo para cima. Quem desenha a peça empilha pela
+  // ordem em que recebe os elementos — então é esta lista que decide o que
+  // cobre o quê, e é por isso que reordenar na tela chega na peça final sem
+  // o servidor precisar saber de nada.
+  const ordenados = grupos().flatMap(g => g.itens);
+  const resto = ed.peca.elementos.map((_, i) => i).filter(i => !ordenados.includes(i));
+  const elementos = [...resto, ...ordenados].map(i => {
     if (ed.fora.has(i) || sumiu.has(i)) return null;
     const tr = trocado.get(i);
     const corpo = ed.letras[i] || {};

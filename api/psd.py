@@ -334,6 +334,31 @@ def separaveis(raiz, prancheta=None) -> list:
     return sorted(soltas, key=lambda c: pilha.get(id(c), 0))
 
 
+def _porque_falhou(e: Exception) -> str:
+    """A falha em português, e com a saída quando existe uma.
+
+    "ImportError" não é motivo: foi o que a ressalva da peça da Consigaz
+    disse quando o calço do botão sumiu, e ninguém que lê a ressalva tem o
+    que fazer com isso. O psd-tools precisa de `aggdraw` para desenhar forma
+    vetorial COM CONTORNO — sem ela a forma some calada e a composição da
+    prancheta inteira cai num plano B.
+    """
+    if isinstance(e, ImportError):
+        falta = (getattr(e, "name", "") or str(e)).lower()
+        if "aggdraw" in falta or "aggdraw" in str(e).lower():
+            # NÃO mande instalar: a `aggdraw` desenha a forma, mas desenha o
+            # preenchimento mesmo quando o arquivo o desliga (`fillEnabled`
+            # False). Numa cartela da Consigaz isso virou um retângulo branco
+            # de 594x751 por cima da chamada, onde a arte tem só um contorno
+            # de 3px. Trocar um calço que falta por uma chamada tapada é
+            # troca ruim. Enquanto não houver saída melhor, a forma fica no
+            # fundo assado, que o Photoshop já compôs certo.
+            return ("esta forma é vetorial com contorno e não pôde ser "
+                    "desenhada à parte; ela continua no fundo da peça")
+        return f"falta uma biblioteca para abrir essa camada: {e}"
+    return type(e).__name__
+
+
 def _guardar_camada(c, alvo, destino: Path, prefixo: str,
                     ignoradas: list[str]) -> "Camada | None":
     """Extrai uma camada para arquivo e devolve a `Camada` dela.
@@ -344,7 +369,7 @@ def _guardar_camada(c, alvo, destino: Path, prefixo: str,
     try:
         im = c.composite()
     except Exception as e:
-        ignoradas.append(f"`{nome}` não abriu: {type(e).__name__}")
+        ignoradas.append(f"`{nome}` não abriu: {_porque_falhou(e)}")
         return None
     if im is None or not im.getbbox():
         return None
@@ -425,7 +450,7 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
         if inteira is not None:
             inteira.convert("RGB").save(destino / "arte-mae.png")
     except Exception as e:
-        ignoradas.append(f"a composição da arte-mãe não saiu: {type(e).__name__}")
+        ignoradas.append(f"a composição da arte-mãe não saiu: {_porque_falhou(e)}")
 
     camadas = []
     for i, c in enumerate(soltas):
@@ -449,7 +474,7 @@ def extrair(caminho: Path, destino: Path, nome_prancheta: str = "",
             else:
                 im = c.composite()
         except Exception as e:
-            ignoradas.append(f"`{nome}` não abriu: {type(e).__name__}")
+            ignoradas.append(f"`{nome}` não abriu: {_porque_falhou(e)}")
             continue
         if im is None or not im.getbbox():
             ignoradas.append(f"`{nome}` saiu vazia")
