@@ -35,6 +35,46 @@ def franquia_valendo(monkeypatch):
     monkeypatch.setenv("REPLICAI_SEM_LIMITE", "0")
 
 
+# CREDENCIAL QUE SAI DA MÁQUINA. Toda variável de ambiente daqui compra algo
+# ou fala com alguém de fora: o modelo cobra por chamada, o Asaas cria cobrança
+# de verdade, o Resend manda e-mail de verdade, o armazenamento sobe arquivo, o
+# Redis entrega trabalho para um worker que não é desta suíte.
+FORA_DA_MAQUINA = (
+    "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",   # modelo: cobra por chamada
+    "ASAAS_API_KEY", "ASAAS_AVISO_TOKEN",          # cobrança de verdade
+    "RESEND_API_KEY",                              # e-mail de verdade
+    "REPLICAI_COPIA_CHAVE", "REPLICAI_COPIA_SEGREDO",   # sobe arquivo
+    "REDIS_URL",                                   # fila fora do processo
+)
+
+
+@pytest.fixture(autouse=True)
+def nada_sai_da_maquina(monkeypatch):
+    """Nenhum teste fala com o mundo por fora da porta de quem desenvolve.
+
+    O `.env` da raiz é lido na importação de `api.main`, e basta um teste
+    importar a tela para a chave do modelo entrar no ambiente de toda a suíte.
+    Daí em diante a direção de arte passa a ser decidida pelo modelo, de
+    verdade, em cada peça recomposta: chamada paga numa suíte que devia custar
+    zero, e resultado que depende do que o modelo respondeu naquela hora.
+    Medido: `pytest testes/test_conteiner.py testes/test_psd.py` fazia três
+    chamadas pagas, e era isto que fazia `test_o_lockup_recomposto_fica_abaixo_
+    da_arte` passar sozinho e falhar acompanhado. Não era ordem de teste, era a
+    chave entrando pela importação — e quanto se gastava dependia de quais
+    arquivos você rodasse, que é o pior tipo de conta.
+
+    Em branco e não apagada de propósito: `ambiente.carregar()` só escreve o
+    que ainda não está no ambiente, então a variável vazia também barra o
+    `.env` de repor a chave no meio do teste. Todo leitor dela usa `.get` e
+    trata vazio como ausente.
+
+    Quem testa o caminho COM credencial põe a sua, de mentira, no próprio
+    teste — e aí esta trava sai da frente, porque a do teste vem depois.
+    """
+    for nome in FORA_DA_MAQUINA:
+        monkeypatch.setenv(nome, "")
+
+
 def assinatura_valendo(conta, plano="agency"):
     """Põe na conta um plano pago valendo hoje, e devolve a conta.
 
