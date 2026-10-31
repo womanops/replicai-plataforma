@@ -120,6 +120,14 @@ def previa_das_pranchetas(caminho: Path, destino: Path,
     Compor é barato perto de extrair: 0,5 a 3 segundos por prancheta no PSD de
     144 MB, contra os minutos da extração em camadas. Por isso dá para fazer
     enquanto a pessoa olha a lista.
+
+    Cada prancheta que não compõe entra na lista assim mesmo, com `previa`
+    vazia e o `motivo` em português. Antes o `except` era mudo: a prancheta
+    sumia da lista de prévias e a tela mostrava um quadro em branco sem dizer
+    por quê. O PSD do vôlei passou por aqui e o motivo real — faltava a
+    biblioteca de efeito de camada — nunca chegou a lugar nenhum, enquanto a
+    MESMA falha esvaziava 96 das 99 camadas na extração logo depois. Prévia é
+    conforto; o motivo dela não é.
     """
     caminho, destino = Path(caminho), Path(destino)
     destino.mkdir(parents=True, exist_ok=True)
@@ -134,13 +142,17 @@ def previa_das_pranchetas(caminho: Path, destino: Path,
             caixa = (pr.x, pr.y, pr.x + pr.w, pr.y + pr.h)
             im = (grupo or psd).composite(viewport=caixa)
             if im is None:
+                feitas.append({"nome": pr.nome, "previa": "",
+                               "motivo": "esta prancheta saiu vazia"})
                 continue
             im = im.convert("RGB")
             if im.width > largura:
                 im = im.resize((largura, max(1, round(im.height * largura / im.width))))
             im.save(arq)
-        except Exception:
-            continue          # prévia é conforto: sem ela a escolha ainda dá
+        except Exception as e:
+            feitas.append({"nome": pr.nome, "previa": "",
+                           "motivo": _porque_falhou(e)})
+            continue
         feitas.append({"nome": pr.nome, "previa": arq.name})
     return feitas
 
@@ -334,29 +346,41 @@ def separaveis(raiz, prancheta=None) -> list:
     return sorted(soltas, key=lambda c: pilha.get(id(c), 0))
 
 
+# As peças que o psd-tools carrega por fora para desenhar certos tipos de
+# camada. Todas estão em `requirements.txt`: se uma faltar em produção, o que
+# há é instalação incompleta, e a ressalva tem que dizer isso em vez de
+# descrever uma limitação que não existe.
+POR_FORA = {
+    "aggdraw": "forma vetorial com contorno",
+    "scikit-image": "efeito de camada (sombra, contorno, brilho)",
+    "skimage": "efeito de camada (sombra, contorno, brilho)",
+    "scipy": "camada com gradiente",
+}
+
+
 def _porque_falhou(e: Exception) -> str:
     """A falha em português, e com a saída quando existe uma.
 
     "ImportError" não é motivo: foi o que a ressalva da peça da Consigaz
     disse quando o calço do botão sumiu, e ninguém que lê a ressalva tem o
-    que fazer com isso. O psd-tools precisa de `aggdraw` para desenhar forma
-    vetorial COM CONTORNO — sem ela a forma some calada e a composição da
-    prancheta inteira cai num plano B.
+    que fazer com isso. E `type(e).__name__` sozinho é a mesma coisa com
+    outro nome — era o que sobrava para toda falha que não fosse de import.
+
+    Estas faltas não são mais limitação da ferramenta: as quatro bibliotecas
+    estão declaradas. Faltar uma é máquina montada pela metade, e a frase
+    precisa mandar quem lê para o lugar certo — a instalação, não a arte.
     """
     if isinstance(e, ImportError):
-        falta = (getattr(e, "name", "") or str(e)).lower()
-        if "aggdraw" in falta or "aggdraw" in str(e).lower():
-            # NÃO mande instalar: a `aggdraw` desenha a forma, mas desenha o
-            # preenchimento mesmo quando o arquivo o desliga (`fillEnabled`
-            # False). Numa cartela da Consigaz isso virou um retângulo branco
-            # de 594x751 por cima da chamada, onde a arte tem só um contorno
-            # de 3px. Trocar um calço que falta por uma chamada tapada é
-            # troca ruim. Enquanto não houver saída melhor, a forma fica no
-            # fundo assado, que o Photoshop já compôs certo.
-            return ("esta forma é vetorial com contorno e não pôde ser "
-                    "desenhada à parte; ela continua no fundo da peça")
+        texto = f"{getattr(e, 'name', '') or ''} {e}".lower()
+        for pacote, desenha in POR_FORA.items():
+            if pacote in texto:
+                return (f"esta máquina está sem `{pacote}`, que desenha "
+                        f"{desenha}; rode `pip install -r requirements.txt`")
         return f"falta uma biblioteca para abrir essa camada: {e}"
-    return type(e).__name__
+    # com a mensagem, e não só o nome da classe: "KeyError" não diz qual
+    # chave, e é a chave que aponta onde no arquivo a leitura tropeçou
+    recado = str(e).strip().splitlines()[0][:160] if str(e).strip() else ""
+    return f"{type(e).__name__}: {recado}" if recado else type(e).__name__
 
 
 def _guardar_camada(c, alvo, destino: Path, prefixo: str,

@@ -615,7 +615,15 @@ class TestAPreviaChegaNoEstado:
 
     def test_arquivo_que_nao_abre_nao_derruba_o_trabalho(self, tmp_path, monkeypatch):
         """A prévia é conforto. Falhar nela não pode apagar o estado de quem
-        está esperando para escolher."""
+        está esperando para escolher.
+
+        O que mudou em 31/10/2026: a falha agora DEIXA o motivo na prancheta.
+        A garantia desta prova é a mesma — o estado sobrevive —, e o `motivo`
+        é acréscimo. Antes se exigia a prancheta idêntica ao que entrou, e
+        exigir identidade é exigir também que nada se aprenda com a falha:
+        foi com esse `except` mudo que o PSD do vôlei passou sem deixar
+        rastro. Ver `test_falha_tem_motivo.py`.
+        """
         monkeypatch.setenv("STORAGE_DIR", str(tmp_path / "dados"))
         import importlib
 
@@ -629,7 +637,9 @@ class TestAPreviaChegaNoEstado:
         tarefas.previas("conta", "job", str(ruim))
         estado = trabalhos.ler("conta", "job")
         assert estado["status"] == "escolha a prancheta"
-        assert estado["pranchetas"] == [{"nome": "x"}]
+        assert len(estado["pranchetas"]) == 1
+        assert estado["pranchetas"][0]["nome"] == "x"
+        assert estado["pranchetas"][0]["motivo"], "falhou calada de novo"
 
 
 class TestAssarSoQuandoEhLegitimo:
@@ -703,24 +713,40 @@ class TestAFalhaDizOQueFazer:
     ela a forma some calada — e a composição da prancheta inteira cai num
     plano B. A biblioteca entrou no requirements; esta prova é para a
     MENSAGEM, que é o que sobra quando faltar outra coisa amanhã.
+
+    Em 31/10/2026 a mesma falha apareceu com outra biblioteca — `scikit-image`,
+    a de efeito de camada — num PSD de 127 MB. A frase certa mudou junto: ver
+    `test_a_forma_vetorial_manda_para_a_instalacao` logo abaixo.
     """
 
-    def test_a_forma_vetorial_diz_o_que_aconteceu_com_ela(self):
-        """E NÃO manda instalar a `aggdraw`: ela desenha a forma, mas pinta o
-        preenchimento mesmo quando o arquivo o desliga. Numa cartela da
-        Consigaz isso virou um retângulo branco de 594x751 em cima da
-        chamada, onde a arte tem só um contorno de 3px."""
+    def test_a_forma_vetorial_manda_para_a_instalacao(self):
+        """Esta prova exigia o CONTRÁRIO até 31/10/2026: que a frase NÃO
+        mandasse instalar a `aggdraw`, porque se suspeitava que ela pintava o
+        preenchimento mesmo com `fillEnabled` desligado — um retângulo branco
+        de 594x751 em cima da chamada de uma cartela da Consigaz.
+
+        A suspeita foi medida nos dois PSDs de prova: as seis formas sem
+        preenchimento saem como CONTORNO, com 1 a 4% de tinta, nenhuma
+        chapada. A biblioteca entrou no `requirements.txt`, e a partir daí
+        faltar ela não é limitação da ferramenta — é máquina montada pela
+        metade. Mandar para a arte quem precisa ir para a instalação é o
+        mesmo erro de antes, de cabeça para baixo.
+        """
         from api.psd import _porque_falhou
         dito = _porque_falhou(ImportError("Vector shape rendering requires: aggdraw"))
-        assert "fundo" in dito, "não disse onde a forma foi parar"
-        assert "aggdraw" not in dito and "pip install" not in dito, (
-            "mandou instalar uma biblioteca que tapa a chamada de outras peças")
+        assert "aggdraw" in dito, "não disse o que falta"
+        assert "requirements" in dito, "não disse o que fazer"
+        assert "ImportError" not in dito
 
     def test_biblioteca_desconhecida_ainda_diz_que_e_biblioteca(self):
         from api.psd import _porque_falhou
         dito = _porque_falhou(ImportError("No module named 'coisa'"))
         assert "biblioteca" in dito and "coisa" in dito
 
-    def test_o_que_nao_e_falta_de_biblioteca_continua_como_estava(self):
+    def test_o_que_nao_e_falta_de_biblioteca_leva_a_mensagem(self):
+        """Antes sobrava só `type(e).__name__`, que é "ImportError" com
+        outro nome: diz a categoria da falha e esconde o fato."""
         from api.psd import _porque_falhou
-        assert _porque_falhou(ValueError("qualquer")) == "ValueError"
+        dito = _porque_falhou(ValueError("qualquer"))
+        assert dito.startswith("ValueError")
+        assert "qualquer" in dito

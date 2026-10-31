@@ -45,6 +45,35 @@ main{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:26px;padding
 .zona .arte{max-width:100%;max-height:300px;border-radius:8px;display:block}
 .zona h2{font:400 30px/1 var(--disp);letter-spacing:.04em;margin:0 0 10px}
 .zona p{margin:0;font-size:12.5px;color:var(--mut);line-height:1.45}
+/* o segundo caminho, dito em voz alta: arrastar é o gesto rápido para quem já
+   sabe, e quem não sabe precisa ver que clicar também serve */
+.zona .ou{margin:0 0 14px}
+.zona .ou .escolher{background:none;border:0;padding:0;cursor:pointer;font:inherit;
+  color:var(--texto);text-decoration:underline;text-underline-offset:3px}
+.zona .ou .escolher:hover{color:var(--rosa)}
+.zona .tipos{font:500 10.5px var(--mono);letter-spacing:.12em;text-transform:uppercase}
+.zona .tipos span:not(:empty)::before{content:' · '}
+.zona .rende{max-width:46ch;margin:12px auto 0;opacity:.8}
+
+/* a orientação: fechada, porque quem já sabe não precisa dela toda vez, e
+   aberta de verdade — não um aviso que a pessoa fecha sem ler */
+.comovem{margin-top:12px;border:1px solid var(--linha);border-radius:12px;
+  background:var(--painel);overflow:hidden}
+.comovem summary{cursor:pointer;padding:13px 16px;font:500 12px var(--mono);
+  letter-spacing:.06em;display:flex;gap:4px 10px;align-items:baseline;
+  justify-content:space-between;flex-wrap:wrap}
+/* o título inteiro numa linha: espremido entre a borda e o selo ele quebrava
+   em "Como o PSD deve / vir", e aí o selo é que tem de descer */
+.comovem summary{white-space:nowrap}
+.comovem summary span{white-space:normal}
+.comovem summary::-webkit-details-marker{display:none}
+.comovem summary span{color:var(--mut);font-size:10.5px;letter-spacing:.04em;text-transform:none}
+.comovem summary:hover{color:var(--rosa)}
+.comovem[open] summary{border-bottom:1px solid var(--linha)}
+.comovem ol{margin:0;padding:14px 16px 16px 34px;display:grid;gap:9px;
+  font-size:12.5px;line-height:1.5;color:var(--mut)}
+.comovem li b{color:var(--texto);font-weight:500}
+.comovem li i{font-style:normal;color:var(--texto)}
 .medida{font:500 11px var(--mono);color:var(--mut);margin-top:10px;display:block;letter-spacing:.06em}
 body.recebendo::after{content:'Solte em qualquer lugar';position:fixed;inset:10px;z-index:90;
   border:2px dashed var(--sinal);border-radius:18px;pointer-events:none;display:grid;
@@ -197,6 +226,14 @@ button.secund[aria-pressed=true]{border-color:var(--sinal);color:var(--sinal)}
   background:rgba(14,10,12,.8);color:var(--mut);font:500 9.5px var(--mono);
   letter-spacing:.1em;text-transform:uppercase}
 .pr img+.carregando,.pr .cx:has(img) .carregando{display:none}
+/* a prancheta que não compôs: o motivo ocupa o lugar do desenho, porque é o
+   que há para ler ali. Escolher continua valendo — por isso não é vermelho */
+.pr .nao-saiu{position:absolute;left:0;right:0;bottom:0;padding:12px 14px;
+  background:rgba(14,10,12,.93);color:var(--mut);font-size:11.5px;line-height:1.45;
+  display:grid;gap:5px}
+.pr .nao-saiu b{color:var(--texto);font-weight:500}
+.pr .nao-saiu em{font-style:normal;color:var(--sinal);
+  font-family:var(--mono);font-size:10.5px;line-height:1.5}
 .pr b{display:block;font:500 12px var(--mono);margin-top:9px;letter-spacing:.04em}
 .pr span{color:var(--mut);font-size:11.5px}
 
@@ -882,13 +919,26 @@ header .saldo.apertado .fio i{background:var(--err)}
 
 <main>
   <section>
-    <div class="zona" id="zona">
-      <div>
-        <h2>Arraste a peça aqui</h2>
-        <p>PSD, PNG, JPEG ou PDF.<br>O PSD rende mais: abre em camadas e o fundo vem inteiro.
-          <br><span id="dicaLimite" style="opacity:.7"></span></p>
-      </div>
-    </div>
+    <!-- o conteúdo vem de ZONA_VAZIA, lá embaixo: estava escrito aqui TAMBÉM,
+         e as duas cópias tinham que ser editadas juntas para não divergirem -->
+    <div class="zona" id="zona"></div>
+
+    <details class="comovem" id="comoVem">
+      <summary>Como o PSD deve vir <span>5 pontos · evita quase todo problema</span></summary>
+      <ol>
+        <li><b>Texto como texto.</b> Camada de texto viva, não rasterizada. Texto
+          que virou pixel vira desenho: não dá para rediagramar nem trocar a frase.</li>
+        <li><b>Camadas separadas.</b> Arte achatada numa camada só tem um caminho —
+          reenquadrar. Nada se move, nada se ajusta depois.</li>
+        <li><b>Uma prancheta por peça, com nome.</b> É pelo nome que você escolhe
+          qual arte vai ser adaptada quando o arquivo tem mais de uma.</li>
+        <li><b>Fundo inteiro atrás dos elementos.</b> O que está escondido atrás do
+          texto e da foto é exatamente o que preenche quando a peça muda de proporção.</li>
+        <li><b>A fonte junto.</b> O PSD diz o nome da fonte e não leva o arquivo.
+          Mande o .ttf ou .otf em <i>Fontes da marca</i>, aqui embaixo — sem ele,
+          trocar o texto troca a letra.</li>
+      </ol>
+    </details>
     <input type="file" id="arquivo" hidden accept="image/*,.pdf,.psd,.psb,application/octet-stream">
     <input type="file" id="fonteArquivo2" hidden multiple accept=".ttf,.otf,.woff,.woff2">
 
@@ -1046,9 +1096,28 @@ let rascunhoDeLado = null;
 const escolhendo = () => !job || !!rascunho;
 // o que a zona diz quando está vazia: guardado porque a arte que não conseguiu
 // subir precisa devolver a zona ao estado de antes, e não a um retângulo mudo
-const ZONA_VAZIA = `<div><h2>Arraste a peça aqui</h2>
-  <p>PSD, PNG, JPEG ou PDF.<br>O PSD rende mais: abre em camadas e o fundo vem inteiro.
-    <br><span id="dicaLimite" style="opacity:.7"></span></p></div>`;
+const ZONA_VAZIA = `<div>
+  <h2>Arraste a arte aqui</h2>
+  <p class="ou">ou <button type="button" class="escolher">escolha um arquivo</button></p>
+  <p class="tipos">PSD, PNG, JPEG ou PDF <span id="dicaLimite"></span></p>
+  <p class="rende">O PSD é o que mais rende: abre em camadas, traz o fundo inteiro
+    e deixa você mover cada elemento no ajuste. PNG e JPEG são reenquadrados.</p>
+</div>`;
+// uma cópia só, e ela é esta: a zona nasce vazia no HTML e é preenchida aqui
+$('#zona').innerHTML = ZONA_VAZIA;
+
+/* A orientação abre sozinha na PRIMEIRA vez e nunca mais. Aberta sempre vira
+   parede que se fecha sem ler; fechada sempre nunca é lida. Depois disso quem
+   manda é a pessoa: o que ela deixou aberto ou fechado é o que ela encontra. */
+(() => {
+  const d = $('#comoVem'); if (!d) return;
+  let visto = null;
+  try { visto = localStorage.getItem('replicai:comoVem'); } catch(e){}
+  d.open = visto === null ? true : visto === 'aberto';
+  d.addEventListener('toggle', () => {
+    try { localStorage.setItem('replicai:comoVem', d.open ? 'aberto' : 'fechado'); } catch(e){}
+  });
+})();
 const refazer = new Set();          // formatos cuja miniatura ficou velha
 // as ressalvas do trabalho aberto, por formato: a folha e a lupa oferecem a
 // saída a partir delas, e as duas precisam das mesmas
@@ -1882,7 +1951,7 @@ async function quemCompoe(){
     semLimite = /desligada/.test(s.franquia || '');
     if (semLimite) verPlano();
     const dica = $('#dicaLimite');
-    if (dica) dica.textContent = `Até ${limiteMB} MB.`;
+    if (dica) dica.textContent = `até ${limiteMB} MB`;
     // só aparece quando é NOTÍCIA: compondo pela régua, sem o modelo. O
     // normal não precisa de aviso — "compondo com o modelo" fixo no alto é
     // ruído que ninguém lê, e ruído fixo é o que faz o aviso de verdade
@@ -2153,6 +2222,20 @@ async function trocarPorPrevias(){
     for (const pr of (d.pranchetas || [])){
       const cartao = $(`#prGrade .pr[data-nome="${(pr.nome||'').replace(/"/g,'')}"]`);
       if (!cartao) continue;
+      // a prancheta que não compôs vem com o motivo. Sem isto o cartão dizia
+      // "compondo a prévia…" para sempre — que é a cara que a falha calada
+      // tem na tela: parece lentidão, e na verdade já acabou e deu errado
+      if (!pr.previa && pr.motivo){
+        // troca SÓ a espera, e não o cartão inteiro: o recorte da miniatura
+        // fica, e com ele a proporção e o pouco que dá para reconhecer da
+        // prancheta. Escolher sem prévia nenhuma já é difícil o bastante
+        const espera = cartao.querySelector('.carregando');
+        if (espera) espera.outerHTML = `<span class="nao-saiu">`
+          + `<b>Não consegui compor a prévia desta.</b>`
+          + `<em>${esc(pr.motivo)}</em>`
+          + `Dá para escolher assim mesmo.</span>`;
+        continue;
+      }
       if (!pr.previa){ faltam++; continue; }
       const cx = cartao.querySelector('.cx');
       if (cx.querySelector('img')) continue;

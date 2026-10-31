@@ -7,6 +7,14 @@ numpy==2.5.3            # operações de pixel (limpeza, fundo, máscaras)
 psd-tools==1.19.0       # leitura de arte-mãe em .psd
 scipy==1.18.1           # psd-tools precisa dela para camada com gradiente; sem ela
                         # a camada de fundo do PSD levanta em vez de sair
+scikit-image==0.26.0    # psd-tools precisa dela para EFEITO DE CAMADA (sombra,
+                        # contorno, brilho). Sem ela o PSD do cliente não compõe:
+                        # a prancheta sai sem prévia e a extração devolve camada
+                        # vazia — 96 de 99 no PSD que abriu o caso.
+aggdraw==1.4.1          # psd-tools precisa dela para FORMA VETORIAL. Mesma falha
+                        # da de cima, outro gatilho. Já esteve fora por suspeita
+                        # de chapar de branco forma sem preenchimento; medido nos
+                        # dois PSDs de prova, as seis formas saem como contorno.
 fonttools==4.65.0       # métricas de fonte para ajuste de texto ao box
 pytoshop==1.2.1         # ESCRITA de PSD em camadas (export-psd). Faltava aqui:
                         # psd_io.py importa e no contêiner quebraria em tempo de

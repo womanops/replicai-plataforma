@@ -137,20 +137,45 @@ def previas(conta: str, job: str, arte: str) -> None:
     Vai para a fila em vez de entrar na resposta do envio: a lista de
     pranchetas tem que aparecer na hora, e as imagens chegam atrás, uma por
     uma. São segundos por prancheta, contra os minutos da extração.
+
+    O motivo de uma prancheta não ter prévia vai junto com ela, no campo
+    `motivo`. Este `except` era mudo e `return`: o arquivo que não abria saía
+    daqui sem deixar rastro, a tela ficava com o quadro vazio e a mesma falha
+    reaparecia minutos depois como camada vazia na peça, parecendo outro
+    defeito. Prévia é conforto; não saber por que ela falhou, não.
     """
     from api import psd
     try:
         feitas = psd.previa_das_pranchetas(Path(arte), trabalhos.pasta_do(conta, job))
-    except Exception:
-        return                        # sem prévia a escolha ainda acontece
+    except Exception as e:
+        # o arquivo inteiro não abriu: nenhuma prancheta tem prévia, e o
+        # motivo é o mesmo para todas
+        porque = psd._porque_falhou(e)
+        estado = trabalhos.ler(conta, job) or {}
+        trabalhos.gravar(conta, job, {"pranchetas": [
+            {**p, "previa": p.get("previa", ""), "motivo": porque}
+            for p in (estado.get("pranchetas") or [])]})
+        return
     estado = trabalhos.ler(conta, job) or {}
     lista = estado.get("pranchetas") or []
-    por_nome = {f["nome"]: f["previa"] for f in feitas}
+    por_nome = {f["nome"]: f for f in feitas}
     # pelo nome, e não pela ordem: se a pessoa já escolheu, o estado mudou
     # embaixo e sobrescrever a lista inteira apagaria a escolha
     trabalhos.gravar(conta, job, {"pranchetas": [
-        {**p, "previa": por_nome.get(p.get("nome"), p.get("previa", ""))}
-        for p in lista]})
+        _com_previa(p, por_nome.get(p.get("nome"))) for p in lista]})
+
+
+def _com_previa(prancheta: dict, feita: dict | None) -> dict:
+    """A prancheta do estado, acrescida do que a composição conseguiu."""
+    if feita is None:
+        return prancheta
+    novo = {**prancheta, "previa": feita.get("previa") or prancheta.get("previa", "")}
+    motivo = feita.get("motivo")
+    if motivo and not novo["previa"]:
+        novo["motivo"] = motivo
+    else:
+        novo.pop("motivo", None)      # compôs: motivo velho não fica pendurado
+    return novo
 
 
 def _fonte_da_conta(conta: str, pasta):
